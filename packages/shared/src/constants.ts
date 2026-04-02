@@ -1,0 +1,82 @@
+// --- Cluster Configuration ---
+// Set SOLANA_CLUSTER=mainnet in .env to switch to mainnet
+export const SOLANA_CLUSTER = (process.env.SOLANA_CLUSTER ?? "devnet") as "devnet" | "mainnet";
+export const IS_DEVNET = SOLANA_CLUSTER === "devnet";
+export const IS_MAINNET = SOLANA_CLUSTER === "mainnet";
+
+export const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL ?? (
+  IS_MAINNET
+    ? "https://api.mainnet-beta.solana.com"
+    : "https://api.devnet.solana.com"
+);
+export const SOLANA_COMMITMENT = "confirmed" as const;
+
+// CAIP2 chain ID for Privy wallet API
+export const SOLANA_CAIP2 = IS_MAINNET
+  ? "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
+  : "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
+
+// USDC mint address (mainnet only — devnet has no real USDC)
+export const USDC_MINT = process.env.USDC_MINT ?? "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+export const JUPITER_PREDICT_BASE_URL = "https://api.jup.ag/prediction/v1";
+export const JUPITER_PREDICT_DOCS = "https://prediction-market-api.jup.ag/docs";
+export const JUPUSD_MINT = "JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD";
+
+// Whether to execute trades (false = decision-only mode, log but don't trade)
+export const EXECUTE_TRADES = process.env.EXECUTE_TRADES === "true" || IS_MAINNET;
+
+export const AGENT_LIMITS = {
+  MAX_PORTFOLIO_PERCENT_PER_MARKET: 0.1,
+  MAX_CATEGORY_EXPOSURE: 0.25,
+  STOP_LOSS_PERCENT: 0.15,
+  MAX_CONCURRENT_POSITIONS: 3,
+  COOLDOWN_MINUTES: 5,
+  DAILY_LOSS_LIMIT_PERCENT: 0.05,
+  MIN_MARKET_VOLUME: 10_000,
+  MAX_MARKET_DAYS_TO_RESOLUTION: 7,
+  MIN_CONFIDENCE: 0.7,
+  HUMAN_APPROVAL_THRESHOLD: 500,
+} as const;
+
+export const FSM_SCAN_INTERVAL_MS = 5 * 60 * 1000;
+export const FSM_ANALYSIS_INTERVAL_MS = 15 * 60 * 1000;
+
+export const REDIS_KEYS = {
+  MARKET_CACHE: "cache:markets",
+  GDELT_CACHE: "cache:gdelt",
+  ACLED_CACHE: "cache:acled",
+  FRED_CACHE: "cache:fred",
+  FIRMS_CACHE: "cache:firms",
+  TWITTER_CACHE: "cache:twitter",
+  LEADERBOARD_ALLTIME: "lb:alltime",
+  LEADERBOARD_PREFIX: "lb:",
+  LEADERBOARD_USERS: "lb:users",
+  LEADERBOARD_CATEGORY_PREFIX: "lb:category:",
+  AGENT_STATS_PREFIX: "agent:stats:",
+  FEED_RECENT: "feed:recent",
+  FEED_CATEGORY_PREFIX: "feed:category:",
+  AGENT_EVENTS_STREAM: "agent:events",
+  GLOBAL_STATS: "cache:global_stats",
+} as const;
+
+export const REVENUE_SPLIT = {
+  PLATFORM_FEE_BPS: 200,
+  CREATOR_FEE_BPS: 500,
+  OPERATOR_SHARE: 93,
+} as const;
+
+export const LLM_MODEL = "kimi-k2.5";
+export const LLM_BASE_URL = "https://api.moonshot.ai/v1";
+export const WEB_SEARCH_COST_PER_CALL = 0.005;
+
+// --- Evolution Engine ---
+export const EVOLUTION_CONFIG = {
+  MIN_TRADES_TO_EVOLVE: 30,
+  AUTO_PROMOTE_THRESHOLD: 0.03, // 3% projected improvement
+  EVOLUTION_INTERVAL_MS: 6 * 60 * 60 * 1000, // 6 hours
+  PROMPT_CACHE_TTL: 300, // 5 minutes in Redis
+} as const;
+
+export const AGENT_TYPES = ["politics", "sports", "crypto", "general"] as const;
+export const PIPELINE_STEPS = ["research", "analysis", "decision"] as const;

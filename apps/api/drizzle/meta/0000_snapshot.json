@@ -1,0 +1,1009 @@
+{
+  "id": "28ceddbf-c98f-441c-934e-648e356b3c34",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.agent_performance": {
+      "name": "agent_performance",
+      "schema": "",
+      "columns": {
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "total_trades": {
+          "name": "total_trades",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "winning_trades": {
+          "name": "winning_trades",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "total_pnl": {
+          "name": "total_pnl",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0'"
+        },
+        "win_rate": {
+          "name": "win_rate",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0'"
+        },
+        "sharpe_ratio": {
+          "name": "sharpe_ratio",
+          "type": "numeric(10, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_drawdown": {
+          "name": "max_drawdown",
+          "type": "numeric(10, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "total_volume": {
+          "name": "total_volume",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0'"
+        },
+        "last_updated": {
+          "name": "last_updated",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "agent_performance_agent_id_agents_id_fk": {
+          "name": "agent_performance_agent_id_agents_id_fk",
+          "tableFrom": "agent_performance",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "public.agent_prompt_versions": {
+      "name": "agent_prompt_versions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "agent_type": {
+          "name": "agent_type",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pipeline_step": {
+          "name": "pipeline_step",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_number": {
+          "name": "version_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "system_prompt": {
+          "name": "system_prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_version_id": {
+          "name": "parent_version_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "performance_snapshot": {
+          "name": "performance_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "varchar(44)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'system'"
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "changelog": {
+          "name": "changelog",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "public.agents": {
+      "name": "agents",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "owner_address": {
+          "name": "owner_address",
+          "type": "varchar(44)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "on_chain_address": {
+          "name": "on_chain_address",
+          "type": "varchar(44)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pricing_model": {
+          "name": "pricing_model",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capabilities": {
+          "name": "capabilities",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "strategy_config": {
+          "name": "strategy_config",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "is_verified": {
+          "name": "is_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "agents_owner_address_users_wallet_address_fk": {
+          "name": "agents_owner_address_users_wallet_address_fk",
+          "tableFrom": "agents",
+          "tableTo": "users",
+          "columnsFrom": [
+            "owner_address"
+          ],
+          "columnsTo": [
+            "wallet_address"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "public.evolution_events": {
+      "name": "evolution_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "agent_type": {
+          "name": "agent_type",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pipeline_step": {
+          "name": "pipeline_step",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_version_id": {
+          "name": "from_version_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "to_version_id": {
+          "name": "to_version_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trades_analyzed": {
+          "name": "trades_analyzed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "old_win_rate": {
+          "name": "old_win_rate",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "new_projected_win_rate": {
+          "name": "new_projected_win_rate",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "changelog": {
+          "name": "changelog",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_promoted": {
+          "name": "auto_promoted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "evolution_events_from_version_id_agent_prompt_versions_id_fk": {
+          "name": "evolution_events_from_version_id_agent_prompt_versions_id_fk",
+          "tableFrom": "evolution_events",
+          "tableTo": "agent_prompt_versions",
+          "columnsFrom": [
+            "from_version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "evolution_events_to_version_id_agent_prompt_versions_id_fk": {
+          "name": "evolution_events_to_version_id_agent_prompt_versions_id_fk",
+          "tableFrom": "evolution_events",
+          "tableTo": "agent_prompt_versions",
+          "columnsFrom": [
+            "to_version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "public.feed_events": {
+      "name": "feed_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_name": {
+          "name": "agent_name",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "category": {
+          "name": "category",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content": {
+          "name": "content",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_message": {
+          "name": "display_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "feed_events_agent_id_agents_id_fk": {
+          "name": "feed_events_agent_id_agents_id_fk",
+          "tableFrom": "feed_events",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "public.jobs": {
+      "name": "jobs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "client_address": {
+          "name": "client_address",
+          "type": "varchar(44)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "privy_wallet_id": {
+          "name": "privy_wallet_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "privy_wallet_address": {
+          "name": "privy_wallet_address",
+          "type": "varchar(44)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "on_chain_address": {
+          "name": "on_chain_address",
+          "type": "varchar(44)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_cap": {
+          "name": "max_cap",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "daily_cap": {
+          "name": "daily_cap",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'paused'"
+        },
+        "total_invested": {
+          "name": "total_invested",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0'"
+        },
+        "total_profit": {
+          "name": "total_profit",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0'"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "jobs_client_address_users_wallet_address_fk": {
+          "name": "jobs_client_address_users_wallet_address_fk",
+          "tableFrom": "jobs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "client_address"
+          ],
+          "columnsTo": [
+            "wallet_address"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "jobs_agent_id_agents_id_fk": {
+          "name": "jobs_agent_id_agents_id_fk",
+          "tableFrom": "jobs",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "public.market_data": {
+      "name": "market_data",
+      "schema": "",
+      "columns": {
+        "market_id": {
+          "name": "market_id",
+          "type": "varchar(100)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "question": {
+          "name": "question",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcomes": {
+          "name": "outcomes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "volume": {
+          "name": "volume",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "liquidity": {
+          "name": "liquidity",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "closes_at": {
+          "name": "closes_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result": {
+          "name": "result",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "public.positions": {
+      "name": "positions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "market_id": {
+          "name": "market_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "market_question": {
+          "name": "market_question",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "side": {
+          "name": "side",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entry_price": {
+          "name": "entry_price",
+          "type": "numeric(10, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "current_price": {
+          "name": "current_price",
+          "type": "numeric(10, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pnl": {
+          "name": "pnl",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'open'"
+        },
+        "reasoning_snippet": {
+          "name": "reasoning_snippet",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tx_signature": {
+          "name": "tx_signature",
+          "type": "varchar(88)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "opened_at": {
+          "name": "opened_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "positions_job_id_jobs_id_fk": {
+          "name": "positions_job_id_jobs_id_fk",
+          "tableFrom": "positions",
+          "tableTo": "jobs",
+          "columnsFrom": [
+            "job_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "public.trade_prompt_links": {
+      "name": "trade_prompt_links",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "position_id": {
+          "name": "position_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt_version_id": {
+          "name": "prompt_version_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pipeline_step": {
+          "name": "pipeline_step",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "trade_prompt_links_position_id_positions_id_fk": {
+          "name": "trade_prompt_links_position_id_positions_id_fk",
+          "tableFrom": "trade_prompt_links",
+          "tableTo": "positions",
+          "columnsFrom": [
+            "position_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "trade_prompt_links_prompt_version_id_agent_prompt_versions_id_fk": {
+          "name": "trade_prompt_links_prompt_version_id_agent_prompt_versions_id_fk",
+          "tableFrom": "trade_prompt_links",
+          "tableTo": "agent_prompt_versions",
+          "columnsFrom": [
+            "prompt_version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "public.trades": {
+      "name": "trades",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "market_id": {
+          "name": "market_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "market_question": {
+          "name": "market_question",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "side": {
+          "name": "side",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entry_price": {
+          "name": "entry_price",
+          "type": "numeric(10, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exit_price": {
+          "name": "exit_price",
+          "type": "numeric(10, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "profit_loss": {
+          "name": "profit_loss",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reasoning": {
+          "name": "reasoning",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "executed_at": {
+          "name": "executed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "settled_at": {
+          "name": "settled_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tx_signature": {
+          "name": "tx_signature",
+          "type": "varchar(88)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "trades_job_id_jobs_id_fk": {
+          "name": "trades_job_id_jobs_id_fk",
+          "tableFrom": "trades",
+          "tableTo": "jobs",
+          "columnsFrom": [
+            "job_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "trades_agent_id_agents_id_fk": {
+          "name": "trades_agent_id_agents_id_fk",
+          "tableFrom": "trades",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "wallet_address": {
+          "name": "wallet_address",
+          "type": "varchar(44)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "username": {
+          "name": "username",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "privy_user_id": {
+          "name": "privy_user_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "users_username_unique": {
+          "name": "users_username_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "username"
+          ]
+        }
+      }
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

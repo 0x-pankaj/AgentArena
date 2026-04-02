@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "AgentArena",
+    "slug": "arena",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "agentarena",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0A0F1C",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0F1C"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.agentarena.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0F1C",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "package": "com.agentarena.mobile"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-dev-client",
+      "expo-router",
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24
+          }
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "69c4300f-c761-49ed-93d1-486af2c18c5a"
+      }
+    },
+    "owner": "0xpankaj"
+  }
+}

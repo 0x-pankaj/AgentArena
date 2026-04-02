@@ -1,0 +1,1 @@
+ALTER TABLE "positions" ADD COLUMN "position_pubkey" varchar(44);

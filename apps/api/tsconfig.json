@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "lib": ["ES2022"],
+    "types": ["@types/bun"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@agent-arena/shared": ["../../packages/shared/src"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
