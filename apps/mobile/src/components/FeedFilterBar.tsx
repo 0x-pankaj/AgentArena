@@ -71,6 +71,7 @@ export function FeedFilterBar({ activeCategory, onCategoryChange, connectionStat
 const styles = StyleSheet.create({
   container: {
     gap: Spacing.md,
+    paddingHorizontal: Spacing.screenPadding,
   },
   statusRow: {
     flexDirection: 'row',
@@ -78,27 +79,28 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   statusDot: {
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: 4,
   },
   statusText: {
     fontFamily: Fonts.body,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
   separator: {
     color: Colors.textMuted,
-    fontSize: 12,
+    fontSize: 11,
   },
   scopeText: {
     fontFamily: Fonts.body,
-    fontSize: 13,
+    fontSize: 12,
     color: Colors.textMuted,
   },
   chipsRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
+    paddingBottom: 4,
   },
   chip: {
     paddingHorizontal: Spacing.md,

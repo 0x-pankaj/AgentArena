@@ -19,12 +19,17 @@ export const SOLANA_CAIP2 = IS_MAINNET
 // USDC mint address (mainnet only — devnet has no real USDC)
 export const USDC_MINT = process.env.USDC_MINT ?? "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
-export const JUPITER_PREDICT_BASE_URL = "https://api.jup.ag/prediction/v1";
+export const JUPITER_PREDICT_BASE_URL = "https://prediction-market-api.jup.ag/api/v1";
 export const JUPITER_PREDICT_DOCS = "https://prediction-market-api.jup.ag/docs";
 export const JUPUSD_MINT = "JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD";
 
 // Whether to execute trades (false = decision-only mode, log but don't trade)
 export const EXECUTE_TRADES = process.env.EXECUTE_TRADES === "true" || IS_MAINNET;
+
+// Test mode: bypasses portfolio balance check for testing (never use in production)
+export const TEST_MODE = process.env.TEST_MODE === "true";
+export const TEST_WALLET_BALANCE_USDC = Number(process.env.TEST_WALLET_BALANCE_USDC ?? "1000");
+export const TEST_WALLET_BALANCE_SOL = Number(process.env.TEST_WALLET_BALANCE_SOL ?? "0");
 
 export const AGENT_LIMITS = {
   MAX_PORTFOLIO_PERCENT_PER_MARKET: 0.1,
@@ -66,9 +71,9 @@ export const REVENUE_SPLIT = {
   OPERATOR_SHARE: 93,
 } as const;
 
-export const LLM_MODEL = "kimi-k2.5";
-export const LLM_BASE_URL = "https://api.moonshot.ai/v1";
-export const WEB_SEARCH_COST_PER_CALL = 0.005;
+export const LLM_MODEL = "qwen/qwen3.6-plus:free";
+export const LLM_BASE_URL = "https://openrouter.ai/api/v1";
+export const WEB_SEARCH_COST_PER_CALL = 0;
 
 // --- Evolution Engine ---
 export const EVOLUTION_CONFIG = {

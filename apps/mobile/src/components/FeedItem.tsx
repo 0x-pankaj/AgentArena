@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Colors, Fonts, BorderRadius, Spacing } from '../../constants/Colors';
 
@@ -29,6 +29,7 @@ interface FeedItemProps {
     displayMessage?: string;
   };
   onAgentPress?: (agentId: string) => void;
+  isActive?: boolean;
 }
 
 const categoryIcons: Record<string, string> = {
@@ -71,7 +72,28 @@ function getTimeAgo(timestamp: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export function FeedItem({ event, onAgentPress }: FeedItemProps) {
+function TimeAgo({ timestamp }: { timestamp: string }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const diff = now - new Date(timestamp).getTime();
+  const mins = Math.floor(diff / 60000);
+  let display: string;
+  if (mins < 1) display = 'Just now';
+  else if (mins < 60) display = `${mins}m ago`;
+  else {
+    const hours = Math.floor(mins / 60);
+    display = hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
+  }
+
+  return <Text style={styles.time}>{display}</Text>;
+}
+
+export function FeedItem({ event, onAgentPress, isActive }: FeedItemProps) {
   const icon = categoryIcons[event.category ?? ''] || '📋';
   const categoryLabel = categoryLabels[event.category ?? ''] || 'ACTIVITY';
   const severityColor = severityColors[event.severity ?? 'info'] || Colors.textSecondary;
@@ -81,9 +103,9 @@ export function FeedItem({ event, onAgentPress }: FeedItemProps) {
   const timestamp = event.timestamp ?? new Date().toISOString();
   const content = event.content ?? {};
 
-  const isThinking = event.category === 'thinking' || event.category === 'scanning';
   const isSignal = event.category === 'signal_update';
   const isEdge = event.category === 'edge_detected';
+  const isThinking = event.category === 'thinking' || event.category === 'scanning';
 
   return (
     <View style={[styles.card, isEdge && styles.edgeCard]}>
@@ -102,13 +124,13 @@ export function FeedItem({ event, onAgentPress }: FeedItemProps) {
             </Text>
           </View>
         </View>
-        <Text style={styles.time}>{getTimeAgo(timestamp)}</Text>
+        <TimeAgo timestamp={timestamp} />
       </View>
 
       <Text style={styles.message}>{message}</Text>
 
-      {/* Thinking/scanning pulse indicator */}
-      {isThinking && (
+      {/* Processing indicator — only on the newest active event */}
+      {isActive && isThinking && (
         <View style={styles.thinkingRow}>
           <View style={styles.pulseDot} />
           <Text style={styles.thinkingText}>Processing...</Text>
@@ -213,32 +235,36 @@ export function FeedItem({ event, onAgentPress }: FeedItemProps) {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing.lg,
-    gap: Spacing.md,
+    borderRadius: 0,
+    borderWidth: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    paddingHorizontal: Spacing.screenPadding,
+    paddingVertical: Spacing.lg,
+    gap: Spacing.sm,
   },
   edgeCard: {
-    borderColor: Colors.accent + '66',
-    backgroundColor: Colors.accent + '08',
+    borderBottomColor: Colors.accent + '44',
+    backgroundColor: Colors.surfaceElevated,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 2,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    flexShrink: 1,
   },
   icon: {
-    fontSize: 16,
+    fontSize: 14,
   },
   agentName: {
     fontFamily: Fonts.body,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: Colors.accent,
   },
@@ -256,19 +282,21 @@ const styles = StyleSheet.create({
   },
   time: {
     fontFamily: Fonts.body,
-    fontSize: 12,
+    fontSize: 11,
     color: Colors.textMuted,
+    flexShrink: 0,
   },
   message: {
     fontFamily: Fonts.body,
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.textSecondary,
-    lineHeight: 20,
+    lineHeight: 19,
   },
   thinkingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    marginTop: 4,
   },
   pulseDot: {
     width: 8,
@@ -332,7 +360,7 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
   },
   reasoningBox: {
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surfaceElevated,
     borderRadius: BorderRadius.sm,
     padding: Spacing.md,
     borderLeftWidth: 3,

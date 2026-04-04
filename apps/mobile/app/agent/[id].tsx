@@ -8,6 +8,7 @@ import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
 import { SkeletonCard, SkeletonLoader } from '../../src/components/SkeletonLoader';
 import { FeedItem } from '../../src/components/FeedItem';
 import { useAgentGet, useFeedByAgent, useJobCreate, useJobFund, useJobResume, useJobWalletBalance, useJobConfirmOnChain } from '../../src/lib/api';
+import { useLiveFeed } from '../../src/hooks/useLiveFeed';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useEmbeddedSolanaWallet } from '@privy-io/expo';
 import { useSolBalance } from '../../src/hooks/useSolBalance';
@@ -27,6 +28,34 @@ export default function AgentDetailScreen() {
 
   const { data: agentData, isLoading } = useAgentGet(id!);
   const { data: feedData } = useFeedByAgent(id!, 20);
+  
+  // Live WebSocket feed for this specific agent
+  const { events: liveEvents, status: wsStatus, setAtBottom } = useLiveFeed({
+    channel: `feed:agent:${id!}`,
+  });
+  
+  // Merge REST feed with live WS events (deduplicated)
+  const restEvents = (feedData?.events ?? []).map((e: any) => ({
+    event_id: e.event_id,
+    timestamp: e.timestamp,
+    agent_id: e.agent_id,
+    agent_display_name: e.agent_display_name,
+    category: e.category,
+    severity: e.severity,
+    content: e.content,
+    display_message: e.display_message,
+    is_public: e.is_public,
+  }));
+  
+  const agentFeed = (() => {
+    const all = [...liveEvents, ...restEvents];
+    const seen = new Set<string>();
+    return all.filter((e) => {
+      if (!e.event_id || seen.has(e.event_id)) return false;
+      seen.add(e.event_id);
+      return true;
+    });
+  })();
   const hireJob = useJobCreate();
   const fundJob = useJobFund();
   const resumeJob = useJobResume();
@@ -61,7 +90,6 @@ export default function AgentDetailScreen() {
   }, [step, jobId]);
 
   const agent = agentData ?? null;
-  const agentFeed = feedData?.events ?? [];
 
   if (!agent) {
     return (
@@ -515,6 +543,12 @@ export default function AgentDetailScreen() {
                 {agent.category.toUpperCase()}
               </Text>
             </View>
+            {wsStatus === 'connected' && (
+              <View style={styles.liveBadge}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText}>LIVE</Text>
+              </View>
+            )}
           </View>
           <Text style={styles.sectionSubtitle}>Only this agent's decisions and trades</Text>
           {agentFeed.length > 0 ? (
@@ -567,9 +601,12 @@ const styles = StyleSheet.create({
   section: { gap: Spacing.md },
   sectionTitle: { fontFamily: Fonts.body, fontSize: 16, fontWeight: '600', color: Colors.textPrimary },
   sectionSubtitle: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, marginTop: -4 },
-  activityHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  activityHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
   categoryBadgeSmall: { paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: BorderRadius.sm },
   categoryTextSmall: { fontFamily: Fonts.body, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
+  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, backgroundColor: Colors.success + '22' },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.success },
+  liveText: { fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', color: Colors.success, letterSpacing: 1 },
   sectionDesc: { fontFamily: Fonts.body, fontSize: 13, color: Colors.textMuted, lineHeight: 18 },
 
   // Steps indicator

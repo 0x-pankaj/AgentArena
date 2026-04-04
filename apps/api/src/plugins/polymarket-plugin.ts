@@ -116,10 +116,12 @@ export interface CreateOrderParams {
 
 export interface ListEventsParams {
   category?: string;
-  sortBy?: "volume" | "liquidity" | "newest";
+  sortBy?: "volume" | "beginAt";
+  sortDirection?: "asc" | "desc";
   includeMarkets?: boolean;
-  limit?: number;
-  offset?: number;
+  filter?: "new" | "live" | "trending";
+  start?: number;
+  end?: number;
 }
 
 export interface SearchEventsParams {
@@ -178,11 +180,14 @@ class JupiterPredictClient {
 
   async listEvents(params: ListEventsParams = {}): Promise<JupiterEvent[]> {
     const searchParams = new URLSearchParams();
+    searchParams.set("provider", "polymarket");
     if (params.category) searchParams.set("category", params.category);
     if (params.sortBy) searchParams.set("sortBy", params.sortBy);
+    if (params.sortDirection) searchParams.set("sortDirection", params.sortDirection);
+    if (params.filter) searchParams.set("filter", params.filter);
     if (params.includeMarkets) searchParams.set("includeMarkets", "true");
-    if (params.limit) searchParams.set("limit", String(params.limit));
-    if (params.offset) searchParams.set("offset", String(params.offset));
+    if (params.start !== undefined) searchParams.set("start", String(params.start));
+    if (params.end !== undefined) searchParams.set("end", String(params.end));
 
     const qs = searchParams.toString();
     const raw = await this.request<any>(

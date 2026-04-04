@@ -82,6 +82,7 @@ export function AgentSelector({ agents, selectedAgentId, onSelectAgent }: AgentS
 const styles = StyleSheet.create({
   container: {
     gap: Spacing.xs,
+    paddingHorizontal: Spacing.screenPadding,
   },
   label: {
     fontFamily: Fonts.body,
@@ -94,6 +95,7 @@ const styles = StyleSheet.create({
   chipsRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
+    paddingBottom: 4,
   },
   chip: {
     flexDirection: 'row',

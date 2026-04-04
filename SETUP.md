@@ -128,3 +128,10 @@ bun run dev:api
 ```
 
 The backend will start and serve API endpoints. Trading features require Jupiter + Privy keys.
+
+
+```
+
+
+bun run --env-file=../../.env test-agent-tick.ts crypto
+bun run --env-file=../../.env test-data-sources.ts

@@ -36,10 +36,12 @@ class WSClient {
   private listeners = new Set<WSListener>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
+  private maxReconnectAttempts = 10;
   private maxReconnectDelay = 30_000;
   private subscriptions = new Set<string>();
   private isConnecting = false;
   private isDestroyed = false;
+  private connectionTimeout: ReturnType<typeof setTimeout> | null = null;
 
   connect() {
     if (this.isConnecting || this.ws?.readyState === WebSocket.OPEN || this.isDestroyed) return;
@@ -57,7 +59,21 @@ class WSClient {
       return;
     }
 
+    // Add connection timeout (10 seconds)
+    this.connectionTimeout = setTimeout(() => {
+      if (this.ws?.readyState !== WebSocket.OPEN) {
+        console.error('[WS] Connection timeout after 10s');
+        this.ws?.close();
+        this.isConnecting = false;
+        this.scheduleReconnect();
+      }
+    }, 10_000);
+
     this.ws.onopen = () => {
+      if (this.connectionTimeout) {
+        clearTimeout(this.connectionTimeout);
+        this.connectionTimeout = null;
+      }
       console.log('[WS] Connected');
       this.isConnecting = false;
       this.reconnectAttempts = 0;
@@ -80,6 +96,10 @@ class WSClient {
     };
 
     this.ws.onclose = () => {
+      if (this.connectionTimeout) {
+        clearTimeout(this.connectionTimeout);
+        this.connectionTimeout = null;
+      }
       console.log('[WS] Disconnected');
       this.isConnecting = false;
       if (!this.isDestroyed) {
@@ -95,6 +115,10 @@ class WSClient {
 
   disconnect() {
     this.isDestroyed = true;
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
+    }
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -136,8 +160,15 @@ class WSClient {
 
   private scheduleReconnect() {
     if (this.reconnectTimer || this.isDestroyed) return;
+    
+    // Stop reconnecting after max attempts
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('[WS] Max reconnect attempts reached. Stopping.');
+      return;
+    }
+
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.maxReconnectDelay);
-    console.log(`[WS] Reconnecting in ${delay}ms...`);
+    console.log(`[WS] Reconnecting in ${delay}ms... (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.reconnectAttempts++;

@@ -55,27 +55,35 @@ export default function FeedScreen() {
     category: a.category,
   }));
 
+  // Always start with REST data as the base (historical events)
+  const restEvents: any[] = selectedAgentId
+    ? (recentData?.events ?? []).filter((e: any) => e.agent_id === selectedAgentId)
+    : activeCategory !== 'all'
+      ? categoryData?.events ?? []
+      : recentData?.events ?? [];
+
+  // Merge WS events on top (deduplicated, newest first)
   let displayEvents: any[];
   let isLoading: boolean;
 
   if (wsEvents.length > 0) {
-    // Prefer WS events when available
-    displayEvents = selectedAgentId
+    // Merge WS events with REST data, deduplicate by event_id
+    const restIds = new Set(restEvents.map((e: any) => e.event_id));
+    const wsOnly = wsEvents.filter((e: any) => !restIds.has(e.event_id));
+    // Filter WS events by agent/category if applicable
+    const filteredWs = selectedAgentId
       ? wsEvents.filter((e: any) => e.agent_id === selectedAgentId)
       : activeCategory !== 'all'
-        ? wsEvents // WS channel is already category-filtered
+        ? wsEvents
         : wsEvents;
+    // Combine and sort by timestamp (newest first)
+    displayEvents = [...filteredWs, ...restEvents.filter((e: any) => !wsEvents.some((w: any) => w.event_id === e.event_id))]
+      .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     isLoading = false;
-  } else if (selectedAgentId) {
-    // Fallback to REST for agent-specific
-    displayEvents = (recentData?.events ?? []).filter((e: any) => e.agent_id === selectedAgentId);
-    isLoading = recentLoading;
-  } else if (activeCategory !== 'all') {
-    displayEvents = categoryData?.events ?? [];
-    isLoading = categoryLoading;
   } else {
-    displayEvents = recentData?.events ?? [];
-    isLoading = recentLoading;
+    // No WS events — show REST data
+    displayEvents = restEvents;
+    isLoading = recentLoading || (activeCategory !== 'all' && categoryLoading);
   }
 
   const handleCategoryChange = (category: string) => {
@@ -157,7 +165,7 @@ export default function FeedScreen() {
                   }
                 }}
               >
-                <FeedItem event={event} />
+                <FeedItem event={event} isActive={index === 0} />
               </Pressable>
             ))
           ) : (
@@ -182,8 +190,8 @@ export default function FeedScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   scroll: { flex: 1 },
-  scrollContent: { padding: Spacing.screenPadding, paddingBottom: 100, gap: Spacing.lg },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  scrollContent: { paddingBottom: 100 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.screenPadding, paddingTop: Spacing.lg, paddingBottom: Spacing.md },
   title: { fontFamily: Fonts.heading, fontSize: 24, fontWeight: '700', color: Colors.textPrimary },
   filterButton: {
     width: 40, height: 40, borderRadius: BorderRadius.xl, backgroundColor: Colors.surface,
@@ -194,7 +202,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accent + '22',
   },
   filterIcon: { fontSize: 18 },
-  feedList: { gap: Spacing.md },
+  feedList: { gap: 0 },
   emptyState: { padding: Spacing.xl, alignItems: 'center', gap: Spacing.xs },
   emptyIcon: { fontSize: 32, marginBottom: Spacing.sm },
   emptyText: { fontFamily: Fonts.body, fontSize: 14, color: Colors.textMuted },

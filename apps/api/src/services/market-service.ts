@@ -30,8 +30,10 @@ export async function getCachedEvents(
     const events = await jupiterPredict.listEvents({
       category,
       sortBy: "volume",
+      sortDirection: "desc",
       includeMarkets: true,
-      limit,
+      start: 0,
+      end: limit,
     });
 
     await redis.setex(cacheKey, EVENTS_CACHE_TTL, JSON.stringify(events));

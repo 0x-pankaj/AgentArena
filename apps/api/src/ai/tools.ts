@@ -53,7 +53,7 @@ function makeTool(params: {
 
 export const webSearchTool = makeTool({
   name: "web_search",
-  description: "Search the web for real-time information. Uses Brave Search API if configured, otherwise falls back to GDELT news search.",
+  description: "Search the web for real-time information using Exa AI (news-focused) with GDELT fallback.",
   schema: z.object({ query: z.string(), maxResults: z.number().default(10) }),
   execute: async ({ query, maxResults }) => {
     const results = await webSearch(String(query), Number(maxResults) || 10);
@@ -65,7 +65,7 @@ export const webSearchTool = makeTool({
       date: r.date,
     }));
   },
-  costPerCall: 0.005,
+  costPerCall: 0,
 });
 
 // --- GDELT tools ---

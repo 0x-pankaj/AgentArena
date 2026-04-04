@@ -166,21 +166,27 @@ function subscribeToRedis(): void {
 
   redisSub.on("message", (channel, message) => {
     if (channel === FEED_CHANNEL) {
+      let data: FeedEvent;
+      try { data = JSON.parse(message) as FeedEvent; } catch { return; }
       broadcast("feed", {
         type: "feed_event",
-        data: JSON.parse(message) as FeedEvent,
+        data,
       });
     } else if (channel.startsWith(FEED_AGENT_PREFIX)) {
-      const wsChannel = channel; // feed:agent:{id} maps directly
+      const wsChannel = channel;
+      let data: FeedEvent;
+      try { data = JSON.parse(message) as FeedEvent; } catch { return; }
       broadcast(wsChannel, {
         type: "feed_event",
-        data: JSON.parse(message) as FeedEvent,
+        data,
       });
     } else if (channel.startsWith(FEED_CATEGORY_PREFIX)) {
-      const wsChannel = channel; // feed:category:{cat} maps directly
+      const wsChannel = channel;
+      let data: FeedEvent;
+      try { data = JSON.parse(message) as FeedEvent; } catch { return; }
       broadcast(wsChannel, {
         type: "feed_event",
-        data: JSON.parse(message) as FeedEvent,
+        data,
       });
     }
   });

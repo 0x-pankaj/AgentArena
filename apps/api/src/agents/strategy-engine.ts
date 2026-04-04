@@ -197,6 +197,15 @@ export function checkThresholds(
     if (elapsed < 5 * 60 * 1000 && reasons.length === 0) {
       return { triggered: false, reasons: [] };
     }
+    // Enough time passed — if there are markets to analyze, always trigger
+    if (elapsed >= 5 * 60 * 1000 && markets.length > 0 && reasons.length === 0) {
+      reasons.push(`Periodic analysis — ${markets.length} markets to review`);
+    }
+  }
+
+  // First run: always trigger so the pipeline executes at least once
+  if (!lastAnalysisTime && reasons.length === 0) {
+    reasons.push("Initial analysis — first run");
   }
 
   return { triggered: reasons.length > 0, reasons };

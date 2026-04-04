@@ -9,7 +9,7 @@ import { getMarket, getTrendingMarkets } from "../services/market-service";
 import { publishFeedEvent, buildFeedEvent } from "../feed";
 import type { LLMDecision, MarketContext, AgentPosition } from "./strategy-engine";
 import type { PortfolioSnapshot } from "../plugins/risk-plugin";
-import { EXECUTE_TRADES } from "@agent-arena/shared";
+import { EXECUTE_TRADES, TEST_MODE, TEST_WALLET_BALANCE_USDC, TEST_WALLET_BALANCE_SOL } from "@agent-arena/shared";
 import { db, schema } from "../db";
 import { eq, and, gte, sql } from "drizzle-orm";
 import type { TradeDecision } from "../ai/types";
@@ -312,7 +312,15 @@ export async function buildPortfolioSnapshot(
   jobId?: string
 ): Promise<PortfolioSnapshot> {
   await refreshSOLPrice();
-  const balance = await getWalletBalance(agentWalletAddress);
+
+  let balance: { sol: number; usdc: number };
+  if (TEST_MODE) {
+    balance = { sol: TEST_WALLET_BALANCE_SOL, usdc: TEST_WALLET_BALANCE_USDC };
+    console.log(`[TEST MODE] Using simulated $${TEST_WALLET_BALANCE_USDC} USDC balance`);
+  } else {
+    balance = await getWalletBalance(agentWalletAddress);
+  }
+
   const totalPnl = positions.reduce((sum, p) => sum + p.pnl, 0);
 
   // Calculate actual daily PnL from today's settled trades

@@ -1,4 +1,4 @@
-import { AGENT_LIMITS } from "@agent-arena/shared";
+import { AGENT_LIMITS, TEST_MODE } from "@agent-arena/shared";
 
 export interface PositionRecord {
   marketId: string;
@@ -28,6 +28,9 @@ export function checkPortfolioLimit(
   proposedAmount: number,
   totalBalance: number
 ): RiskCheckResult {
+  // Test mode: bypass balance check
+  if (TEST_MODE) return { allowed: true };
+
   const maxAllowed = totalBalance * AGENT_LIMITS.MAX_PORTFOLIO_PERCENT_PER_MARKET;
   if (proposedAmount > maxAllowed) {
     return {
@@ -51,10 +54,13 @@ export function checkCategoryExposure(
     .filter((p) => p.status === "open")
     .reduce((sum, p) => sum + p.amount, 0);
 
+  // No existing positions — category check is handled by portfolio limit
+  if (totalOpen === 0) return { allowed: true };
+
   const newTotal = totalOpen + proposedAmount;
   const newCategoryExposure = categoryExposure + proposedAmount;
 
-  if (newTotal > 0 && newCategoryExposure / newTotal > AGENT_LIMITS.MAX_CATEGORY_EXPOSURE) {
+  if (newCategoryExposure / newTotal > AGENT_LIMITS.MAX_CATEGORY_EXPOSURE) {
     return {
       allowed: false,
       reason: `Category "${category}" exposure would exceed 25% limit`,

@@ -1,12 +1,14 @@
 export const Colors = {
-  background: '#0A0F1C',
-  surface: '#151A22',
-  border: '#1E293B',
+  background: '#000000',
+  surface: '#0A0A0A',
+  surfaceElevated: '#111111',
+  border: '#1A1A1A',
+  borderAccent: '#F9731633',
   accent: '#F97316',
   accentDark: '#EA580C',
   textPrimary: '#FFFFFF',
-  textSecondary: '#94A3B8',
-  textMuted: '#64748B',
+  textSecondary: '#A0A0A0',
+  textMuted: '#555555',
   success: '#22C55E',
   danger: '#EF4444',
   warning: '#EAB308',
@@ -32,7 +34,7 @@ export const Spacing = {
   xxl: 24,
   xxxl: 32,
   section: 40,
-  screenPadding: 24,
+  screenPadding: 12,
 };
 
 export const BorderRadius = {

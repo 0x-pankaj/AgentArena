@@ -7,6 +7,40 @@ import type { FeedEvent } from "@agent-arena/shared";
 const MAX_RECENT_EVENTS = 200;
 const FEED_CHANNEL = "feed:live";
 
+// --- Agent name cache: resolve agentId → actual DB name ---
+const agentNameCache = new Map<string, string>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const cacheTimestamps = new Map<string, number>();
+
+async function resolveAgentName(agentId: string, fallbackName: string): Promise<string> {
+  const now = Date.now();
+  const cached = agentNameCache.get(agentId);
+  const cachedAt = cacheTimestamps.get(agentId);
+  if (cached && cachedAt && now - cachedAt < CACHE_TTL) {
+    return cached;
+  }
+
+  try {
+    const [agent] = await db
+      .select({ name: schema.agents.name })
+      .from(schema.agents)
+      .where(eq(schema.agents.id, agentId))
+      .limit(1);
+
+    const name = agent?.name ?? fallbackName;
+    agentNameCache.set(agentId, name);
+    cacheTimestamps.set(agentId, now);
+    return name;
+  } catch {
+    return fallbackName;
+  }
+}
+
+export function clearAgentNameCache(): void {
+  agentNameCache.clear();
+  cacheTimestamps.clear();
+}
+
 // --- Get recent events from Redis sorted set ---
 
 export async function getRecentEvents(
@@ -109,6 +143,12 @@ export async function getEventsByCategory(
 // --- Publish a feed event ---
 
 export async function publishFeedEvent(event: FeedEvent): Promise<void> {
+  // Resolve actual agent name from DB (with caching)
+  if (event.agent_id) {
+    const resolvedName = await resolveAgentName(event.agent_id, event.agent_display_name);
+    event.agent_display_name = resolvedName;
+  }
+
   const serialized = JSON.stringify(event);
   const score = new Date(event.timestamp).getTime();
 

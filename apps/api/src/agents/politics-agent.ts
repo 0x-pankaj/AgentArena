@@ -157,8 +157,20 @@ POLITICAL MARKET SPECIFICS:
 - Policy: consider legislative math, party discipline, public opinion
 - Sanctions: consider economic interdependence, diplomatic relationships
 
-Use market_search and market_detail tools to verify markets before deciding.`,
-        toolNames: ["market_search", "market_trending", "market_detail"],
+Use market_search and market_detail tools to verify markets before deciding.
+
+OUTPUT FORMAT (must be valid JSON):
+{
+  "action": "buy" | "sell" | "hold",
+  "marketId": "string (required if action is buy/sell)",
+  "marketQuestion": "string (required if action is buy/sell)",
+  "isYes": true | false (required if action is buy/sell),
+  "amount": number (required if action is buy/sell),
+  "confidence": number between 0 and 1,
+  "reasoning": "string explaining your decision",
+  "signals": ["array of signal names that triggered this decision"]
+}`,
+        toolNames: [],
         outputSchema: TradeDecisionSchema,
         maxTokens: 1500,
       },
@@ -350,6 +362,16 @@ export async function runPoliticsAgentTick(
     }
   }
 
+  // Always force scan on first tick after resume (markets cache may be stale/missing)
+  const marketsCacheKey = `${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`;
+  const marketsCacheExists = await redis.exists(marketsCacheKey);
+  const currentState = fsm.getState();
+  if (currentState !== "IDLE" && currentState !== "SCANNING" && !marketsCacheExists) {
+    console.log(`[Politics Agent] Resumed from ${currentState} but markets cache expired — forcing SCANNING`);
+    fsm.reset();
+    fsm.transition("user_hires");
+  }
+
   const saveState = async () => {
     await redis.set(
       `${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:fsm`,
@@ -367,6 +389,7 @@ export async function runPoliticsAgentTick(
 
   // Start scanning if idle
   if (fsm.getState() === "IDLE") {
+    await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} waking up — starting new analysis cycle`, { pipeline_stage: "waking_up" }, "info");
     try {
       fsm.transition("user_hires");
       await saveState();
@@ -377,85 +400,60 @@ export async function runPoliticsAgentTick(
 
   // --- SCANNING ---
   if (fsm.getState() === "SCANNING") {
-    await publishFeedStep(
-      ctx.agentId,
-      "scanning",
-      `${AGENT_NAME} scanning political & geopolitical markets (elections, wars, sanctions, treaties)...`,
-      { pipeline_stage: "scanning" }
-    );
+    await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} scanning political & geopolitical markets (elections, wars, sanctions, treaties)...`, { pipeline_stage: "scanning_start" });
 
+    await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching trending markets from Jupiter Predict...`, { pipeline_stage: "fetching_markets" });
     const markets = await scanMarkets("politics");
 
     if (markets.length === 0) {
       fsm.transition("no_markets");
       await saveState();
 
-      await publishFeedStep(
-        ctx.agentId,
-        "scanning",
-        `${AGENT_NAME}: No qualifying political markets found this cycle`,
-        { markets_scanned: 0 },
-        "info"
-      );
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME}: No qualifying political markets found (min volume: $${AGENT_LIMITS.MIN_MARKET_VOLUME.toLocaleString()})`, { markets_scanned: 0 }, "info");
 
-      return {
-        state: fsm.getState(),
-        action: "scanned",
-        detail: "No qualifying political markets",
-      };
+      return { state: fsm.getState(), action: "scanned", detail: "No qualifying political markets" };
     }
 
-    await redis.setex(
-      `${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`,
-      300,
-      JSON.stringify(markets)
-    );
+    await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} found ${markets.length} qualifying markets:`, { 
+      pipeline_stage: "markets_found", 
+      markets_scanned: markets.length,
+      market_list: markets.slice(0, 5).map(m => ({ id: m.marketId, question: m.question, volume: m.volume, closesAt: m.closesAt }))
+    }, "significant");
 
+    await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`, 300, JSON.stringify(markets));
     fsm.transition("markets_found");
     await saveState();
-
-    await publishFeedStep(
-      ctx.agentId,
-      "scanning",
-      `${AGENT_NAME} found ${markets.length} qualifying political markets`,
-      { markets_scanned: markets.length },
-      "significant"
-    );
   }
 
   // --- ANALYZING (3-stage pipeline) ---
   if (fsm.getState() === "ANALYZING") {
     // Fetch signals from shared cache
-    await publishFeedStep(
-      ctx.agentId,
-      "signal_update",
-      `${AGENT_NAME} fetching signals from GDELT, ACLED, FRED, Twitter...`,
-      { pipeline_stage: "signal_fetch" }
-    );
+    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} fetching live geopolitical signals...`, { pipeline_stage: "signal_fetch_start" });
+
+    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} querying GDELT for global news tone...`, { pipeline_stage: "fetching_gdelt" });
+    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} querying ACLED for conflict data...`, { pipeline_stage: "fetching_acled" });
+    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} querying FRED for macro indicators...`, { pipeline_stage: "fetching_fred" });
+    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} querying NASA FIRMS for satellite data...`, { pipeline_stage: "fetching_firms" });
 
     const signals = await getSharedSignals("politics");
 
     // Count active signals
-    const signalCount =
-      Object.keys(signals.gdelt).length +
-      Object.keys(signals.acled).length +
-      Object.keys(signals.fred).length +
-      Object.keys(signals.fires).length;
+    const signalCount = Object.keys(signals.gdelt).length + Object.keys(signals.acled).length + Object.keys(signals.fred).length + Object.keys(signals.fires).length;
 
-    await publishFeedStep(
-      ctx.agentId,
-      "signal_update",
-      `${AGENT_NAME} received ${signalCount} signal streams`,
-      { signals_count: signalCount, pipeline_stage: "signals_ready" }
-    );
+    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} received ${signalCount} signal streams:`, { 
+      signals_count: signalCount, 
+      pipeline_stage: "signals_ready",
+      signal_sources: {
+        gdelt: Object.keys(signals.gdelt).length,
+        acled: Object.keys(signals.acled).length,
+        fred: Object.keys(signals.fred).length,
+        fires: Object.keys(signals.fires).length,
+      }
+    });
 
     // Get markets
-    const marketsRaw = await redis.get(
-      `${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`
-    );
-    const markets: MarketContext[] = marketsRaw
-      ? JSON.parse(marketsRaw)
-      : [];
+    const marketsRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`);
+    const markets: MarketContext[] = marketsRaw ? JSON.parse(marketsRaw) : [];
 
     // Get positions
     const { positions: dbPositions } = await getActivePositions(ctx.jobId);
@@ -468,72 +466,52 @@ export async function runPoliticsAgentTick(
       pnl: Number(p.pnl ?? 0),
     }));
 
+    if (positions.length > 0) {
+      await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} monitoring ${positions.length} open positions...`, { 
+        pipeline_stage: "position_check",
+        positions: positions.map(p => ({ marketId: p.marketId, side: p.side, amount: p.amount, pnl: p.pnl }))
+      });
+    }
+
     // Check thresholds
-    const lastAnalysisRaw = await redis.get(
-      `${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`
-    );
+    const lastAnalysisRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`);
     const lastAnalysisTime = lastAnalysisRaw ? Number(lastAnalysisRaw) : null;
 
-    const thresholdCheck = checkThresholds(
-      signals,
-      lastAnalysisTime,
-      markets,
-      positions,
-      "politics"
-    );
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} checking signal thresholds...`, { pipeline_stage: "threshold_check_start" });
+    const thresholdCheck = checkThresholds(signals, lastAnalysisTime, markets, positions, "politics");
 
     if (!thresholdCheck.triggered) {
       fsm.transition("no_edge");
       await saveState();
 
-      await publishFeedStep(
-        ctx.agentId,
-        "thinking",
-        `${AGENT_NAME}: No signal thresholds triggered — skipping deep analysis`,
-        { pipeline_stage: "threshold_check" }
-      );
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME}: No signal thresholds triggered — market is calm, skipping deep analysis`, { pipeline_stage: "threshold_check", reasons: [] });
 
-      return {
-        state: fsm.getState(),
-        action: "analyzed",
-        detail: "No thresholds triggered, skipping LLM",
-      };
+      return { state: fsm.getState(), action: "analyzed", detail: "No thresholds triggered, skipping LLM" };
     }
 
-    await publishFeedStep(
-      ctx.agentId,
-      "thinking",
-      `${AGENT_NAME}: ${thresholdCheck.reasons.length} signal triggers detected — starting deep analysis`,
-      {
-        pipeline_stage: "thresholds_triggered",
-        signals_count: signalCount,
-      },
-      "significant"
-    );
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⚡ ${thresholdCheck.reasons.length} signal triggers detected:`, { 
+      pipeline_stage: "thresholds_triggered", 
+      signals_count: signalCount,
+      trigger_reasons: thresholdCheck.reasons
+    }, "significant");
 
     // Build portfolio snapshot
-    const portfolio = await buildPortfolioSnapshot(
-      ctx.agentWalletAddress,
-      positions,
-      ctx.jobId
-    );
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} building portfolio snapshot...`, { pipeline_stage: "portfolio_snapshot" });
+    const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
 
-    // STAGE 1: Research (gather data + identify political factors)
-    await publishFeedStep(
-      ctx.agentId,
-      "thinking",
-      `${AGENT_NAME} stage 1/3: Researching key political factors across ${markets.length} markets...`,
-      { pipeline_stage: "research_start" }
-    );
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} portfolio: $${portfolio.totalBalance.toFixed(2)} USDC | ${positions.length} open positions | Daily PnL: $${portfolio.dailyPnl.toFixed(2)}`, { 
+      pipeline_stage: "portfolio_ready",
+      balance: portfolio.totalBalance,
+      positions: positions.length,
+      daily_pnl: portfolio.dailyPnl
+    });
 
-    const researchPrompt = buildResearchContext(
-      signals,
-      markets,
-      positions,
-      portfolio.totalBalance,
-      thresholdCheck.reasons
-    );
+    // STAGE 1: Research (gather data + identify factors)
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🔍 Stage 1/3: Starting research phase — analyzing ${markets.length} markets...`, { pipeline_stage: "research_start" });
 
+    const researchPrompt = buildResearchContext(signals, markets, positions, portfolio.totalBalance, thresholdCheck.reasons);
+
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for research (model: ${config.models.analysis.model})...`, { pipeline_stage: "llm_research_call" });
     const researchModel = config.models.analysis;
     const research = await quickAnalysis({
       modelConfig: researchModel,
@@ -542,32 +520,19 @@ export async function runPoliticsAgentTick(
       tools: config.pipeline[0].toolNames,
     });
 
-    await publishFeedStep(
-      ctx.agentId,
-      "thinking",
-      `${AGENT_NAME} stage 1/3: Research complete — ${research.tokensUsed} tokens used, ${research.toolCalls} tool calls`,
-      {
-        pipeline_stage: "research_complete",
-        reasoning_snippet: research.text.slice(0, 300),
-      }
-    );
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ✅ Stage 1/3: Research complete`, { 
+      pipeline_stage: "research_complete", 
+      tokens_used: research.tokensUsed,
+      tool_calls: research.toolCalls,
+      reasoning_snippet: research.text.slice(0, 300)
+    });
 
     // STAGE 2: Deep analysis (Bayesian + signal aggregation)
-    await publishFeedStep(
-      ctx.agentId,
-      "thinking",
-      `${AGENT_NAME} stage 2/3: Running Bayesian analysis and political signal aggregation...`,
-      { pipeline_stage: "analysis_start" }
-    );
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📊 Stage 2/3: Running Bayesian analysis and signal aggregation...`, { pipeline_stage: "analysis_start" });
 
-    const analysisPrompt = buildAnalysisContext(
-      research.text,
-      signals,
-      markets,
-      positions,
-      portfolio.totalBalance
-    );
+    const analysisPrompt = buildAnalysisContext(research.text, signals, markets, positions, portfolio.totalBalance);
 
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for deep analysis (model: ${config.models.analysis.model})...`, { pipeline_stage: "llm_analysis_call" });
     const analysisModel = config.models.analysis;
     const analysis = await quickAnalysis({
       modelConfig: analysisModel,
@@ -577,80 +542,43 @@ export async function runPoliticsAgentTick(
     });
 
     // Run Bayesian estimation on top markets
-    const bayesianResults = runBayesianEstimation(
-      markets.slice(0, 5),
-      signals,
-      analysis.text
-    );
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} running Bayesian probability estimation on ${Math.min(markets.length, 5)} markets...`, { pipeline_stage: "bayesian_estimation" });
+    const bayesianResults = runBayesianEstimation(markets.slice(0, 5), signals, analysis.text);
 
-    // Aggregate signals with political-specific weighting
+    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} Bayesian estimates:`, {
+      pipeline_stage: "bayesian_results",
+      estimates: bayesianResults.map(b => ({ marketId: b.marketId, probability: (b.probability * 100).toFixed(1) + "%" }))
+    });
+
+    // Aggregate signals
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} aggregating all signals (LLM + GDELT + ACLED + FRED + Bayesian)...`, { pipeline_stage: "signal_aggregation" });
     const aggregatedSignal = aggregateSignals([
-      {
-        name: "llm_analysis",
-        value: extractProbabilityFromText(analysis.text),
-        confidence: 0.7,
-        weight: 3.0,
-      },
-      {
-        name: "gdelt_sentiment",
-        value: gdeltToProbability(signals.gdelt),
-        confidence: 0.6,
-        weight: 1.5,
-      },
-      {
-        name: "conflict_signal",
-        value: conflictToProbability(signals.acled),
-        confidence: 0.7,
-        weight: 2.0,
-      },
-      {
-        name: "macro_signal",
-        value: macroToProbability(signals.fred),
-        confidence: 0.5,
-        weight: 1.0,
-      },
-      ...bayesianResults.map((b) => ({
-        name: `bayesian_${b.marketId}`,
-        value: b.probability,
-        confidence: 0.7,
-        weight: 2.0,
-      })),
+      { name: "llm_analysis", value: extractProbabilityFromText(analysis.text), confidence: 0.7, weight: 3.0 },
+      { name: "gdelt_sentiment", value: gdeltToProbability(signals.gdelt), confidence: 0.5, weight: 1.0 },
+      { name: "acled_conflict", value: conflictToProbability(signals.acled), confidence: 0.6, weight: 1.5 },
+      { name: "fred_macro", value: macroToProbability(signals.fred), confidence: 0.5, weight: 1.0 },
+      ...bayesianResults.map((b) => ({ name: `bayesian_${b.marketId}`, value: b.probability, confidence: 0.7, weight: 2.0 })),
     ]);
 
-    await publishFeedStep(
-      ctx.agentId,
-      "signal_update",
-      `${AGENT_NAME} stage 2/3: Aggregated ${aggregatedSignal.nSignals} signals → probability: ${(aggregatedSignal.probability * 100).toFixed(1)}%, confidence: ${(aggregatedSignal.confidence * 100).toFixed(1)}%`,
-      {
-        pipeline_stage: "analysis_complete",
-        confidence: aggregatedSignal.confidence,
-        signals_count: aggregatedSignal.nSignals,
-        reasoning_snippet: analysis.text.slice(0, 300),
-      }
-    );
+    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} ✅ Stage 2/3: Signal aggregation complete`, { 
+      pipeline_stage: "analysis_complete", 
+      aggregated_probability: (aggregatedSignal.probability * 100).toFixed(1) + "%",
+      aggregated_confidence: (aggregatedSignal.confidence * 100).toFixed(1) + "%",
+      signals_combined: aggregatedSignal.nSignals,
+      reasoning_snippet: analysis.text.slice(0, 300)
+    }, "significant");
 
-    // STAGE 3: Trade decision (structured output with edge detection)
-    await publishFeedStep(
-      ctx.agentId,
-      "thinking",
-      `${AGENT_NAME} stage 3/3: Making trade decision with edge detection...`,
-      { pipeline_stage: "decision_start" }
-    );
+    // STAGE 3: Decision
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🎯 Stage 3/3: Making trade decision with edge detection...`, { pipeline_stage: "decision_start" });
 
-    const decisionModel = config.models.decision;
     let decision: TradeDecision;
     let decisionTokens = 0;
     try {
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for final decision (model: ${config.models.decision.model})...`, { pipeline_stage: "llm_decision_call" });
       const result = await quickDecision<TradeDecision>({
-        modelConfig: decisionModel,
+        modelConfig: config.models.decision,
         systemPrompt: config.pipeline[2].systemPrompt,
-        userMessage: buildDecisionContext(
-          analysis.text,
-          aggregatedSignal,
-          markets,
-          positions,
-          portfolio.totalBalance
-        ),
+        userMessage: buildDecisionContext(analysis.text, aggregatedSignal, markets, positions, portfolio.totalBalance),
         schema: TradeDecisionSchema,
         tools: config.pipeline[2].toolNames,
       });
@@ -660,133 +588,67 @@ export async function runPoliticsAgentTick(
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
       fsm.transition("no_edge");
       await saveState();
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} decision stage failed: ${errorMsg}`, { pipeline_stage: "decision_error" }, "critical");
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ❌ Decision stage failed: ${errorMsg}`, { pipeline_stage: "decision_error" }, "critical");
       return { state: fsm.getState(), action: "analyzed", detail: `Decision stage error: ${errorMsg}`, tokensUsed: research.tokensUsed + analysis.tokensUsed };
     }
 
     const totalTokens = research.tokensUsed + analysis.tokensUsed + decisionTokens;
 
     // Validate LLM decision against known markets
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} validating decision against known markets...`, { pipeline_stage: "decision_validation" });
     const validation = validateDecision(decision, markets);
     if (!validation.valid) {
       fsm.transition("no_edge");
       await saveState();
-
-      await publishFeedStep(
-        ctx.agentId,
-        "thinking",
-        `${AGENT_NAME}: Decision rejected — ${validation.error}`,
-        { pipeline_stage: "validation_failed" },
-        "critical"
-      );
-
-      return {
-        state: fsm.getState(),
-        action: "analyzed",
-        detail: `Decision rejected: ${validation.error}`,
-        decision,
-        tokensUsed: totalTokens,
-      };
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ❌ Decision rejected — ${validation.error}`, { pipeline_stage: "validation_failed" }, "critical");
+      return { state: fsm.getState(), action: "analyzed", detail: `Decision rejected: ${validation.error}`, decision, tokensUsed: totalTokens };
     }
 
-    // Update last analysis time
-    await redis.set(
-      `${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`,
-      String(Date.now())
-    );
+    await redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`, String(Date.now()));
 
-    // Check confidence
-    if (
-      decision.action === "hold" ||
-      decision.confidence < config.minConfidence
-    ) {
+    if (decision.action === "hold" || decision.confidence < config.minConfidence) {
       fsm.transition("no_edge");
       await saveState();
-
       await publishReasoningEvent(ctx.agentId, ctx.jobId, decision, AGENT_NAME);
-
-      await publishFeedStep(
-        ctx.agentId,
-        "thinking",
-        `${AGENT_NAME}: No trade — confidence ${(decision.confidence * 100).toFixed(0)}% below ${(config.minConfidence * 100).toFixed(0)}% threshold`,
-        {
-          pipeline_stage: "hold",
-          confidence: decision.confidence,
-        }
-      );
-
-      return {
-        state: fsm.getState(),
-        action: "analyzed",
-        detail: `Decision: hold (confidence: ${(decision.confidence * 100).toFixed(0)}%)`,
-        decision,
-        tokensUsed: totalTokens,
-      };
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📋 Decision: HOLD — confidence ${(decision.confidence * 100).toFixed(0)}% below ${(config.minConfidence * 100).toFixed(0)}% threshold`, { 
+        pipeline_stage: "hold", 
+        confidence: decision.confidence,
+        reasoning: decision.reasoning
+      });
+      return { state: fsm.getState(), action: "analyzed", detail: `Decision: hold (confidence: ${(decision.confidence * 100).toFixed(0)}%)`, decision, tokensUsed: totalTokens };
     }
 
-    // Edge detected — calculate edge for feed
-    const marketPrice = decision.isYes
-      ? getMarketPrice(markets, decision.marketId, "yes")
-      : getMarketPrice(markets, decision.marketId, "no");
+    const marketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
+    const edge = calculateEdge(aggregatedSignal.probability, marketPrice, aggregatedSignal.confidence);
 
-    const edge = calculateEdge(
-      aggregatedSignal.probability,
-      marketPrice,
-      aggregatedSignal.confidence
-    );
+    await publishFeedStep(ctx.agentId, "edge_detected", `${AGENT_NAME} 🎯 Edge detected: ${edge.direction.toUpperCase()} on "${decision.marketQuestion}"`, { 
+      pipeline_stage: "edge_found", 
+      edge_percent: (edge.netEdge * 100).toFixed(1) + "%",
+      raw_edge: (edge.rawEdge * 100).toFixed(1) + "%",
+      confidence: (decision.confidence * 100).toFixed(0) + "%",
+      market_analyzed: decision.marketQuestion,
+      market_id: decision.marketId,
+      is_yes: decision.isYes
+    }, "significant");
 
-    await publishFeedStep(
-      ctx.agentId,
-      "edge_detected",
-      `${AGENT_NAME} found edge: ${edge.direction.toUpperCase()} on "${decision.marketQuestion}" — raw edge: ${(edge.rawEdge * 100).toFixed(1)}%, net: ${(edge.netEdge * 100).toFixed(1)}%`,
-      {
-        pipeline_stage: "edge_found",
-        edge_percent: edge.netEdge * 100,
-        confidence: decision.confidence,
-        market_analyzed: decision.marketQuestion,
-      },
-      "significant"
-    );
-
-    // Store decision
-    await redis.setex(
-      `${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:decision`,
-      600,
-      JSON.stringify(decision)
-    );
-
+    await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:decision`, 600, JSON.stringify(decision));
     fsm.transition("edge_found");
     await saveState();
-
     await publishReasoningEvent(ctx.agentId, ctx.jobId, decision, AGENT_NAME);
 
-    return {
-      state: fsm.getState(),
-      action: "analyzed",
-      detail: `Edge found: ${decision.action} ${decision.isYes ? "YES" : "NO"} on "${decision.marketQuestion}" | Edge: ${(edge.netEdge * 100).toFixed(1)}%`,
-      decision,
-      tokensUsed: totalTokens,
-    };
+    return { state: fsm.getState(), action: "analyzed", detail: `Edge found: ${decision.action} ${decision.isYes ? "YES" : "NO"} on "${decision.marketQuestion}" | Edge: ${(edge.netEdge * 100).toFixed(1)}%`, decision, tokensUsed: totalTokens };
   }
 
   // --- EXECUTING ---
   if (fsm.getState() === "EXECUTING") {
-    const decisionRaw = await redis.get(
-      `${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:decision`
-    );
-
+    const decisionRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:decision`);
     if (!decisionRaw) {
       fsm.transition("order_failed");
       await saveState();
-      return {
-        state: fsm.getState(),
-        action: "executed",
-        detail: "No decision in cache",
-      };
+      return { state: fsm.getState(), action: "executed", detail: "No decision in cache" };
     }
 
     const decision = JSON.parse(decisionRaw) as TradeDecision;
-
     const { positions: dbPositions } = await getActivePositions(ctx.jobId);
     const positions: AgentPosition[] = dbPositions.map((p) => ({
       marketId: p.marketId,
@@ -796,103 +658,53 @@ export async function runPoliticsAgentTick(
       currentPrice: Number(p.currentPrice ?? p.entryPrice),
       pnl: Number(p.pnl ?? 0),
     }));
-    const portfolio = await buildPortfolioSnapshot(
-      ctx.agentWalletAddress,
-      positions,
-      ctx.jobId
-    );
+    const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
 
     if (decision.action === "buy") {
-      await publishFeedStep(
-        ctx.agentId,
-        "thinking",
-        `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`,
-        {
-          pipeline_stage: "executing",
-          action: "buy",
-          market_analyzed: decision.marketQuestion,
-          amount: String(decision.amount ?? 0),
-        }
-      );
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
 
-      const result = await executeBuy(
-        decision,
-        ctx.agentId,
-        ctx.jobId,
-        ctx.agentWalletId,
-        ctx.ownerPubkey,
-        portfolio,
-        AGENT_NAME,
-        "politics"
-      );
-
+      const result = await executeBuy(decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "politics");
       if (result.success) {
         if (result.positionId) {
           await recordPromptLinks(result.positionId, "politics").catch((err) =>
             console.error(`[Politics Agent] Failed to record prompt links: ${err.message}`)
           );
         }
-
         fsm.transition("order_placed");
         await saveState();
-        return {
-          state: fsm.getState(),
-          action: "executed",
-          detail: `Buy placed: ${result.positionId}`,
-          decision,
-        };
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ✅ Order placed successfully`, { pipeline_stage: "order_placed", position_id: result.positionId ?? "" }, "significant");
+        return { state: fsm.getState(), action: "executed", detail: `Buy placed: ${result.positionId}`, decision };
       } else {
         fsm.transition("order_failed");
         await saveState();
-
-        await publishFeedStep(
-          ctx.agentId,
-          "thinking",
-          `${AGENT_NAME}: Order failed — ${result.error}`,
-          { pipeline_stage: "execution_failed" },
-          "critical"
-        );
-
-        return {
-          state: fsm.getState(),
-          action: "executed",
-          detail: `Buy failed: ${result.error}`,
-          decision,
-        };
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ❌ Order failed — ${result.error}`, { pipeline_stage: "execution_failed" }, "critical");
+        return { state: fsm.getState(), action: "executed", detail: `Buy failed: ${result.error}`, decision };
       }
     } else if (decision.action === "sell" && decision.marketId) {
       const pos = dbPositions.find((p) => p.marketId === decision.marketId);
       if (pos) {
-        const result = await executeSell(
-          pos.id,
-          ctx.agentId,
-          ctx.jobId,
-          ctx.agentWalletId,
-          decision.reasoning,
-          AGENT_NAME
-        );
-
+        const result = await executeSell(pos.id, ctx.agentId, ctx.jobId, ctx.agentWalletId, decision.reasoning, AGENT_NAME);
         if (result.success) {
           fsm.transition("order_placed");
           await saveState();
-          return {
-            state: fsm.getState(),
-            action: "executed",
-            detail: `Sell executed: ${decision.marketId}`,
-            decision,
-          };
+          await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ✅ Sell order placed`, { pipeline_stage: "sell_placed" }, "significant");
+          return { state: fsm.getState(), action: "executed", detail: "Sell placed", decision };
+        } else {
+          fsm.transition("order_failed");
+          await saveState();
+          await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ❌ Sell failed — ${result.error}`, { pipeline_stage: "sell_failed" }, "critical");
+          return { state: fsm.getState(), action: "executed", detail: `Sell failed: ${result.error}`, decision };
         }
+      } else {
+        fsm.transition("order_failed");
+        await saveState();
+        return { state: fsm.getState(), action: "executed", detail: "Position not found for sell" };
       }
+    } else {
+      fsm.transition("order_failed");
+      await saveState();
+      return { state: fsm.getState(), action: "executed", detail: "Invalid decision action" };
     }
-
-    fsm.transition("order_failed");
-    await saveState();
-    return {
-      state: fsm.getState(),
-      action: "executed",
-      detail: "Execution failed",
-      decision,
-    };
   }
 
   // --- MONITORING ---
@@ -1123,22 +935,36 @@ function runBayesianEstimation(
 }
 
 function extractProbabilityFromText(text: string): number {
-  const patterns = [
-    /(\d{1,3})%/g,
-    /probability[:\s]*(\d+\.?\d*)/gi,
-    /estimate[:\s]*(\d+\.?\d*)/gi,
-  ];
-
-  for (const pattern of patterns) {
-    const matches = [...text.matchAll(pattern)];
-    if (matches.length > 0) {
-      const values = matches.map((m) => parseFloat(m[1]));
-      const avg = values.reduce((a, b) => a + b, 0) / values.length;
-      if (avg > 1) return Math.min(avg / 100, 1);
-      return Math.min(avg, 1);
-    }
+  // Try percentage first (most common LLM output format)
+  const pctMatch = text.match(/(\d{1,3})\s*%/);
+  if (pctMatch) {
+    const val = parseInt(pctMatch[1], 10);
+    if (val >= 0 && val <= 100) return val / 100;
   }
 
+  // Try "probability of 0.XX" or "probability: 0.XX"
+  const probMatch = text.match(/probability\s*(?:of|:)?\s*(\d+\.?\d*)/i);
+  if (probMatch) {
+    const val = parseFloat(probMatch[1]);
+    if (val >= 0 && val <= 1) return val;
+    if (val > 1 && val <= 100) return val / 100;
+  }
+
+  // Try standalone decimal between 0 and 1 (e.g., "0.75")
+  const decimalMatch = text.match(/\b(0\.\d{1,3})\b/);
+  if (decimalMatch) {
+    const val = parseFloat(decimalMatch[1]);
+    if (val >= 0 && val <= 1) return val;
+  }
+
+  // Try "X out of 10" or "X/10" patterns
+  const outOfMatch = text.match(/(\d{1,2})\s*(?:out of|\/)\s*10/i);
+  if (outOfMatch) {
+    const val = parseInt(outOfMatch[1], 10);
+    if (val >= 0 && val <= 10) return val / 10;
+  }
+
+  console.warn("[Agent] Could not extract probability from text, defaulting to 0.5");
   return 0.5;
 }
 

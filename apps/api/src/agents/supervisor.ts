@@ -1,4 +1,5 @@
 import { eq, sql } from "drizzle-orm";
+import { TEST_MODE, TEST_WALLET_BALANCE_USDC, TEST_WALLET_BALANCE_SOL } from "@agent-arena/shared";
 import { db, schema } from "../db";
 import { redis } from "../utils/redis";
 import { REDIS_KEYS } from "@agent-arena/shared";
@@ -74,18 +75,25 @@ export async function hireAgent(params: {
     throw new Error("Agent is not active");
   }
 
-  // 2. Create Privy wallet for this job
-  const agentWallet = await createAgentWallet(agent.name);
-  console.log(
-    `[Supervisor] Created Privy wallet for job (${agent.name}): ${agentWallet.address}`
-  );
+  // 2. Create Privy wallet for this job (skip in test mode)
+  let agentWallet: { id: string; address: string };
+  if (TEST_MODE) {
+    agentWallet = {
+      id: `test-wallet-${params.agentId}-${Date.now()}`,
+      address: `test-wallet-${params.agentId}-${Date.now()}`,
+    };
+    console.log(`[Supervisor] TEST MODE: Using simulated wallet: ${agentWallet.address}`);
+  } else {
+    agentWallet = await createAgentWallet(agent.name);
+    console.log(`[Supervisor] Created Privy wallet for job (${agent.name}): ${agentWallet.address}`);
 
-  // 3. Fund wallet with SOL for tx fees
-  try {
-    const { solSig } = await fundAgentWallet(agentWallet.address, 0.05);
-    console.log(`[Supervisor] Funded wallet with 0.05 SOL: ${solSig}`);
-  } catch (err: any) {
-    console.error(`[Supervisor] Failed to fund wallet with SOL: ${err.message}`);
+    // 3. Fund wallet with SOL for tx fees (skip in test mode)
+    try {
+      const { solSig } = await fundAgentWallet(agentWallet.address, 0.05);
+      console.log(`[Supervisor] Funded wallet with 0.05 SOL: ${solSig}`);
+    } catch (err: any) {
+      console.error(`[Supervisor] Failed to fund wallet with SOL: ${err.message}`);
+    }
   }
 
   // 4. Create job in DB (paused by default)
@@ -150,19 +158,23 @@ export async function fundJob(jobId: string): Promise<{
     throw new Error("Job not found or has no wallet");
   }
 
-  const balance = await getWalletBalance(job.privyWalletAddress);
+  // Test mode: simulate balance (skip real blockchain call)
+  const effectiveBalance = TEST_MODE
+    ? { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL }
+    : await getWalletBalance(job.privyWalletAddress);
 
-  if (balance.usdc <= 0 && balance.sol <= 0) {
-    return { success: false, balance };
+  if (effectiveBalance.usdc <= 0 && effectiveBalance.sol <= 0) {
+    return { success: false, balance: effectiveBalance };
   }
+
 
   // Update totalInvested by adding the USDC balance
   await db
     .update(schema.jobs)
-    .set({ totalInvested: sql`${schema.jobs.totalInvested} + ${String(balance.usdc)}` })
+    .set({ totalInvested: sql`${schema.jobs.totalInvested} + ${String(effectiveBalance.usdc)}` })
     .where(eq(schema.jobs.id, jobId));
 
-  return { success: true, balance };
+  return { success: true, balance: effectiveBalance };
 }
 
 // --- Resume a paused job (start agent loop) ---
@@ -186,9 +198,13 @@ export async function resumeJob(jobId: string): Promise<boolean> {
     throw new Error("Job has no wallet — cannot resume");
   }
 
-  // Verify wallet has balance
-  const balance = await getWalletBalance(job.privyWalletAddress);
-  if (balance.usdc <= 0 && balance.sol <= 0) {
+  // Verify wallet has balance (skip real blockchain call in test mode)
+  const effectiveBalance = TEST_MODE
+    ? { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL }
+    : await getWalletBalance(job.privyWalletAddress);
+
+
+  if (effectiveBalance.usdc <= 0 && effectiveBalance.sol <= 0) {
     throw new Error("Wallet has no funds — please fund first");
   }
 
@@ -207,7 +223,7 @@ export async function resumeJob(jobId: string): Promise<boolean> {
   await db
     .update(schema.jobs)
     .set({
-      totalInvested: String(balance.usdc),
+      totalInvested: String(effectiveBalance.usdc),
       status: "active",
       startedAt: new Date(),
     })
@@ -232,13 +248,13 @@ export async function resumeJob(jobId: string): Promise<boolean> {
     category: "trade",
     severity: "significant",
     content: {
-      summary: `${agent.name} activated with $${balance.usdc.toFixed(0)} USDC`,
+      summary: `${agent.name} activated with $${effectiveBalance.usdc.toFixed(0)} USDC`,
     },
-    displayMessage: `${agent.name} is now trading with $${balance.usdc.toFixed(0)} USDC`,
+    displayMessage: `${agent.name} is now trading with $${effectiveBalance.usdc.toFixed(0)} USDC`,
   });
   await publishFeedEvent(feedEvent);
 
-  console.log(`[Supervisor] Resumed job ${jobId} with $${balance.usdc} USDC`);
+  console.log(`[Supervisor] Resumed job ${jobId} with $${effectiveBalance.usdc} USDC`);
   return true;
 }
 
@@ -263,11 +279,31 @@ export function startAgentLoop(ctx: AgentRuntimeContext, category: string = "geo
   };
 
   const tick = async () => {
+    // Check DB status — stop if job was paused/cancelled
+    const [jobStatus] = await db
+      .select({ status: schema.jobs.status })
+      .from(schema.jobs)
+      .where(eq(schema.jobs.id, ctx.jobId))
+      .limit(1);
+
+    if (!jobStatus || jobStatus.status !== "active") {
+      console.log(`[Supervisor] Job ${ctx.jobId} status is "${jobStatus?.status ?? "not found"}" — stopping agent loop`);
+      stopAgentLoop(ctx.jobId);
+      return;
+    }
+
     if (agent.tickRunning) {
       console.log(`[Supervisor] Job ${ctx.jobId} tick skipped — previous tick still running`);
       return;
     }
     agent.tickRunning = true;
+
+    // Timeout: kill tick if it takes longer than 5 minutes
+    const tickTimeout = setTimeout(() => {
+      console.error(`[Supervisor] Job ${ctx.jobId} tick timed out after 5min — forcing reset`);
+      agent.tickRunning = false;
+    }, 5 * 60 * 1000);
+
     try {
       const result = await runAgentTick(registryId, ctx);
       agent.lastRun = Date.now();
@@ -279,6 +315,7 @@ export function startAgentLoop(ctx: AgentRuntimeContext, category: string = "geo
     } catch (err) {
       console.error(`[Supervisor] Job ${ctx.jobId} tick error:`, err);
     } finally {
+      clearTimeout(tickTimeout);
       agent.tickRunning = false;
     }
   };
