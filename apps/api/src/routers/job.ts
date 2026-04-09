@@ -4,6 +4,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { db, schema } from "../db";
 import { hireAgent, fundJob, cancelJob, approveJob, pauseAgentLoop, resumeJob } from "../agents/supervisor";
 import { getWalletBalance } from "../utils/privy";
+import { TEST_MODE } from "@agent-arena/shared";
 
 async function enrichJobWithAgent(job: any) {
   const [agent] = await db

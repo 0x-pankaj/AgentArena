@@ -11,7 +11,7 @@ import {
   validateDecision,
 } from "./execution-engine";
 import { redis } from "../utils/redis";
-import { REDIS_KEYS, AGENT_LIMITS, EXECUTE_TRADES } from "@agent-arena/shared";
+import { REDIS_KEYS, AGENT_LIMITS, AGENT_PROFILES, EXECUTE_TRADES } from "@agent-arena/shared";
 import { getActivePositions } from "../services/trade-service";
 import { getSharedSignals } from "../services/signal-cache";
 import { getActivePrompts, recordPromptLinks } from "../services/evolution-service";
@@ -46,6 +46,7 @@ export function buildPoliticsAgentConfig(promptOverrides?: {
   decision?: string;
 }): AgentConfig {
   const models = resolveAgentModels(DEFAULT_POLITICS_AGENT_MODELS);
+  const profile = AGENT_PROFILES.politics;
 
   return {
     identity: {
@@ -132,13 +133,13 @@ Focus on political markets: elections, wars, sanctions, treaties, coups, referen
         systemPrompt: promptOverrides?.decision ?? `You are a prediction market trader making the final trade decision on political markets.
 
 RULES:
-- Confidence must be >${AGENT_LIMITS.MIN_CONFIDENCE * 100}% to trade
-- Max position: ${AGENT_LIMITS.MAX_PORTFOLIO_PERCENT_PER_MARKET * 100}% of portfolio per market
-- Max ${AGENT_LIMITS.MAX_CONCURRENT_POSITIONS} concurrent positions
-- Only trade markets settling within ${AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION} days
-- Only trade markets with >$${AGENT_LIMITS.MIN_MARKET_VOLUME.toLocaleString()} volume
+- Confidence must be >${profile.minConfidence * 100}% to trade
+- Max position: ${profile.maxPortfolioPercent * 100}% of portfolio per market
+- Max ${profile.maxPositions} concurrent positions
+- Only trade markets settling within ${profile.maxMarketDays} days
+- Only trade markets with >$${profile.minVolume.toLocaleString()} volume
 - If uncertain, choose "hold"
-- Only trade when edge (your probability - market price) exceeds 5%
+- Only trade when edge (your probability - market price) exceeds 5% after fees (~2%)
 ${EXECUTE_TRADES ? "" : "- NOTE: Running in decision-only mode (devnet). Log decisions but flag as analysis only."}
 
 EDGE DETECTION:
@@ -157,9 +158,7 @@ POLITICAL MARKET SPECIFICS:
 - Policy: consider legislative math, party discipline, public opinion
 - Sanctions: consider economic interdependence, diplomatic relationships
 
-Use market_search and market_detail tools to verify markets before deciding.
-
-OUTPUT FORMAT (must be valid JSON):
+OUTPUT FORMAT (must be valid JSON, no other text):
 {
   "action": "buy" | "sell" | "hold",
   "marketId": "string (required if action is buy/sell)",
@@ -175,7 +174,7 @@ OUTPUT FORMAT (must be valid JSON):
         maxTokens: 1500,
       },
     ],
-    minConfidence: AGENT_LIMITS.MIN_CONFIDENCE,
+    minConfidence: profile.minConfidence,
     scanIntervalMs: 5 * 60 * 1000,
     monitorIntervalMs: 60 * 1000,
   };
@@ -477,22 +476,35 @@ export async function runPoliticsAgentTick(
     const lastAnalysisRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`);
     const lastAnalysisTime = lastAnalysisRaw ? Number(lastAnalysisRaw) : null;
 
+    const consecutiveNoEdgeRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:consecutive_no_edge`);
+    const consecutiveNoEdge = consecutiveNoEdgeRaw ? Number(consecutiveNoEdgeRaw) : 0;
+
     await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} checking signal thresholds...`, { pipeline_stage: "threshold_check_start" });
-    const thresholdCheck = checkThresholds(signals, lastAnalysisTime, markets, positions, "politics");
+    const thresholdCheck = checkThresholds(signals, lastAnalysisTime, markets, positions, "politics", consecutiveNoEdge);
 
     if (!thresholdCheck.triggered) {
+      await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:consecutive_no_edge`, 3600, String(consecutiveNoEdge + 1));
+
       fsm.transition("no_edge");
       await saveState();
 
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME}: No signal thresholds triggered — market is calm, skipping deep analysis`, { pipeline_stage: "threshold_check", reasons: [] });
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME}: No signal thresholds triggered — market is calm, skipping deep analysis`, { 
+        pipeline_stage: "threshold_check", 
+        reasons: thresholdCheck.reasons,
+        skipped_reasons: thresholdCheck.skippedReasons ?? [],
+        consecutive_no_edge: consecutiveNoEdge + 1
+      });
 
       return { state: fsm.getState(), action: "analyzed", detail: "No thresholds triggered, skipping LLM" };
     }
 
+    await redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:consecutive_no_edge`, "0");
+
     await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⚡ ${thresholdCheck.reasons.length} signal triggers detected:`, { 
       pipeline_stage: "thresholds_triggered", 
       signals_count: signalCount,
-      trigger_reasons: thresholdCheck.reasons
+      trigger_reasons: thresholdCheck.reasons,
+      skipped_reasons: thresholdCheck.skippedReasons ?? []
     }, "significant");
 
     // Build portfolio snapshot
@@ -518,6 +530,7 @@ export async function runPoliticsAgentTick(
       systemPrompt: config.pipeline[0].systemPrompt,
       userMessage: researchPrompt,
       tools: config.pipeline[0].toolNames,
+      agentId: ctx.agentId,
     });
 
     await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ✅ Stage 1/3: Research complete`, { 
@@ -539,6 +552,7 @@ export async function runPoliticsAgentTick(
       systemPrompt: config.pipeline[1].systemPrompt,
       userMessage: analysisPrompt,
       tools: config.pipeline[1].toolNames,
+      agentId: ctx.agentId,
     });
 
     // Run Bayesian estimation on top markets
@@ -581,6 +595,7 @@ export async function runPoliticsAgentTick(
         userMessage: buildDecisionContext(analysis.text, aggregatedSignal, markets, positions, portfolio.totalBalance),
         schema: TradeDecisionSchema,
         tools: config.pipeline[2].toolNames,
+        agentId: ctx.agentId,
       });
       decision = result.decision;
       decisionTokens = result.tokensUsed;
@@ -609,12 +624,35 @@ export async function runPoliticsAgentTick(
     if (decision.action === "hold" || decision.confidence < config.minConfidence) {
       fsm.transition("no_edge");
       await saveState();
+
+      await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:consecutive_no_edge`, 3600, String(consecutiveNoEdge + 1));
+
       await publishReasoningEvent(ctx.agentId, ctx.jobId, decision, AGENT_NAME);
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📋 Decision: HOLD — confidence ${(decision.confidence * 100).toFixed(0)}% below ${(config.minConfidence * 100).toFixed(0)}% threshold`, { 
-        pipeline_stage: "hold", 
-        confidence: decision.confidence,
-        reasoning: decision.reasoning
-      });
+
+      const bestMarket = markets.length > 0 ? markets[0] : null;
+      if (bestMarket) {
+        const yesPrice = bestMarket.outcomes.find((o) => o.name.toLowerCase() === "yes")?.price ?? 0.5;
+        const bestEdge = calculateEdge(aggregatedSignal.probability, yesPrice, aggregatedSignal.confidence);
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📋 Decision: HOLD — confidence ${(decision.confidence * 100).toFixed(0)}% below ${(config.minConfidence * 100).toFixed(0)}% threshold. Best available edge: ${bestMarket.question} (${(bestEdge.netEdge * 100).toFixed(1)}%)`, { 
+          pipeline_stage: "hold", 
+          confidence: decision.confidence,
+          reasoning: decision.reasoning,
+          best_available_edge: {
+            marketId: bestMarket.marketId,
+            question: bestMarket.question,
+            net_edge_percent: (bestEdge.netEdge * 100).toFixed(1) + "%",
+            aggregated_probability: (aggregatedSignal.probability * 100).toFixed(1) + "%",
+          },
+          consecutive_no_edge: consecutiveNoEdge + 1
+        });
+      } else {
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📋 Decision: HOLD — confidence ${(decision.confidence * 100).toFixed(0)}% below ${(config.minConfidence * 100).toFixed(0)}% threshold`, { 
+          pipeline_stage: "hold", 
+          confidence: decision.confidence,
+          reasoning: decision.reasoning,
+          consecutive_no_edge: consecutiveNoEdge + 1
+        });
+      }
       return { state: fsm.getState(), action: "analyzed", detail: `Decision: hold (confidence: ${(decision.confidence * 100).toFixed(0)}%)`, decision, tokensUsed: totalTokens };
     }
 

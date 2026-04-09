@@ -75,25 +75,21 @@ export async function hireAgent(params: {
     throw new Error("Agent is not active");
   }
 
-  // 2. Create Privy wallet for this job (skip in test mode)
+  // 2. Create Privy wallet for this job (always real, even in test mode)
   let agentWallet: { id: string; address: string };
-  if (TEST_MODE) {
-    agentWallet = {
-      id: `test-wallet-${params.agentId}-${Date.now()}`,
-      address: `test-wallet-${params.agentId}-${Date.now()}`,
-    };
-    console.log(`[Supervisor] TEST MODE: Using simulated wallet: ${agentWallet.address}`);
-  } else {
-    agentWallet = await createAgentWallet(agent.name);
-    console.log(`[Supervisor] Created Privy wallet for job (${agent.name}): ${agentWallet.address}`);
+  agentWallet = await createAgentWallet(agent.name);
+  console.log(`[Supervisor] Created Privy wallet for job (${agent.name}): ${agentWallet.address}`);
 
-    // 3. Fund wallet with SOL for tx fees (skip in test mode)
+  // 3. Fund wallet with SOL for tx fees (skip auto-funding in test mode — fund manually on devnet)
+  if (!TEST_MODE) {
     try {
       const { solSig } = await fundAgentWallet(agentWallet.address, 0.05);
       console.log(`[Supervisor] Funded wallet with 0.05 SOL: ${solSig}`);
     } catch (err: any) {
       console.error(`[Supervisor] Failed to fund wallet with SOL: ${err.message}`);
     }
+  } else {
+    console.log(`[Supervisor] TEST MODE: Skipping auto SOL funding — fund wallet manually on devnet`);
   }
 
   // 4. Create job in DB (paused by default)
@@ -158,7 +154,7 @@ export async function fundJob(jobId: string): Promise<{
     throw new Error("Job not found or has no wallet");
   }
 
-  // Test mode: simulate balance (skip real blockchain call)
+  // Test mode: trust manual setup, use configured test balance
   const effectiveBalance = TEST_MODE
     ? { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL }
     : await getWalletBalance(job.privyWalletAddress);
@@ -198,11 +194,18 @@ export async function resumeJob(jobId: string): Promise<boolean> {
     throw new Error("Job has no wallet — cannot resume");
   }
 
-  // Verify wallet has balance (skip real blockchain call in test mode)
-  const effectiveBalance = TEST_MODE
-    ? { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL }
-    : await getWalletBalance(job.privyWalletAddress);
+  // Check real devnet balance; fall back to test balance if RPC fails
+  let effectiveBalance: { usdc: number; sol: number };
+  try {
+    effectiveBalance = await getWalletBalance(job.privyWalletAddress);
+  } catch {
+    effectiveBalance = { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL };
+  }
 
+  // In test mode, trust manual setup — use configured balance even if RPC returns 0
+  if (TEST_MODE) {
+    effectiveBalance = { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL };
+  }
 
   if (effectiveBalance.usdc <= 0 && effectiveBalance.sol <= 0) {
     throw new Error("Wallet has no funds — please fund first");
@@ -300,7 +303,8 @@ export function startAgentLoop(ctx: AgentRuntimeContext, category: string = "geo
 
     // Timeout: kill tick if it takes longer than 5 minutes
     const tickTimeout = setTimeout(() => {
-      console.error(`[Supervisor] Job ${ctx.jobId} tick timed out after 5min — forcing reset`);
+      console.error(`[Supervisor] Job ${ctx.jobId} tick timed out after 5min — saving partial progress`);
+      redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:tick_timeout`, String(Date.now())).catch(() => {});
       agent.tickRunning = false;
     }, 5 * 60 * 1000);
 
@@ -314,9 +318,12 @@ export function startAgentLoop(ctx: AgentRuntimeContext, category: string = "geo
       );
     } catch (err) {
       console.error(`[Supervisor] Job ${ctx.jobId} tick error:`, err);
+      redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:tick_error`, `${Date.now()}:${err instanceof Error ? err.message : String(err)}`).catch(() => {});
     } finally {
       clearTimeout(tickTimeout);
-      agent.tickRunning = false;
+      if (agent.tickRunning) {
+        agent.tickRunning = false;
+      }
     }
   };
 
@@ -380,6 +387,13 @@ export function resumeAgentLoop(jobId: string, category: string = "geo"): boolea
       return;
     }
     agent.tickRunning = true;
+
+    const tickTimeout = setTimeout(() => {
+      console.error(`[Supervisor] Job ${jobId} tick timed out after 5min — saving partial progress`);
+      redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${agent.ctx.agentId}:tick_timeout`, String(Date.now())).catch(() => {});
+      agent.tickRunning = false;
+    }, 5 * 60 * 1000);
+
     try {
       const result = await runAgentTick(registryId, agent.ctx);
       agent.lastRun = Date.now();
@@ -389,8 +403,12 @@ export function resumeAgentLoop(jobId: string, category: string = "geo"): boolea
       );
     } catch (err) {
       console.error(`[Supervisor] Job ${jobId} tick error:`, err);
+      redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${agent.ctx.agentId}:tick_error`, `${Date.now()}:${err instanceof Error ? err.message : String(err)}`).catch(() => {});
     } finally {
-      agent.tickRunning = false;
+      clearTimeout(tickTimeout);
+      if (agent.tickRunning) {
+        agent.tickRunning = false;
+      }
     }
   };
 

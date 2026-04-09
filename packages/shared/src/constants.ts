@@ -44,6 +44,43 @@ export const AGENT_LIMITS = {
   HUMAN_APPROVAL_THRESHOLD: 500,
 } as const;
 
+export const AGENT_PROFILES: Record<string, {
+  minConfidence: number;
+  maxPositions: number;
+  maxPortfolioPercent: number;
+  maxMarketDays: number;
+  minVolume: number;
+}> = {
+  general: {
+    minConfidence: Number(process.env.GENERAL_AGENT_MIN_CONFIDENCE ?? "0.7"),
+    maxPositions: Number(process.env.GENERAL_AGENT_MAX_POSITIONS ?? "3"),
+    maxPortfolioPercent: Number(process.env.GENERAL_AGENT_MAX_PORTFOLIO_PERCENT ?? "0.1"),
+    maxMarketDays: Number(process.env.GENERAL_AGENT_MAX_MARKET_DAYS ?? "7"),
+    minVolume: Number(process.env.GENERAL_AGENT_MIN_VOLUME ?? "10000"),
+  },
+  politics: {
+    minConfidence: Number(process.env.POLITICS_AGENT_MIN_CONFIDENCE ?? "0.7"),
+    maxPositions: Number(process.env.POLITICS_AGENT_MAX_POSITIONS ?? "3"),
+    maxPortfolioPercent: Number(process.env.POLITICS_AGENT_MAX_PORTFOLIO_PERCENT ?? "0.1"),
+    maxMarketDays: Number(process.env.POLITICS_AGENT_MAX_MARKET_DAYS ?? "7"),
+    minVolume: Number(process.env.POLITICS_AGENT_MIN_VOLUME ?? "10000"),
+  },
+  sports: {
+    minConfidence: Number(process.env.SPORTS_AGENT_MIN_CONFIDENCE ?? "0.65"),
+    maxPositions: Number(process.env.SPORTS_AGENT_MAX_POSITIONS ?? "5"),
+    maxPortfolioPercent: Number(process.env.SPORTS_AGENT_MAX_PORTFOLIO_PERCENT ?? "0.08"),
+    maxMarketDays: Number(process.env.SPORTS_AGENT_MAX_MARKET_DAYS ?? "3"),
+    minVolume: Number(process.env.SPORTS_AGENT_MIN_VOLUME ?? "5000"),
+  },
+  crypto: {
+    minConfidence: Number(process.env.CRYPTO_AGENT_MIN_CONFIDENCE ?? "0.65"),
+    maxPositions: Number(process.env.CRYPTO_AGENT_MAX_POSITIONS ?? "4"),
+    maxPortfolioPercent: Number(process.env.CRYPTO_AGENT_MAX_PORTFOLIO_PERCENT ?? "0.08"),
+    maxMarketDays: Number(process.env.CRYPTO_AGENT_MAX_MARKET_DAYS ?? "5"),
+    minVolume: Number(process.env.CRYPTO_AGENT_MIN_VOLUME ?? "10000"),
+  },
+};
+
 export const FSM_SCAN_INTERVAL_MS = 5 * 60 * 1000;
 export const FSM_ANALYSIS_INTERVAL_MS = 15 * 60 * 1000;
 

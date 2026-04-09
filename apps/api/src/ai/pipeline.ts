@@ -23,36 +23,49 @@ function toSdkTools(tools: Record<string, AgentTool>): Record<string, any> {
   return result;
 }
 
-// --- Token bucket rate limiter for LLM calls ---
+// --- Per-agent token bucket rate limiter for LLM calls ---
 
-const LLM_RATE_LIMITER = {
-  maxConcurrent: 3,
-  active: 0,
-  queue: [] as Array<{ resolve: () => void; reject: (err: Error) => void }>,
+const AGENT_LLM_LIMITERS = new Map<string, {
+  maxConcurrent: number;
+  active: number;
+  queue: Array<{ resolve: () => void; reject: (err: Error) => void }>;
+}>();
 
-  async acquire(): Promise<void> {
-    if (this.active < this.maxConcurrent) {
-      this.active++;
-      return;
-    }
-    return new Promise((resolve, reject) => {
-      this.queue.push({ resolve, reject });
+function getAgentLimiter(agentId: string = "global") {
+  if (!AGENT_LLM_LIMITERS.has(agentId)) {
+    AGENT_LLM_LIMITERS.set(agentId, {
+      maxConcurrent: 5,
+      active: 0,
+      queue: [],
     });
-  },
+  }
+  return AGENT_LLM_LIMITERS.get(agentId)!;
+}
 
-  release(): void {
-    if (this.active <= 0) {
-      this.active = 0;
-      return;
-    }
-    this.active--;
-    const next = this.queue.shift();
-    if (next) {
-      this.active++;
-      next.resolve();
-    }
-  },
-};
+async function acquireLLMSlot(agentId: string = "global"): Promise<void> {
+  const limiter = getAgentLimiter(agentId);
+  if (limiter.active < limiter.maxConcurrent) {
+    limiter.active++;
+    return;
+  }
+  return new Promise((resolve, reject) => {
+    limiter.queue.push({ resolve, reject });
+  });
+}
+
+function releaseLLMSlot(agentId: string = "global"): void {
+  const limiter = getAgentLimiter(agentId);
+  if (limiter.active <= 0) {
+    limiter.active = 0;
+    return;
+  }
+  limiter.active--;
+  const next = limiter.queue.shift();
+  if (next) {
+    limiter.active++;
+    next.resolve();
+  }
+}
 
 // Check if error is a rate limit / upstream error that should be retried
 function isRetryableError(err: unknown): boolean {
@@ -83,10 +96,11 @@ export async function quickAnalysis(params: {
   systemPrompt: string;
   userMessage: string;
   tools?: string[];
+  agentId?: string;
 }): Promise<{ text: string; tokensUsed: number; toolCalls: number }> {
-  const { modelConfig, systemPrompt, userMessage, tools = [] } = params;
+  const { modelConfig, systemPrompt, userMessage, tools = [], agentId } = params;
 
-  await LLM_RATE_LIMITER.acquire();
+  await acquireLLMSlot(agentId);
   try {
     const model = resolveModel(modelConfig);
     const agentTools = toAITools(tools);
@@ -113,7 +127,7 @@ export async function quickAnalysis(params: {
       toolCalls: result.toolCalls?.length ?? 0,
     };
   } finally {
-    LLM_RATE_LIMITER.release();
+    releaseLLMSlot(agentId);
   }
 }
 
@@ -129,16 +143,19 @@ function extractJsonFromText(text: string): string {
   return text.trim();
 }
 
+const STRICT_JSON_PROMPT = `\n\nCRITICAL: Return ONLY valid JSON. No explanations, no conversational text, no markdown. Start your response with { and end with }.`;
+
 export async function quickDecision<T>(params: {
   modelConfig: ModelConfig;
   systemPrompt: string;
   userMessage: string;
   schema: z.ZodType<T>;
   tools?: string[];
+  agentId?: string;
 }): Promise<{ decision: T; tokensUsed: number; toolCalls: number }> {
-  const { modelConfig, systemPrompt, userMessage, schema, tools = [] } = params;
+  const { modelConfig, systemPrompt, userMessage, schema, tools = [], agentId } = params;
 
-  await LLM_RATE_LIMITER.acquire();
+  await acquireLLMSlot(agentId);
   try {
     const model = resolveModel(modelConfig);
     const agentTools = toAITools(tools);
@@ -196,10 +213,24 @@ export async function quickDecision<T>(params: {
     );
 
     const rawText = textResult.text ?? "";
-    const jsonText = extractJsonFromText(rawText);
+    let jsonText = extractJsonFromText(rawText);
+
     if (!jsonText.startsWith("{")) {
-      console.error("[Pipeline] LLM response was not JSON:", rawText.slice(0, 500));
-      throw new Error(`LLM did not return JSON. Response: ${rawText.slice(0, 200)}`);
+      console.warn("[Pipeline] LLM response was not JSON, retrying with strict prompt:", rawText.slice(0, 300));
+      const strictResult = await generateText({
+        model,
+        system: systemWithJsonHint + STRICT_JSON_PROMPT,
+        prompt: userMessage + "\n\nRespond with ONLY the JSON object. No other text.",
+        temperature: 0.1,
+        maxRetries: 0,
+        abortSignal: AbortSignal.timeout(30_000),
+      });
+      const strictText = strictResult.text ?? "";
+      jsonText = extractJsonFromText(strictText);
+      if (!jsonText.startsWith("{")) {
+        console.error("[Pipeline] LLM still did not return JSON after retry:", strictText.slice(0, 500));
+        throw new Error(`LLM did not return JSON after retry. Response: ${strictText.slice(0, 200)}`);
+      }
     }
 
     const parsed = JSON.parse(jsonText);
@@ -248,6 +279,6 @@ export async function quickDecision<T>(params: {
     console.error("[Pipeline] quickDecision failed:", err);
     throw err;
   } finally {
-    LLM_RATE_LIMITER.release();
+    releaseLLMSlot(agentId);
   }
 }

@@ -1,37 +1,18 @@
-import OpenAI from "openai";
-import { z } from "zod";
-import { zodResponseFormat } from "openai/helpers/zod";
-import { LLM_MODEL, LLM_BASE_URL, AGENT_LIMITS } from "@agent-arena/shared";
+import { AGENT_LIMITS } from "@agent-arena/shared";
 import { getGeoSignals, type GdeltToneSignal } from "../data-sources/gdelt";
 import { getRegionalConflictSignals, type AcledConflictSignal } from "../data-sources/acled";
 import { getKeyMacroSignals, type FredMacroSignal } from "../data-sources/fred";
 import { getAllRegionalFireSignals, type FireSignal } from "../data-sources/nasa-firms";
+import type { TradeDecision } from "../ai/types";
 
-const KIMI_API_KEY = process.env.KIMI_API_KEY ?? "";
-
-const llm = new OpenAI({
-  apiKey: KIMI_API_KEY,
-  baseURL: LLM_BASE_URL,
-});
-
-// --- Zod-validated LLM output ---
-
-const LLMDecisionSchema = z.object({
-  action: z.enum(["buy", "sell", "hold"]),
-  marketId: z.string().optional(),
-  marketQuestion: z.string().optional(),
-  isYes: z.boolean().optional(),
-  amount: z.number().min(0).optional(),
-  confidence: z.number().min(0).max(1),
-  reasoning: z.string(),
-});
-export type LLMDecision = z.infer<typeof LLMDecisionSchema>;
+export type LLMDecision = TradeDecision;
 
 // --- Threshold check result ---
 
 export interface ThresholdCheck {
   triggered: boolean;
   reasons: string[];
+  skippedReasons?: string[];
 }
 
 // --- Aggregated signals for the agent ---
@@ -92,17 +73,18 @@ export function checkThresholds(
   lastAnalysisTime: number | null,
   markets: MarketContext[],
   positions: AgentPosition[],
-  agentType: string = "general"
+  agentType: string = "general",
+  consecutiveNoEdge: number = 0
 ): ThresholdCheck {
   const reasons: string[] = [];
-
-  // Agent-specific threshold checks
+  const skippedReasons: string[] = [];
 
   if (agentType === "sports" || agentType === "general") {
-    // Sports: check odds movements and sharp money indicators
     if (signals.sports) {
+      let sportsDetected = false;
       for (const [sport, signal] of Object.entries(signals.sports)) {
         if (signal.totalEvents > 0) {
+          sportsDetected = true;
           reasons.push(`Sports: ${sport} has ${signal.totalEvents} upcoming events`);
           if (Math.abs(signal.sharpMoneyIndicator) > 0.3) {
             reasons.push(
@@ -111,19 +93,26 @@ export function checkThresholds(
           }
         }
       }
+      if (!sportsDetected) {
+        skippedReasons.push("Sports: no upcoming events detected");
+      }
+    } else {
+      skippedReasons.push("Sports: signal data not available");
     }
   }
 
   if (agentType === "crypto" || agentType === "general") {
-    // Crypto: check price movements and market cap changes
     if (signals.crypto) {
+      let cryptoDetected = false;
       for (const [coin, signal] of Object.entries(signals.crypto.prices)) {
         if (Math.abs(signal.change24h) > 5) {
+          cryptoDetected = true;
           reasons.push(
             `Crypto move: ${coin} ${signal.change24h > 0 ? "up" : "down"} ${Math.abs(signal.change24h).toFixed(1)}% (vol: $${(signal.volume24h / 1e6).toFixed(1)}M)`
           );
         }
         if (Math.abs(signal.change7d) > 15) {
+          cryptoDetected = true;
           reasons.push(
             `Crypto weekly: ${coin} ${signal.change7d > 0 ? "up" : "down"} ${Math.abs(signal.change7d).toFixed(1)}% in 7d`
           );
@@ -132,34 +121,50 @@ export function checkThresholds(
       if (signals.crypto.global) {
         const capChange = signals.crypto.global.marketCapChange24h;
         if (Math.abs(capChange) > 3) {
+          cryptoDetected = true;
           reasons.push(
             `Global crypto market cap ${capChange > 0 ? "up" : "down"} ${Math.abs(capChange).toFixed(1)}%`
           );
         }
       }
+      if (!cryptoDetected) {
+        skippedReasons.push("Crypto: no significant price movement (24h <5%, 7d <15%)");
+      }
+    } else {
+      skippedReasons.push("Crypto: signal data not available");
     }
   }
 
   if (agentType === "politics" || agentType === "general") {
-    // Politics: GDELT, ACLED, FRED thresholds
+    let politicsDetected = false;
+    
     for (const [key, signal] of Object.entries(signals.gdelt)) {
       if (Math.abs(signal.avgTone) > 3) {
+        politicsDetected = true;
         reasons.push(
           `GDELT tone spike: ${key} tone=${signal.avgTone.toFixed(2)} (${signal.articleCount} articles)`
         );
       }
     }
+    if (Object.keys(signals.gdelt).length === 0) {
+      skippedReasons.push("GDELT: no tone data available");
+    }
 
     for (const [region, signal] of Object.entries(signals.acled)) {
       if (Math.abs(signal.delta7d) > 50) {
+        politicsDetected = true;
         reasons.push(
           `ACLED conflict delta: ${region} change=${signal.delta7d.toFixed(1)}% (${signal.totalEvents} events, ${signal.totalFatalities} fatalities)`
         );
       }
     }
+    if (Object.keys(signals.acled).length === 0) {
+      skippedReasons.push("ACLED: no conflict delta data available");
+    }
 
     for (const [key, signal] of Object.entries(signals.fred)) {
       if (Math.abs(signal.changePercent) > 1) {
+        politicsDetected = true;
         reasons.push(
           `FRED macro surprise: ${key} ${signal.trend} ${signal.changePercent.toFixed(2)}% (latest: ${signal.latestValue})`
         );
@@ -168,14 +173,17 @@ export function checkThresholds(
 
     for (const [region, signal] of Object.entries(signals.fires)) {
       if (signal.hotspotCount > 50) {
+        politicsDetected = true;
         reasons.push(
           `NASA FIRMS: ${region} ${signal.hotspotCount} hotspots (FRP=${signal.totalFrp.toFixed(1)} MW)`
         );
       }
     }
+    if (!politicsDetected && Object.keys(signals.gdelt).length === 0 && Object.keys(signals.acled).length === 0) {
+      skippedReasons.push("Politics: no GDELT/ACLED/FRED thresholds exceeded (tone ≤3, conflict ≤50%, FRED ≤1%)");
+    }
   }
 
-  // Always check: positions with edge narrowing
   for (const pos of positions) {
     if (pos.entryPrice <= 0) continue;
     let lossPct: number;
@@ -191,174 +199,33 @@ export function checkThresholds(
     }
   }
 
-  // Check if enough time passed since last analysis (at least 5 min)
+  if (consecutiveNoEdge >= 3 && markets.length > 0) {
+    reasons.push(`Forced analysis after ${consecutiveNoEdge} no-edge cycles — reviewing best available markets`);
+    return { triggered: true, reasons, skippedReasons };
+  }
+
   if (lastAnalysisTime) {
     const elapsed = Date.now() - lastAnalysisTime;
-    if (elapsed < 5 * 60 * 1000 && reasons.length === 0) {
-      return { triggered: false, reasons: [] };
+    const minInterval = 5 * 60 * 1000;
+    const maxInterval = 15 * 60 * 1000;
+    
+    if (elapsed < minInterval && reasons.length === 0) {
+      return { triggered: false, reasons: [], skippedReasons: [`Analysis cooldown: ${Math.round((minInterval - elapsed) / 1000)}s remaining`] };
     }
-    // Enough time passed — if there are markets to analyze, always trigger
-    if (elapsed >= 5 * 60 * 1000 && markets.length > 0 && reasons.length === 0) {
-      reasons.push(`Periodic analysis — ${markets.length} markets to review`);
+    
+    if (elapsed >= maxInterval && markets.length > 0) {
+      reasons.push(`Extended review — ${Math.round(elapsed / 60000)}min since last analysis, ${markets.length} markets to review`);
+      return { triggered: true, reasons, skippedReasons };
+    }
+    
+    if (elapsed >= minInterval && markets.length > 0 && reasons.length === 0) {
+      reasons.push(`Periodic analysis — ${markets.length} markets to review (${Math.round(elapsed / 60000)}min since last)`);
     }
   }
 
-  // First run: always trigger so the pipeline executes at least once
   if (!lastAnalysisTime && reasons.length === 0) {
     reasons.push("Initial analysis — first run");
   }
 
-  return { triggered: reasons.length > 0, reasons };
-}
-
-// --- STEP 3: LLM call (only if threshold triggered) ---
-
-const SYSTEM_PROMPT = `You are a Geo Agent specializing in geopolitical prediction markets on Solana.
-You analyze global news tone (GDELT), conflict data (ACLED), economic indicators (FRED), and satellite fire data (NASA FIRMS) to make prediction market trading decisions.
-
-RULES:
-- Only act if confidence > ${AGENT_LIMITS.MIN_CONFIDENCE * 100}%
-- Max position size: ${AGENT_LIMITS.MAX_PORTFOLIO_PERCENT_PER_MARKET * 100}% of portfolio per market
-- Max ${AGENT_LIMITS.MAX_CONCURRENT_POSITIONS} concurrent positions
-- Only trade markets settling within ${AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION} days
-- Only trade markets with >$${AGENT_LIMITS.MIN_MARKET_VOLUME.toLocaleString()} volume
-- Be specific in your reasoning — cite data signals
-- If uncertain, choose "hold"
-
-OUTPUT FORMAT:
-Return a JSON object with: action ("buy"|"sell"|"hold"), marketId, marketQuestion, isYes (boolean), amount (USDC), confidence (0-1), reasoning (string).`;
-
-export async function analyzeWithLLM(
-  signals: GeoSignals,
-  markets: MarketContext[],
-  positions: AgentPosition[],
-  portfolioBalance: number,
-  thresholdReasons: string[]
-): Promise<LLMDecision> {
-  const userMessage = buildAnalysisPrompt(
-    signals,
-    markets,
-    positions,
-    portfolioBalance,
-    thresholdReasons
-  );
-
-  try {
-    const completion = await llm.chat.completions.create({
-      model: LLM_MODEL,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userMessage },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.3,
-      max_tokens: 1000,
-    });
-
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
-      return {
-        action: "hold",
-        confidence: 0,
-        reasoning: "LLM returned empty response",
-      };
-    }
-
-    const parsed = JSON.parse(content);
-    const decision = LLMDecisionSchema.parse(parsed);
-
-    // Enforce confidence threshold
-    if (decision.confidence < AGENT_LIMITS.MIN_CONFIDENCE) {
-      return {
-        action: "hold",
-        confidence: decision.confidence,
-        reasoning: `Confidence ${decision.confidence} below threshold ${AGENT_LIMITS.MIN_CONFIDENCE}. Original: ${decision.reasoning}`,
-      };
-    }
-
-    return decision;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("LLM analysis failed:", message);
-    return {
-      action: "hold",
-      confidence: 0,
-      reasoning: `LLM error: ${message}`,
-    };
-  }
-}
-
-function buildAnalysisPrompt(
-  signals: GeoSignals,
-  markets: MarketContext[],
-  positions: AgentPosition[],
-  portfolioBalance: number,
-  thresholdReasons: string[]
-): string {
-  const sections: string[] = [];
-
-  sections.push(`## Portfolio
-- Balance: $${portfolioBalance.toFixed(2)} USDC
-- Open positions: ${positions.length}/${AGENT_LIMITS.MAX_CONCURRENT_POSITIONS}`);
-
-  if (positions.length > 0) {
-    sections.push("### Open Positions:");
-    for (const pos of positions) {
-      sections.push(
-        `- ${pos.marketId}: ${pos.side} $${pos.amount} @ ${pos.entryPrice} (current: ${pos.currentPrice}, PnL: $${pos.pnl.toFixed(2)})`
-      );
-    }
-  }
-
-  sections.push(`\n## Threshold Triggers`);
-  for (const reason of thresholdReasons) {
-    sections.push(`- ${reason}`);
-  }
-
-  sections.push(`\n## GDELT News Tone`);
-  for (const [topic, signal] of Object.entries(signals.gdelt)) {
-    sections.push(
-      `- ${topic}: tone=${signal.avgTone} (${signal.articleCount} articles)`
-    );
-    for (const article of signal.topArticles.slice(0, 3)) {
-      sections.push(`  - "${article.title}"`);
-    }
-  }
-
-  sections.push(`\n## ACLED Conflict Data`);
-  for (const [region, signal] of Object.entries(signals.acled)) {
-    sections.push(
-      `- ${region}: ${signal.totalEvents} events, ${signal.totalFatalities} fatalities, 7d delta=${signal.delta7d}%`
-    );
-  }
-
-  sections.push(`\n## FRED Economic Indicators`);
-  for (const [key, signal] of Object.entries(signals.fred)) {
-    sections.push(
-      `- ${key} (${signal.seriesId}): ${signal.latestValue} (${signal.trend}, ${signal.changePercent}% change)`
-    );
-  }
-
-  sections.push(`\n## NASA FIRMS Wildfire Data`);
-  for (const [region, signal] of Object.entries(signals.fires)) {
-    sections.push(
-      `- ${region}: ${signal.hotspotCount} hotspots, FRP=${signal.totalFrp} MW`
-    );
-  }
-
-  sections.push(`\n## Available Markets`);
-  for (const market of markets.slice(0, 10)) {
-    const prices = market.outcomes
-      .map((o) => `${o.name}: $${o.price}`)
-      .join(", ");
-    sections.push(
-      `- [${market.marketId}] "${market.question}" | ${prices} | Vol: $${market.volume} | Closes: ${market.closesAt ?? "N/A"}`
-    );
-  }
-
-  sections.push(`\n## Decision Required
-Analyze the signals above. If you find an edge in any market, recommend a buy/sell. Otherwise, recommend hold.
-Remember: confidence must be >${AGENT_LIMITS.MIN_CONFIDENCE * 100}% to trade.`);
-
-  return sections.join("\n");
+  return { triggered: reasons.length > 0, reasons, skippedReasons };
 }

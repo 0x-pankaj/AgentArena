@@ -77,8 +77,15 @@ export function resolveModel(config: ModelConfig): LanguageModel {
 import { LLM_MODEL, LLM_BASE_URL } from "@agent-arena/shared";
 
 export const MODELS = {
-  qwen: {
+  minimax: {
     model: "minimax/minimax-m2.5:free",
+    provider: "openrouter" as const,
+    temperature: 0.3,
+    maxTokens: 4000,
+  } satisfies ModelConfig,
+
+  qwen: {
+    model: "qwen/qwen3.6-plus:free",
     provider: "openrouter" as const,
     temperature: 0.3,
     maxTokens: 4000,
