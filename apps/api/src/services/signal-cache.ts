@@ -16,7 +16,12 @@ import { withCircuitBreaker } from "../utils/circuit-breaker";
 const BASE_SIGNALS_KEY = "cache:signals:base";
 const SPORTS_SIGNALS_KEY = "cache:signals:sports";
 const CRYPTO_SIGNALS_KEY = "cache:signals:crypto";
-const SIGNAL_CACHE_TTL = 15 * 60; // 15 minutes
+
+const SIGNAL_CACHE_TTL: Record<string, number> = {
+  base: 5 * 60,
+  sports: 3 * 60,
+  crypto: 60,
+};
 
 // --- Base signals (shared by politics + general agents) ---
 
@@ -110,7 +115,8 @@ async function fetchCryptoSignals(): Promise<SharedSignals["crypto"]> {
 
 async function getCachedOrFetch<T>(
   key: string,
-  fetcher: () => Promise<T>
+  fetcher: () => Promise<T>,
+  ttlSeconds?: number
 ): Promise<T> {
   const cached = await redis.get(key);
   if (cached) {
@@ -118,7 +124,8 @@ async function getCachedOrFetch<T>(
   }
 
   const fresh = await fetcher();
-  await redis.setex(key, SIGNAL_CACHE_TTL, JSON.stringify(fresh));
+  const ttl = ttlSeconds ?? SIGNAL_CACHE_TTL.base;
+  await redis.setex(key, ttl, JSON.stringify(fresh));
   return fresh;
 }
 
@@ -127,32 +134,28 @@ async function getCachedOrFetch<T>(
 export async function getSharedSignals(
   agentType: string = "general"
 ): Promise<SharedSignals> {
-  // Always fetch base signals (cached)
-  const base = await getCachedOrFetch(BASE_SIGNALS_KEY, fetchBaseSignals);
+  const base = await getCachedOrFetch(BASE_SIGNALS_KEY, fetchBaseSignals, SIGNAL_CACHE_TTL.base);
 
   const signals: SharedSignals = {
     ...base,
     agentType,
   };
 
-  // Add agent-specific signals
   switch (agentType) {
     case "sports":
-      signals.sports = await getCachedOrFetch(SPORTS_SIGNALS_KEY, fetchSportsSignals);
+      signals.sports = await getCachedOrFetch(SPORTS_SIGNALS_KEY, fetchSportsSignals, SIGNAL_CACHE_TTL.sports);
       break;
 
     case "crypto":
-      signals.crypto = await getCachedOrFetch(CRYPTO_SIGNALS_KEY, fetchCryptoSignals);
+      signals.crypto = await getCachedOrFetch(CRYPTO_SIGNALS_KEY, fetchCryptoSignals, SIGNAL_CACHE_TTL.crypto);
       break;
 
     case "politics":
-      // Politics uses only base signals (GDELT, ACLED, FRED)
       break;
 
     case "general":
-      // General gets all signals for maximum coverage
-      signals.sports = await getCachedOrFetch(SPORTS_SIGNALS_KEY, fetchSportsSignals);
-      signals.crypto = await getCachedOrFetch(CRYPTO_SIGNALS_KEY, fetchCryptoSignals);
+      signals.sports = await getCachedOrFetch(SPORTS_SIGNALS_KEY, fetchSportsSignals, SIGNAL_CACHE_TTL.sports);
+      signals.crypto = await getCachedOrFetch(CRYPTO_SIGNALS_KEY, fetchCryptoSignals, SIGNAL_CACHE_TTL.crypto);
       break;
   }
 

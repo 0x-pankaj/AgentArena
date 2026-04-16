@@ -13,9 +13,10 @@ import {
 import { redis } from "../utils/redis";
 import { REDIS_KEYS, AGENT_LIMITS, EXECUTE_TRADES } from "@agent-arena/shared";
 import { getActivePositions } from "../services/trade-service";
-import { getSharedSignals } from "../services/signal-cache";
+import { getSharedSignals, type SharedSignals } from "../services/signal-cache";
 import { getActivePrompts, recordPromptLinks } from "../services/evolution-service";
 import { publishFeedEvent, buildFeedEvent } from "../feed";
+import { invalidateOnThreshold } from "../services/signal-invalidation";
 import type {
   AgentConfig,
   AgentRuntimeContext,
@@ -34,9 +35,20 @@ import { SPORTS_AGENT_TOOLS } from "../ai/tools";
 import { quickDecision, quickAnalysis } from "../ai/pipeline";
 import { checkThresholds } from "./strategy-engine";
 import type { GeoSignals } from "./strategy-engine";
+import { runAdversarialReview } from "../services/adversarial-review";
+import { runMultiModelConsensus } from "../services/multi-model-consensus";
+import { checkMicrostructure } from "../services/market-microstructure";
+import { checkCrossMarketCorrelation } from "../services/correlation-matrix";
+import { checkMonitoredPositions, registerPositionForMonitoring } from "../services/price-monitor";
+import { getAllCalibratedWeights, decayConfidence, getConfidenceAdjustment } from "../services/calibration-service";
+import { recordAgentPrediction } from "../services/outcome-feedback";
+import { runScenarioAnalysis, quickScenarioGate } from "../services/scenario-analysis";
+import { db, schema } from "../db";
 
 const AGENT_NAME = "Sports Agent";
 const AGENT_ID = "sports-agent";
+const FAST_PATH_EDGE_THRESHOLD = 0.15;
+const FAST_PATH_CONFIDENCE_THRESHOLD = 0.85;
 
 export function buildSportsAgentConfig(promptOverrides?: {
   research?: string;
@@ -57,10 +69,11 @@ export function buildSportsAgentConfig(promptOverrides?: {
     tools: [],
     pipeline: [
       {
-        name: "research",
+        name: "research_analysis",
         modelKey: "analysis",
-        systemPrompt: promptOverrides?.research ?? `You are a sports research analyst specializing in prediction markets. Your job is to identify the most important factors that could determine the outcome of sports prediction markets.
+        systemPrompt: promptOverrides?.research ?? promptOverrides?.analysis ?? `You are a senior sports prediction market analyst performing research AND Bayesian analysis in a single pass.
 
+PART 1 — RESEARCH:
 For each market, identify:
 1. The top 5 factors that would determine the outcome
 2. Team/player performance and recent form (last 5-10 games)
@@ -73,6 +86,15 @@ For each market, identify:
 9. Coaching strategies and tactical matchups
 10. Motivation factors (playoffs, rivalry, dead rubber)
 
+PART 2 — BAYESIAN ANALYSIS:
+1. Start with the market's implied probability (current price) as your baseline prior
+2. For each piece of evidence, estimate P(evidence|YES) and P(evidence|NO)
+3. Apply Bayesian updating to refine your probability estimate
+4. Weigh signals by reliability: official injury reports > betting lines > social media rumors
+5. Account for time-to-resolution (closer games are more predictable)
+6. Consider market liquidity (thin sports markets can be mispriced)
+7. Factor in sports base rates (home teams win ~60% in most sports)
+
 SPORTS YOU COVER:
 - NFL: Preseason, regular season, playoffs, Super Bowl
 - NBA: Regular season, playoffs, Finals
@@ -82,30 +104,6 @@ SPORTS YOU COVER:
 - MLB: Regular season, World Series
 - Major events: Olympics, World Cup, Euro
 
-Use web_search for game previews, injury reports, and betting analysis. Use Twitter for breaking sports news and insider information.
-Be thorough, specific, and cite sources. Focus on DATA and STATS, not gut feelings.`,
-        toolNames: [
-          "web_search",
-          "twitter_search", "twitter_social_signal",
-        ],
-        maxTokens: 4000,
-      },
-      {
-        name: "analysis",
-        modelKey: "analysis",
-        systemPrompt: promptOverrides?.analysis ?? `You are a senior sports prediction market analyst performing deep Bayesian analysis.
-
-Your job: synthesize all research signals into a probability estimate for each sports market.
-
-METHODOLOGY:
-1. Start with the market's implied probability (current price) as your baseline prior
-2. For each piece of evidence, estimate how likely it would be if YES vs NO
-3. Apply Bayesian updating to refine your probability estimate
-4. Weigh signals by reliability: official injury reports > betting lines > social media rumors
-5. Account for time-to-resolution (closer games are more predictable)
-6. Consider market liquidity (thin sports markets can be mispriced)
-7. Factor in base rates (home teams win ~60% in most sports)
-
 SIGNAL SOURCES:
 - Recent form: Win/loss record in last 5-10 games, point differentials
 - Injuries: Key player availability, impact on team performance
@@ -114,11 +112,10 @@ SIGNAL SOURCES:
 - Betting lines: Opening vs current lines, sharp vs public money
 - Social: Breaking news, insider reports, team chemistry rumors
 
-OUTPUT: For each market analyzed, provide your independent probability estimate.
-Explain your reasoning step by step. Be specific about which signals changed your estimate from the market price.`,
+OUTPUT: For each market, provide your independent probability estimate with step-by-step reasoning.`,
         toolNames: [
           "web_search",
-          "twitter_search",
+          "twitter_search", "twitter_social_signal",
           "market_detail",
         ],
         maxTokens: 4000,
@@ -153,6 +150,7 @@ SPORTS MARKET SPECIFICS:
 - Injuries: check starting lineups close to game time
 - Playoff games: motivation and experience matter more
 - Upsets: underdogs win more often than odds suggest in knockout formats
+- Near-resolution markets: require HIGHER confidence due to time decay
 
 Use market_search and market_detail tools to verify markets before deciding.
 
@@ -394,6 +392,9 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
       return { state: fsm.getState(), action: "analyzed", detail: "No thresholds triggered, skipping LLM" };
     }
 
+    // Invalidate caches when thresholds are triggered to get fresh data
+    await invalidateOnThreshold("sports", thresholdCheck.reasons.join(", "));
+
     await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⚡ ${thresholdCheck.reasons.length} signal triggers detected:`, { 
       pipeline_stage: "thresholds_triggered", 
       signals_count: signalCount,
@@ -410,65 +411,75 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
       daily_pnl: portfolio.dailyPnl
     });
 
-    // STAGE 1: Research
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🔍 Stage 1/3: Starting research phase — analyzing ${markets.length} markets...`, { pipeline_stage: "research_start" });
+    // STAGE 1+2: Combined Research + Analysis (single LLM call)
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🔍 Stage 1/2: Combined research + analysis...`, { pipeline_stage: "research_analysis_start" });
 
-    const researchPrompt = buildResearchContext(signals, markets, positions, portfolio.totalBalance, thresholdCheck.reasons);
+    const researchAnalysisPrompt = buildSportsResearchContext(signals, markets, positions, portfolio.totalBalance, thresholdCheck.reasons);
 
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for research (model: ${config.models.analysis.model})...`, { pipeline_stage: "llm_research_call" });
-    const research = await quickAnalysis({
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for research + analysis (model: ${config.models.analysis.model})...`, { pipeline_stage: "llm_research_analysis_call" });
+    const primaryMarket = markets[0];
+    const primaryYesPrice = primaryMarket?.outcomes.find(o => o.name.toLowerCase() === "yes")?.price ?? 0;
+    const primaryNoPrice = primaryMarket?.outcomes.find(o => o.name.toLowerCase() === "no")?.price ?? 0;
+    const researchAnalysis = await quickAnalysis({
       modelConfig: config.models.analysis,
       systemPrompt: config.pipeline[0].systemPrompt,
-      userMessage: researchPrompt,
+      userMessage: researchAnalysisPrompt,
       tools: config.pipeline[0].toolNames,
+      marketContext: primaryMarket ? { marketId: primaryMarket.marketId, yesPrice: primaryYesPrice, noPrice: primaryNoPrice } : undefined,
     });
 
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ✅ Stage 1/3: Research complete`, { 
-      pipeline_stage: "research_complete", 
-      tokens_used: research.tokensUsed,
-      tool_calls: research.toolCalls,
-      reasoning_snippet: research.text.slice(0, 300)
-    });
-
-    // STAGE 2: Analysis
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📊 Stage 2/3: Running Bayesian analysis and signal aggregation...`, { pipeline_stage: "analysis_start" });
-
-    const analysisPrompt = buildAnalysisContext(research.text, signals, markets, positions, portfolio.totalBalance);
-
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for deep analysis (model: ${config.models.analysis.model})...`, { pipeline_stage: "llm_analysis_call" });
-    const analysis = await quickAnalysis({
-      modelConfig: config.models.analysis,
-      systemPrompt: config.pipeline[1].systemPrompt,
-      userMessage: analysisPrompt,
-      tools: config.pipeline[1].toolNames,
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ✅ Stage 1/2: Research + analysis complete`, { 
+      pipeline_stage: "research_analysis_complete", 
+      tokens_used: researchAnalysis.tokensUsed,
+      tool_calls: researchAnalysis.toolCalls,
+      reasoning_snippet: researchAnalysis.text.slice(0, 300)
     });
 
     await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} running Bayesian probability estimation on ${Math.min(markets.length, 5)} markets...`, { pipeline_stage: "bayesian_estimation" });
-    const bayesianResults = runBayesianEstimation(markets.slice(0, 5), signals, analysis.text);
+    const bayesianResults = runScaledBayesianEstimation(markets.slice(0, 5), signals, researchAnalysis.text);
 
     await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} Bayesian estimates:`, {
       pipeline_stage: "bayesian_results",
       estimates: bayesianResults.map(b => ({ marketId: b.marketId, probability: (b.probability * 100).toFixed(1) + "%" }))
     });
 
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} aggregating all signals (LLM + GDELT + ACLED + Bayesian)...`, { pipeline_stage: "signal_aggregation" });
-    const aggregatedSignal = aggregateSignals([
-      { name: "llm_analysis", value: extractProbabilityFromText(analysis.text), confidence: 0.7, weight: 3.0 },
-      { name: "gdelt_sentiment", value: gdeltToProbability(signals.gdelt), confidence: 0.4, weight: 0.5 },
-      { name: "conflict_signal", value: conflictToProbability(signals.acled), confidence: 0.3, weight: 0.3 },
-      ...bayesianResults.map((b) => ({ name: `bayesian_${b.marketId}`, value: b.probability, confidence: 0.6, weight: 1.5 })),
-    ]);
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} aggregating all signals (LLM + GDELT + ACLED + Bayesian + calibrated + decayed)...`, { pipeline_stage: "signal_aggregation" });
 
-    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} ✅ Stage 2/3: Signal aggregation complete`, { 
+    const calibratedWeights = await getAllCalibratedWeights("sports");
+    const signalAgeMinutes = signals.fetchedAt
+      ? (Date.now() - new Date(signals.fetchedAt).getTime()) / 60000
+      : 0;
+
+    const defaultSportsWeights: Record<string, number> = {
+      llm_analysis: 3.0, gdelt_sentiment: 0.5, conflict_signal: 0.3,
+    };
+    const decayedSignals = [
+      { name: "llm_analysis", value: extractProbabilityFromText(researchAnalysis.text), confidence: decayConfidence(0.7, signalAgeMinutes, "market"), weight: calibratedWeights["llm_analysis"] ?? defaultSportsWeights["llm_analysis"] ?? 3.0 },
+      { name: "gdelt_sentiment", value: gdeltToProbability(signals.gdelt), confidence: decayConfidence(0.4, signalAgeMinutes, "gdelt"), weight: calibratedWeights["gdelt_sentiment"] ?? defaultSportsWeights["gdelt_sentiment"] ?? 0.5 },
+      { name: "conflict_signal", value: conflictToProbability(signals.acled), confidence: decayConfidence(0.3, signalAgeMinutes, "acled"), weight: calibratedWeights["conflict_signal"] ?? defaultSportsWeights["conflict_signal"] ?? 0.3 },
+      ...bayesianResults.map((b) => ({
+        name: `bayesian_${b.marketId}`,
+        value: b.probability,
+        confidence: decayConfidence(0.6, signalAgeMinutes, "market"),
+        weight: calibratedWeights[`bayesian_${b.marketId}`] ?? 1.5,
+      })),
+    ];
+    const finalAggregatedSignal = aggregateSignals(decayedSignals);
+
+    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} ✅ Stage 1/2: Signal aggregation complete (calibrated + decayed)`, { 
       pipeline_stage: "analysis_complete", 
-      aggregated_probability: (aggregatedSignal.probability * 100).toFixed(1) + "%",
-      aggregated_confidence: (aggregatedSignal.confidence * 100).toFixed(1) + "%",
-      signals_combined: aggregatedSignal.nSignals,
-      reasoning_snippet: analysis.text.slice(0, 300)
+      aggregated_probability: (finalAggregatedSignal.probability * 100).toFixed(1) + "%",
+      aggregated_confidence: (finalAggregatedSignal.confidence * 100).toFixed(1) + "%",
+      calibration_info: Object.keys(calibratedWeights).length > 0 ? `${Object.keys(calibratedWeights).length} calibrated weights` : "using defaults",
+      signals_combined: finalAggregatedSignal.nSignals,
+      signal_age_minutes: signalAgeMinutes.toFixed(1),
+      reasoning_snippet: researchAnalysis.text.slice(0, 300)
     }, "significant");
 
-    // STAGE 3: Decision
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🎯 Stage 3/3: Making trade decision with edge detection...`, { pipeline_stage: "decision_start" });
+    // STAGE 2: Decision (renamed from 3)
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🎯 Stage 2/2: Making trade decision with edge detection...`, { pipeline_stage: "decision_start" });
+
+    const temporalAdj = computeSportsTemporalAdjustment(markets);
 
     let decision: TradeDecision;
     let decisionTokens = 0;
@@ -476,22 +487,37 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
       await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for final decision (model: ${config.models.decision.model})...`, { pipeline_stage: "llm_decision_call" });
       const result = await quickDecision<TradeDecision>({
         modelConfig: config.models.decision,
-        systemPrompt: config.pipeline[2].systemPrompt,
-        userMessage: buildDecisionContext(analysis.text, aggregatedSignal, markets, positions, portfolio.totalBalance),
+        systemPrompt: config.pipeline[1].systemPrompt,
+        userMessage: buildSportsDecisionContext(researchAnalysis.text, finalAggregatedSignal, markets, positions, portfolio.totalBalance, temporalAdj),
         schema: TradeDecisionSchema,
-        tools: config.pipeline[2].toolNames,
+        tools: config.pipeline[1].toolNames,
       });
       decision = result.decision;
       decisionTokens = result.tokensUsed;
+
+      const llmConfidenceAdj = await getConfidenceAdjustment("sports", config.models.decision.model, decision.confidence);
+      if (llmConfidenceAdj !== 1.0) {
+        const originalConf = decision.confidence;
+        decision.confidence = Math.max(0, Math.min(1, decision.confidence * llmConfidenceAdj));
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} confidence calibrated: ${(originalConf * 100).toFixed(0)}% → ${(decision.confidence * 100).toFixed(0)}%`, {
+          pipeline_stage: "confidence_calibration", original: originalConf, adjusted: decision.confidence, calibration_factor: llmConfidenceAdj,
+        });
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
       fsm.transition("no_edge");
       await saveState();
       await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ❌ Decision stage failed: ${errorMsg}`, { pipeline_stage: "decision_error" }, "critical");
-      return { state: fsm.getState(), action: "analyzed", detail: `Decision stage error: ${errorMsg}`, tokensUsed: research.tokensUsed + analysis.tokensUsed };
+      return { state: fsm.getState(), action: "analyzed", detail: `Decision stage error: ${errorMsg}`, tokensUsed: researchAnalysis.tokensUsed };
     }
 
-    const totalTokens = research.tokensUsed + analysis.tokensUsed + decisionTokens;
+    const totalTokens = researchAnalysis.tokensUsed + decisionTokens;
+
+    // FAST-PATH: Skip adversarial + consensus for high-conviction trades
+    const preEdgeMarketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
+    const preEdge = calculateEdge(finalAggregatedSignal.probability, preEdgeMarketPrice, finalAggregatedSignal.confidence);
+    const useFastPath = preEdge.netEdge > FAST_PATH_EDGE_THRESHOLD && decision.confidence >= FAST_PATH_CONFIDENCE_THRESHOLD;
+    if (useFastPath) { await publishFeedStep(ctx.agentId, "edge_detected", `${AGENT_NAME} ⚡ FAST-PATH: Edge ${(preEdge.netEdge * 100).toFixed(1)}% — skipping adversarial + consensus`); }
 
     // Validate LLM decision against known markets
     await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} validating decision against known markets...`, { pipeline_stage: "decision_validation" });
@@ -503,13 +529,14 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
       return { state: fsm.getState(), action: "analyzed", detail: `Decision rejected: ${validation.error}`, decision, tokensUsed: totalTokens };
     }
 
-    await redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`, String(Date.now()));
-
-    if (decision.action === "hold" || decision.confidence < config.minConfidence) {
+    // Skip further checks for hold decisions
+    const action: string = decision.action;
+    if (action === "hold" || decision.confidence < config.minConfidence) {
+      await redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`, String(Date.now()));
       fsm.transition("no_edge");
       await saveState();
       await publishReasoningEvent(ctx.agentId, ctx.jobId, decision, AGENT_NAME);
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📋 Decision: HOLD — confidence ${(decision.confidence * 100).toFixed(0)}% below ${(config.minConfidence * 100).toFixed(0)}% threshold`, { 
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📋 Decision: HOLD — confidence ${(decision.confidence * 100).toFixed(0)}%${decision.confidence < config.minConfidence ? ` below ${(config.minConfidence * 100).toFixed(0)}% threshold` : ""}`, { 
         pipeline_stage: "hold", 
         confidence: decision.confidence,
         reasoning: decision.reasoning
@@ -517,8 +544,65 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
       return { state: fsm.getState(), action: "analyzed", detail: `Decision: hold (confidence: ${(decision.confidence * 100).toFixed(0)}%)`, decision, tokensUsed: totalTokens };
     }
 
-    const marketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
-    const edge = calculateEdge(aggregatedSignal.probability, marketPrice, aggregatedSignal.confidence);
+    // ===== POST-DECISION PIPELINE (Features 3, 5, 6, 7, 10) =====
+
+    // Feature 10: Scenario Tree Analysis
+    if (decision.marketId) {
+      const marketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
+      const scenarioGate = quickScenarioGate(finalAggregatedSignal.probability, marketPrice, decision.amount ?? 0, !!decision.isYes, portfolio.totalBalance, positions);
+      if (!scenarioGate.pass) {
+        fsm.transition("no_edge"); await saveState();
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⛔ Scenario gate: ${scenarioGate.reason}`, { pipeline_stage: "scenario_gate_failed" }, "critical");
+        return { state: fsm.getState(), action: "analyzed", detail: `Scenario gate: ${scenarioGate.reason}`, decision, tokensUsed: totalTokens };
+      }
+
+      const scenarioResult = runScenarioAnalysis({ estimatedProbability: finalAggregatedSignal.probability, marketPrice, amount: decision.amount ?? 0, isYes: !!decision.isYes, platformFee: 0.02, positions, balance: portfolio.totalBalance });
+      try { await db.insert(schema.scenarioResults).values({ agentId: ctx.agentId, jobId: ctx.jobId, marketId: decision.marketId ?? "", action: decision.action, estimatedProbability: String(finalAggregatedSignal.probability), totalExpectedValue: String(scenarioResult.totalExpectedValue), riskRewardRatio: String(scenarioResult.riskRewardRatio), shouldTrade: scenarioResult.shouldTrade, reason: scenarioResult.reason, scenarios: scenarioResult.scenarios }).onConflictDoNothing().catch(() => {}); } catch {}
+      if (!scenarioResult.shouldTrade) {
+        fsm.transition("no_edge"); await saveState();
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⛔ Scenario analysis: ${scenarioResult.reason}`, { pipeline_stage: "scenario_rejected" }, "critical");
+        return { state: fsm.getState(), action: "analyzed", detail: `Scenario rejected: ${scenarioResult.reason}`, decision, tokensUsed: totalTokens };
+      }
+    }
+
+    // Feature 3: Adversarial Self-Review
+    if (decision.marketId && !useFastPath) {
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🔍 Running adversarial review...`, { pipeline_stage: "adversarial_review" });
+      const review = await runAdversarialReview(decision, markets, positions, portfolio.totalBalance, ctx.agentId, AGENT_NAME);
+      try { await db.insert(schema.adversarialReviews).values({ agentId: ctx.agentId, marketId: decision.marketId ?? "", action: decision.action, overturned: review.overturn, originalConfidence: String(decision.confidence), riskAdjustedConfidence: String(review.riskAdjustedConfidence), reason: review.reason, risks: review.risks }).onConflictDoNothing().catch(() => {}); } catch {}
+      if (review.overturn) {
+        fsm.transition("no_edge"); await saveState();
+        return { state: fsm.getState(), action: "analyzed", detail: `Adversarial overturned: ${review.reason}`, decision, tokensUsed: totalTokens };
+      }
+      decision.confidence = Math.min(decision.confidence, review.riskAdjustedConfidence);
+    }
+
+    // Feature 5: Multi-Model Consensus
+    if (decision.marketId && !useFastPath) {
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🤝 Running multi-model consensus...`, { pipeline_stage: "multi_model_consensus" });
+      const consensus = await runMultiModelConsensus({
+        systemPrompt: config.pipeline[1].systemPrompt,
+        userMessage: buildSportsDecisionContext(researchAnalysis.text, finalAggregatedSignal, markets, positions, portfolio.totalBalance, temporalAdj),
+        schema: TradeDecisionSchema,
+        agentId: ctx.agentId,
+        agentName: AGENT_NAME,
+        primaryDecision: decision,
+      });
+      try { await db.insert(schema.consensusResults).values({ agentId: ctx.agentId, marketId: decision.marketId ?? "", consensus: consensus.consensus, modelsAgreed: consensus.modelsAgreed, modelsQueried: consensus.modelsQueried, confidenceAdjustment: String(consensus.confidenceAdjustment), decisionAction: consensus.decision.action, decisionConfidence: String(consensus.decision.confidence), details: consensus.details }).onConflictDoNothing().catch(() => {}); } catch {}
+      decision = consensus.decision;
+      if (decision.action === "hold" || !decision.marketId) {
+        fsm.transition("no_edge"); await saveState();
+        return { state: fsm.getState(), action: "analyzed", detail: `Consensus disagreement → hold`, decision, tokensUsed: totalTokens };
+      }
+    }
+
+    // Feature 4: Record prediction for outcome feedback
+    await recordAgentPrediction("sports", ctx.agentId, decision, signals, markets, config.models.decision.model).catch(() => {});
+
+    await redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`, String(Date.now()));
+
+    const marketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId ?? "", "yes") : getMarketPrice(markets, decision.marketId ?? "", "no");
+    const edge = calculateEdge(finalAggregatedSignal.probability, marketPrice, finalAggregatedSignal.confidence);
 
     await publishFeedStep(ctx.agentId, "edge_detected", `${AGENT_NAME} 🎯 Edge detected: ${edge.direction.toUpperCase()} on "${decision.marketQuestion}"`, { 
       pipeline_stage: "edge_found", 
@@ -556,14 +640,37 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
     const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
 
     if (decision.action === "buy") {
+      // Feature 6: Microstructure check
+      if (decision.marketId) {
+        const microCheck = await checkMicrostructure(decision.marketId, decision.amount ?? 0);
+        if (!microCheck.allowed) {
+          fsm.transition("order_failed"); await saveState();
+          return { state: fsm.getState(), action: "executed", detail: `Microstructure rejected: ${microCheck.reason}`, decision };
+        }
+      }
+      // Feature 7: Correlation check
+      if (decision.marketId) {
+        const positionRisks = positions.map((p) => ({ marketId: p.marketId, marketQuestion: p.marketId, side: p.side, amount: p.amount, category: "sports" as const }));
+        const correlationCheck = checkCrossMarketCorrelation(decision.marketQuestion ?? decision.marketId ?? "", decision.amount ?? 0, positionRisks, portfolio.totalBalance);
+        if (!correlationCheck.allowed) {
+          fsm.transition("order_failed"); await saveState();
+          return { state: fsm.getState(), action: "executed", detail: `Correlation rejected: ${correlationCheck.reason}`, decision };
+        }
+      }
+
       await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
 
       const result = await executeBuy(decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "sports");
       if (result.success) {
         if (result.positionId) {
-          await recordPromptLinks(result.positionId, "sports").catch((err) =>
-            console.error(`[Sports Agent] Failed to record prompt links: ${err.message}`)
-          );
+          await recordPromptLinks(result.positionId, "sports").catch(() => {});
+          // Feature 8: Price monitoring
+          await registerPositionForMonitoring({
+            positionId: result.positionId, marketId: decision.marketId ?? "", marketQuestion: decision.marketQuestion ?? "",
+            agentId: ctx.agentId, agentName: AGENT_NAME, jobId: ctx.jobId, agentWalletId: ctx.agentWalletId,
+            side: decision.isYes ? "yes" : "no", entryPrice: 0.5, stopLossPrice: 0.5 * (1 - AGENT_LIMITS.STOP_LOSS_PERCENT),
+            amount: decision.amount ?? 0, ownerPubkey: ctx.ownerPubkey,
+          }).catch(() => {});
         }
         fsm.transition("order_placed");
         await saveState();
@@ -649,64 +756,76 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
 
     const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
 
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} stage 1/3: Researching sports factors across ${markets.length} markets...`, { pipeline_stage: "research_start" });
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} stage 1/2: Combined research + analysis...`, { pipeline_stage: "research_analysis_start" });
 
-    const researchPrompt = buildResearchContext(signals, markets, positions, portfolio.totalBalance, thresholdCheck.reasons);
+    const researchAnalysisPrompt = buildSportsResearchContext(signals, markets, positions, portfolio.totalBalance, thresholdCheck.reasons);
 
-    const research = await quickAnalysis({
+    const primaryMarket2 = markets[0];
+    const primaryYesPrice2 = primaryMarket2?.outcomes.find(o => o.name.toLowerCase() === "yes")?.price ?? 0;
+    const primaryNoPrice2 = primaryMarket2?.outcomes.find(o => o.name.toLowerCase() === "no")?.price ?? 0;
+    const researchAnalysis = await quickAnalysis({
       modelConfig: config.models.analysis,
       systemPrompt: config.pipeline[0].systemPrompt,
-      userMessage: researchPrompt,
+      userMessage: researchAnalysisPrompt,
       tools: config.pipeline[0].toolNames,
+      marketContext: primaryMarket2 ? { marketId: primaryMarket2.marketId, yesPrice: primaryYesPrice2, noPrice: primaryNoPrice2 } : undefined,
     });
 
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} stage 1/3: Research complete — ${research.tokensUsed} tokens used, ${research.toolCalls} tool calls`, { pipeline_stage: "research_complete", reasoning_snippet: research.text.slice(0, 300) });
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} stage 1/2: Research + analysis complete — ${researchAnalysis.tokensUsed} tokens used, ${researchAnalysis.toolCalls} tool calls`, { pipeline_stage: "research_analysis_complete", reasoning_snippet: researchAnalysis.text.slice(0, 300) });
 
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} stage 2/3: Running Bayesian analysis and signal aggregation...`, { pipeline_stage: "analysis_start" });
+    const bayesianResults = runScaledBayesianEstimation(markets.slice(0, 5), signals, researchAnalysis.text);
 
-    const analysisPrompt = buildAnalysisContext(research.text, signals, markets, positions, portfolio.totalBalance);
+    const calibratedWeights = await getAllCalibratedWeights("sports");
+    const signalAgeMinutes = signals.fetchedAt
+      ? (Date.now() - new Date(signals.fetchedAt).getTime()) / 60000
+      : 0;
+    const defaultSportsWeights: Record<string, number> = { llm_analysis: 3.0, gdelt_sentiment: 0.5, conflict_signal: 0.3 };
 
-    const analysis = await quickAnalysis({
-      modelConfig: config.models.analysis,
-      systemPrompt: config.pipeline[1].systemPrompt,
-      userMessage: analysisPrompt,
-      tools: config.pipeline[1].toolNames,
-    });
-
-    const bayesianResults = runBayesianEstimation(markets.slice(0, 5), signals, analysis.text);
-
-    const aggregatedSignal = aggregateSignals([
-      { name: "llm_analysis", value: extractProbabilityFromText(analysis.text), confidence: 0.7, weight: 3.0 },
-      { name: "gdelt_sentiment", value: gdeltToProbability(signals.gdelt), confidence: 0.4, weight: 0.5 },
-      { name: "conflict_signal", value: conflictToProbability(signals.acled), confidence: 0.3, weight: 0.3 },
-      ...bayesianResults.map((b) => ({ name: `bayesian_${b.marketId}`, value: b.probability, confidence: 0.6, weight: 1.5 })),
+    const finalAggregatedSignal = aggregateSignals([
+      { name: "llm_analysis", value: extractProbabilityFromText(researchAnalysis.text), confidence: decayConfidence(0.7, signalAgeMinutes, "market"), weight: calibratedWeights["llm_analysis"] ?? defaultSportsWeights["llm_analysis"] ?? 3.0 },
+      { name: "gdelt_sentiment", value: gdeltToProbability(signals.gdelt), confidence: decayConfidence(0.4, signalAgeMinutes, "gdelt"), weight: calibratedWeights["gdelt_sentiment"] ?? defaultSportsWeights["gdelt_sentiment"] ?? 0.5 },
+      { name: "conflict_signal", value: conflictToProbability(signals.acled), confidence: decayConfidence(0.3, signalAgeMinutes, "acled"), weight: calibratedWeights["conflict_signal"] ?? defaultSportsWeights["conflict_signal"] ?? 0.3 },
+      ...bayesianResults.map((b) => ({ name: `bayesian_${b.marketId}`, value: b.probability, confidence: decayConfidence(0.6, signalAgeMinutes, "market"), weight: calibratedWeights[`bayesian_${b.marketId}`] ?? 1.5 })),
     ]);
 
-    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} stage 2/3: Aggregated ${aggregatedSignal.nSignals} signals → probability: ${(aggregatedSignal.probability * 100).toFixed(1)}%, confidence: ${(aggregatedSignal.confidence * 100).toFixed(1)}%`, { pipeline_stage: "analysis_complete", confidence: aggregatedSignal.confidence, signals_count: aggregatedSignal.nSignals, reasoning_snippet: analysis.text.slice(0, 300) });
+    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} stage 1/2: Aggregated ${finalAggregatedSignal.nSignals} signals (calibrated + decayed) → probability: ${(finalAggregatedSignal.probability * 100).toFixed(1)}%, confidence: ${(finalAggregatedSignal.confidence * 100).toFixed(1)}%`, { pipeline_stage: "analysis_complete", confidence: finalAggregatedSignal.confidence, signals_count: finalAggregatedSignal.nSignals, reasoning_snippet: researchAnalysis.text.slice(0, 300) });
 
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} stage 3/3: Making trade decision with edge detection...`, { pipeline_stage: "decision_start" });
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} stage 2/2: Making trade decision with edge detection...`, { pipeline_stage: "decision_start" });
+
+    const temporalAdj = computeSportsTemporalAdjustment(markets);
 
     let decision: TradeDecision;
     let decisionTokens = 0;
     try {
       const result = await quickDecision<TradeDecision>({
         modelConfig: config.models.decision,
-        systemPrompt: config.pipeline[2].systemPrompt,
-        userMessage: buildDecisionContext(analysis.text, aggregatedSignal, markets, positions, portfolio.totalBalance),
+        systemPrompt: config.pipeline[1].systemPrompt,
+        userMessage: buildSportsDecisionContext(researchAnalysis.text, finalAggregatedSignal, markets, positions, portfolio.totalBalance, temporalAdj),
         schema: TradeDecisionSchema,
-        tools: config.pipeline[2].toolNames,
+        tools: config.pipeline[1].toolNames,
       });
       decision = result.decision;
       decisionTokens = result.tokensUsed;
+
+      const llmConfidenceAdj = await getConfidenceAdjustment("sports", config.models.decision.model, decision.confidence);
+      if (llmConfidenceAdj !== 1.0) {
+        decision.confidence = Math.max(0, Math.min(1, decision.confidence * llmConfidenceAdj));
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
       fsm.transition("no_edge");
       await saveState();
       await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} decision stage failed: ${errorMsg}`, { pipeline_stage: "decision_error" }, "critical");
-      return { state: fsm.getState(), action: "analyzed", detail: `Decision stage error: ${errorMsg}`, tokensUsed: research.tokensUsed + analysis.tokensUsed };
+      return { state: fsm.getState(), action: "analyzed", detail: `Decision stage error: ${errorMsg}`, tokensUsed: researchAnalysis.tokensUsed };
     }
 
-    const totalTokens = research.tokensUsed + analysis.tokensUsed + decisionTokens;
+    const totalTokens = researchAnalysis.tokensUsed + decisionTokens;
+
+    // FAST-PATH: Skip adversarial + consensus for high-conviction trades
+    const preEdgeMarketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
+    const preEdge = calculateEdge(finalAggregatedSignal.probability, preEdgeMarketPrice, finalAggregatedSignal.confidence);
+    const useFastPath = preEdge.netEdge > FAST_PATH_EDGE_THRESHOLD && decision.confidence >= FAST_PATH_CONFIDENCE_THRESHOLD;
+    if (useFastPath) { await publishFeedStep(ctx.agentId, "edge_detected", `${AGENT_NAME} ⚡ FAST-PATH: Edge ${(preEdge.netEdge * 100).toFixed(1)}% — skipping adversarial + consensus`); }
 
     // Validate LLM decision against known markets
     const validation = validateDecision(decision, markets);
@@ -719,16 +838,59 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
 
     await redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`, String(Date.now()));
 
-    if (decision.action === "hold" || decision.confidence < config.minConfidence) {
+    const action: string = decision.action;
+    if (action === "hold" || decision.confidence < config.minConfidence) {
       fsm.transition("no_edge");
       await saveState();
       await publishReasoningEvent(ctx.agentId, ctx.jobId, decision, AGENT_NAME);
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME}: No trade — confidence ${(decision.confidence * 100).toFixed(0)}% below ${(config.minConfidence * 100).toFixed(0)}% threshold`, { pipeline_stage: "hold", confidence: decision.confidence });
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME}: No trade — confidence ${(decision.confidence * 100).toFixed(0)}%${decision.confidence < config.minConfidence ? ` below ${(config.minConfidence * 100).toFixed(0)}% threshold` : ""}`, { pipeline_stage: "hold", confidence: decision.confidence });
       return { state: fsm.getState(), action: "analyzed", detail: `Decision: hold (confidence: ${(decision.confidence * 100).toFixed(0)}%)`, decision, tokensUsed: totalTokens };
     }
 
-    const marketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
-    const edge = calculateEdge(aggregatedSignal.probability, marketPrice, aggregatedSignal.confidence);
+    // Feature 10: Scenario gate
+    if (decision.marketId) {
+      const marketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
+      const scenarioGate = quickScenarioGate(finalAggregatedSignal.probability, marketPrice, decision.amount ?? 0, !!decision.isYes, portfolio.totalBalance, positions);
+      if (!scenarioGate.pass) {
+        fsm.transition("no_edge"); await saveState();
+        return { state: fsm.getState(), action: "analyzed", detail: `Scenario gate: ${scenarioGate.reason}`, decision, tokensUsed: totalTokens };
+      }
+    }
+
+    // Feature 3: Adversarial review
+    if (decision.marketId && !useFastPath) {
+      const review = await runAdversarialReview(decision, markets, positions, portfolio.totalBalance, ctx.agentId, AGENT_NAME);
+      try { await db.insert(schema.adversarialReviews).values({ agentId: ctx.agentId, marketId: decision.marketId ?? "", action: decision.action, overturned: review.overturn, originalConfidence: String(decision.confidence), riskAdjustedConfidence: String(review.riskAdjustedConfidence), reason: review.reason, risks: review.risks }).onConflictDoNothing().catch(() => {}); } catch {}
+      if (review.overturn) {
+        fsm.transition("no_edge"); await saveState();
+        return { state: fsm.getState(), action: "analyzed", detail: `Adversarial overturned: ${review.reason}`, decision, tokensUsed: totalTokens };
+      }
+      decision.confidence = Math.min(decision.confidence, review.riskAdjustedConfidence);
+    }
+
+    // Feature 5: Multi-model consensus
+    if (decision.marketId && !useFastPath) {
+      const consensus = await runMultiModelConsensus({
+        systemPrompt: config.pipeline[1].systemPrompt,
+        userMessage: buildSportsDecisionContext(researchAnalysis.text, finalAggregatedSignal, markets, positions, portfolio.totalBalance, temporalAdj),
+        schema: TradeDecisionSchema,
+        agentId: ctx.agentId,
+        agentName: AGENT_NAME,
+        primaryDecision: decision,
+      });
+      try { await db.insert(schema.consensusResults).values({ agentId: ctx.agentId, marketId: decision.marketId ?? "", consensus: consensus.consensus, modelsAgreed: consensus.modelsAgreed, modelsQueried: consensus.modelsQueried, confidenceAdjustment: String(consensus.confidenceAdjustment), decisionAction: consensus.decision.action, decisionConfidence: String(consensus.decision.confidence), details: consensus.details }).onConflictDoNothing().catch(() => {}); } catch {}
+      decision = consensus.decision;
+      if (!decision.marketId) {
+        fsm.transition("no_edge"); await saveState();
+        return { state: fsm.getState(), action: "analyzed", detail: `Consensus disagreement → hold`, decision, tokensUsed: totalTokens };
+      }
+    }
+
+    // Feature 4: Record prediction
+    await recordAgentPrediction("sports", ctx.agentId, decision, signals, markets, config.models.decision.model).catch(() => {});
+
+    const marketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId ?? "", "yes") : getMarketPrice(markets, decision.marketId ?? "", "no");
+    const edge = calculateEdge(finalAggregatedSignal.probability, marketPrice, finalAggregatedSignal.confidence);
 
     await publishFeedStep(ctx.agentId, "edge_detected", `${AGENT_NAME} found edge: ${edge.direction.toUpperCase()} on "${decision.marketQuestion}" — raw edge: ${(edge.rawEdge * 100).toFixed(1)}%, net: ${(edge.netEdge * 100).toFixed(1)}%`, { pipeline_stage: "edge_found", edge_percent: edge.netEdge * 100, confidence: decision.confidence, market_analyzed: decision.marketQuestion }, "significant");
 
@@ -758,14 +920,37 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
     const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
 
     if (decision.action === "buy") {
+      // Feature 6: Microstructure check
+      if (decision.marketId) {
+        const microCheck = await checkMicrostructure(decision.marketId, decision.amount ?? 0);
+        if (!microCheck.allowed) {
+          fsm.transition("order_failed"); await saveState();
+          return { state: fsm.getState(), action: "executed", detail: `Microstructure rejected: ${microCheck.reason}`, decision };
+        }
+      }
+      // Feature 7: Correlation check
+      if (decision.marketId) {
+        const positionRisks = positions.map((p) => ({ marketId: p.marketId, marketQuestion: p.marketId, side: p.side, amount: p.amount, category: "sports" as const }));
+        const correlationCheck = checkCrossMarketCorrelation(decision.marketQuestion ?? decision.marketId ?? "", decision.amount ?? 0, positionRisks, portfolio.totalBalance);
+        if (!correlationCheck.allowed) {
+          fsm.transition("order_failed"); await saveState();
+          return { state: fsm.getState(), action: "executed", detail: `Correlation rejected: ${correlationCheck.reason}`, decision };
+        }
+      }
+
       await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
 
       const result = await executeBuy(decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "sports");
       if (result.success) {
         if (result.positionId) {
-          await recordPromptLinks(result.positionId, "sports").catch((err) =>
-            console.error(`[Sports Agent] Failed to record prompt links: ${err.message}`)
-          );
+          await recordPromptLinks(result.positionId, "sports").catch(() => {});
+          // Feature 8: Price monitoring
+          await registerPositionForMonitoring({
+            positionId: result.positionId, marketId: decision.marketId ?? "", marketQuestion: decision.marketQuestion ?? "",
+            agentId: ctx.agentId, agentName: AGENT_NAME, jobId: ctx.jobId, agentWalletId: ctx.agentWalletId,
+            side: decision.isYes ? "yes" : "no", entryPrice: 0.5, stopLossPrice: 0.5 * (1 - AGENT_LIMITS.STOP_LOSS_PERCENT),
+            amount: decision.amount ?? 0, ownerPubkey: ctx.ownerPubkey,
+          }).catch(() => {});
         }
         fsm.transition("order_placed");
         await saveState();
@@ -794,19 +979,9 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
   }
 
   if (fsm.getState() === "MONITORING") {
-    const { closedCount } = await monitorPositions(ctx.agentId, ctx.jobId, ctx.agentWalletId, AGENT_NAME);
-    if (closedCount > 0) {
-      fsm.transition("position_closed");
-      await saveState();
-      return { state: fsm.getState(), action: "monitored", detail: `Closed ${closedCount} (stop-loss)` };
-    }
-    const { positions } = await getActivePositions(ctx.jobId);
-    if (positions.length === 0) {
-      fsm.transition("position_closed");
-      await saveState();
-      return { state: fsm.getState(), action: "monitored", detail: "All positions closed" };
-    }
-    return { state: fsm.getState(), action: "monitored", detail: `${positions.length} open positions` };
+    // Background price monitor handles stop-losses independently (30s interval)
+    // No blocking calls needed — return immediately and let tick cycle continue
+    return { state: fsm.getState(), action: "monitored", detail: "Background monitoring active" };
   }
 
   if (fsm.getState() === "CLOSING" || fsm.getState() === "SETTLING") {
@@ -817,8 +992,8 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
   return { state: fsm.getState(), action: "skipped", detail: `Unhandled: ${fsm.getState()}` };
 }
 
-function buildResearchContext(
-  signals: GeoSignals,
+function buildSportsResearchContext(
+  signals: SharedSignals,
   markets: MarketContext[],
   positions: AgentPosition[],
   balance: number,
@@ -826,75 +1001,89 @@ function buildResearchContext(
 ): string {
   const parts: string[] = [];
   parts.push(`## Portfolio\nBalance: $${balance.toFixed(2)} | Open positions: ${positions.length}/${AGENT_LIMITS.MAX_CONCURRENT_POSITIONS}`);
-
   if (positions.length > 0) {
     parts.push("\n### Open Positions:");
     for (const p of positions) {
       parts.push(`- ${p.marketId}: ${p.side} $${p.amount} @ ${p.entryPrice} (PnL: $${p.pnl.toFixed(2)})`);
     }
   }
-
   parts.push("\n## Signal Triggers:");
   for (const r of reasons) parts.push(`- ${r}`);
-
-  parts.push("\n## Available Sports Markets:");
   for (const m of markets.slice(0, 10)) {
     const prices = m.outcomes.map((o) => `${o.name}: $${o.price}`).join(", ");
-    parts.push(`- [${m.marketId}] "${m.question}" | ${prices} | Vol=$${m.volume} | Closes: ${m.closesAt ?? "N/A"}`);
+    const hoursToClose = m.closesAt ? ((new Date(m.closesAt).getTime() - Date.now()) / 3600000).toFixed(1) : "N/A";
+    parts.push(`\n### [${m.marketId}] "${m.question}"\n| Prices: ${prices} | Vol=$${m.volume} | Closes: ${m.closesAt ?? "N/A"} (${hoursToClose}h)`);
+    const relevant: string[] = [];
+    if (signals.sports) {
+      for (const [sport, s] of Object.entries(signals.sports)) {
+        if (s.totalEvents > 0) relevant.push(`${sport}: ${s.totalEvents} events, sharp: ${s.sharpMoneyIndicator.toFixed(2)}, odds_movement: ${s.avgOddsMovement.toFixed(2)}`);
+      }
+    }
+    for (const [region, g] of Object.entries(signals.gdelt ?? {})) {
+      if (Math.abs(g.avgTone) > 1) relevant.push(`GDELT ${region}: tone=${g.avgTone.toFixed(2)}`);
+    }
+    if (relevant.length > 0) parts.push("Signals: " + relevant.slice(0, 3).join("; "));
+    else parts.push("No strong signals for this market");
   }
-
-  parts.push(`\n## Research Task:\nFor each sports market above, identify the top 5 factors.\nUse web_search and Twitter tools to gather real-time information on injuries, form, matchups, and betting lines.\nFocus on DATA and STATS — recent form, head-to-head records, injury impact.`);
-
+  parts.push(`\n## Research + Analysis Task:\nFor EACH sports market above, identify the top 5 factors, then provide your independent probability estimate with step-by-step Bayesian reasoning.`);
   return parts.join("\n");
 }
 
-function buildAnalysisContext(
-  research: string,
-  signals: GeoSignals,
-  markets: MarketContext[],
-  positions: AgentPosition[],
-  balance: number
-): string {
-  const parts: string[] = [];
-  parts.push(`## Research Findings\n${research}\n\n## Deep Analysis Task:\nBased on the research, provide your independent probability estimate for each sports market.\n\nFor each market:\n1. Start with the market's implied probability (current price)\n2. Consider each factor identified in research\n3. Estimate P(evidence | Yes) and P(evidence | No) for key signals\n4. Apply Bayesian reasoning to update from the market price\n5. Factor in sports base rates (home teams win ~60%, favorites win ~65%)\n6. Provide your final probability estimate with step-by-step reasoning`);
-
-  parts.push("\n## Market Prices (implied probabilities):");
-  for (const m of markets.slice(0, 5)) {
-    const yesPrice = m.outcomes.find((o) => o.name.toLowerCase() === "yes")?.price ?? 0.5;
-    parts.push(`- "${m.question}": Yes=$${yesPrice} (implies ${(yesPrice * 100).toFixed(1)}% probability)`);
-  }
-
-  return parts.join("\n");
-}
-
-function buildDecisionContext(
+function buildSportsDecisionContext(
   analysis: string,
   aggregated: { probability: number; confidence: number; nSignals: number },
   markets: MarketContext[],
   positions: AgentPosition[],
-  balance: number
+  balance: number,
+  temporalAdj: Record<string, number>
 ): string {
-  return `## Analysis Results\n${analysis}\n\n## Signal Aggregation\n- Aggregated probability: ${(aggregated.probability * 100).toFixed(1)}%\n- Overall confidence: ${(aggregated.confidence * 100).toFixed(1)}%\n- Signals combined: ${aggregated.nSignals}\n\n## Portfolio\n- Balance: $${balance.toFixed(2)} USDC\n- Open positions: ${positions.length}/${AGENT_LIMITS.MAX_CONCURRENT_POSITIONS}\n${positions.length > 0 ? positions.map((p) => `  - ${p.marketId}: ${p.side} $${p.amount} @ ${p.entryPrice} (PnL: $${p.pnl.toFixed(2)})`).join("\n") : ""}\n\n## Available Sports Markets\n${markets.slice(0, 5).map((m) => { const prices = m.outcomes.map((o) => `${o.name}: $${o.price}`).join(", "); return `- [${m.marketId}] "${m.question}" | ${prices} | Vol=$${m.volume}`; }).join("\n")}\n\n## Decision Required\nBased on the analysis and aggregated signals, make a trade decision on the best sports market.\nIf edge > 5% and confidence > ${(AGENT_LIMITS.MIN_CONFIDENCE * 100).toFixed(0)}%, recommend a trade.\nOtherwise, recommend hold. Remember: quarter-Kelly for position sizing.`;
+  const marketLines = markets.slice(0, 5).map((m) => {
+    const hoursToClose = m.closesAt ? ((new Date(m.closesAt).getTime() - Date.now()) / 3600000).toFixed(1) : "N/A";
+    const prices = m.outcomes.map((o) => `${o.name}: $${o.price}`).join(", ");
+    const adj = temporalAdj[m.marketId] ?? 1.0;
+    return `- [${m.marketId}] "${m.question}" | ${prices} | ${hoursToClose}h | Temporal adj: ${(adj * 100).toFixed(0)}%`;
+  }).join("\n");
+  return `## Analysis Results\n${analysis}\n\n## Signal Aggregation\n- Aggregated probability: ${(aggregated.probability * 100).toFixed(1)}%\n- Overall confidence: ${(aggregated.confidence * 100).toFixed(1)}%\n- Signals combined: ${aggregated.nSignals}\n\n## Temporal Adjustments\n${Object.entries(temporalAdj).map(([id, adj]) => `- ${id}: ${(adj * 100).toFixed(0)}%`).join("\n")}\n\n## Portfolio\n- Balance: $${balance.toFixed(2)} USDC\n- Open positions: ${positions.length}/${AGENT_LIMITS.MAX_CONCURRENT_POSITIONS}\n${positions.length > 0 ? positions.map((p) => `  - ${p.marketId}: ${p.side} $${p.amount} @ ${p.entryPrice} (PnL: $${p.pnl.toFixed(2)})`).join("\n") : ""}\n\n## Available Sports Markets\n${marketLines}\n\n## Decision Required\nBased on the analysis, make a trade decision. Edge > 5% and confidence > ${(AGENT_LIMITS.MIN_CONFIDENCE * 100).toFixed(0)}% to trade.\nConsider time-to-resolution. Quarter-Kelly for sizing.`;
 }
 
-function runBayesianEstimation(
+function computeSportsTemporalAdjustment(markets: MarketContext[]): Record<string, number> {
+  const adj: Record<string, number> = {};
+  for (const m of markets) {
+    if (!m.closesAt) { adj[m.marketId] = 0.85; continue; }
+    const h = (new Date(m.closesAt).getTime() - Date.now()) / 3600000;
+    if (h < 1) adj[m.marketId] = 0.7;
+    else if (h < 6) adj[m.marketId] = 0.85;
+    else if (h < 24) adj[m.marketId] = 0.95;
+    else if (h < 72) adj[m.marketId] = 1.0;
+    else adj[m.marketId] = 0.9;
+  }
+  return adj;
+}
+
+function runScaledBayesianEstimation(
   markets: MarketContext[],
-  signals: GeoSignals,
+  signals: SharedSignals,
   analysis: string
 ): Array<{ marketId: string; probability: number }> {
   return markets.map((m) => {
     const prior = m.outcomes.find((o) => o.name.toLowerCase() === "yes")?.price ?? 0.5;
     const evidence: Array<{ likelihoodYes: number; likelihoodNo: number }> = [];
-
-    for (const [, signal] of Object.entries(signals.gdelt)) {
-      if (Math.abs(signal.avgTone) > 2) {
-        evidence.push(signal.avgTone > 0 ? { likelihoodYes: 0.6, likelihoodNo: 0.4 } : { likelihoodYes: 0.4, likelihoodNo: 0.6 });
+    for (const [, signal] of Object.entries(signals.gdelt ?? {})) {
+      if (Math.abs(signal.avgTone) > 1) {
+        const strength = Math.min(Math.abs(signal.avgTone) / 10, 1);
+        const mag = 0.2 * strength;
+        evidence.push({ likelihoodYes: 0.5 + (signal.avgTone > 0 ? mag : -mag), likelihoodNo: 0.5 - (signal.avgTone > 0 ? mag : -mag) });
       }
     }
-
+    for (const [, signal] of Object.entries(signals.acled ?? {})) {
+      if (Math.abs(signal.delta7d) > 20) {
+        const strength = Math.min(Math.abs(signal.delta7d) / 100, 1);
+        const mag = 0.15 * strength;
+        evidence.push({ likelihoodYes: 0.5 + mag, likelihoodNo: 0.5 - mag });
+      }
+    }
     if (evidence.length === 0) return { marketId: m.marketId, probability: prior };
-    const posterior = bayesianUpdate(prior, evidence.slice(0, 5));
-    return { marketId: m.marketId, probability: posterior };
+    return { marketId: m.marketId, probability: bayesianUpdate(prior, evidence.slice(0, 8)) };
   });
 }
 

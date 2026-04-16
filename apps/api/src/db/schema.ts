@@ -163,3 +163,108 @@ export const evolutionEvents = pgTable("evolution_events", {
   autoPromoted: boolean("auto_promoted").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// --- Signal Calibration: Track per-source accuracy ---
+
+export const signalCalibration = pgTable("signal_calibration", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  agentType: varchar("agent_type", { length: 20 }).notNull(),
+  source: varchar("source", { length: 50 }).notNull(),
+  predicted: decimal("predicted", { precision: 10, scale: 6 }).notNull(),
+  actual: decimal("actual", { precision: 10, scale: 6 }).notNull(),
+  brierScore: decimal("brier_score", { precision: 10, scale: 6 }),
+  marketId: varchar("market_id", { length: 100 }),
+  positionId: varchar("position_id", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  agentTypeIdx: index("signal_cal_agent_type_idx").on(table.agentType),
+  sourceIdx: index("signal_cal_source_idx").on(table.source),
+  marketIdx: index("signal_cal_market_idx").on(table.marketId),
+}));
+
+// --- Confidence Calibration: Track LLM confidence vs actual outcomes ---
+
+export const confidenceCalibration = pgTable("confidence_calibration", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  agentType: varchar("agent_type", { length: 20 }).notNull(),
+  model: varchar("model", { length: 100 }).notNull(),
+  predictedConfidence: decimal("predicted_confidence", { precision: 10, scale: 6 }).notNull(),
+  actualOutcome: varchar("actual_outcome", { length: 10 }).notNull(),
+  positionId: varchar("position_id", { length: 100 }),
+  marketId: varchar("market_id", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  agentModelIdx: index("conf_cal_agent_model_idx").on(table.agentType, table.model),
+}));
+
+// --- Scenario Analysis Results: Track pre-trade EV predictions ---
+
+export const scenarioResults = pgTable("scenario_results", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  agentId: varchar("agent_id", { length: 100 }).notNull(),
+  jobId: varchar("job_id", { length: 100 }).notNull(),
+  marketId: varchar("market_id", { length: 100 }),
+  action: varchar("action", { length: 10 }).notNull(),
+  estimatedProbability: decimal("estimated_probability", { precision: 10, scale: 6 }),
+  totalExpectedValue: decimal("total_expected_value", { precision: 18, scale: 6 }),
+  riskRewardRatio: decimal("risk_reward_ratio", { precision: 10, scale: 4 }),
+  shouldTrade: boolean("should_trade").notNull(),
+  reason: text("reason"),
+  scenarios: jsonb("scenarios"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  marketIdx: index("scenario_market_idx").on(table.marketId),
+}));
+
+// --- Adversarial Review Results ---
+
+export const adversarialReviews = pgTable("adversarial_reviews", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  agentId: varchar("agent_id", { length: 100 }).notNull(),
+  marketId: varchar("market_id", { length: 100 }),
+  action: varchar("action", { length: 10 }).notNull(),
+  overturned: boolean("overturned").notNull(),
+  originalConfidence: decimal("original_confidence", { precision: 10, scale: 6 }),
+  riskAdjustedConfidence: decimal("risk_adjusted_confidence", { precision: 10, scale: 6 }),
+  reason: text("reason"),
+  risks: jsonb("risks"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  agentIdx: index("adversarial_agent_idx").on(table.agentId),
+  overturnedIdx: index("adversarial_overturned_idx").on(table.overturned),
+}));
+
+// --- Multi-Model Consensus Results ---
+
+export const consensusResults = pgTable("consensus_results", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  agentId: varchar("agent_id", { length: 100 }).notNull(),
+  marketId: varchar("market_id", { length: 100 }),
+  consensus: varchar("consensus", { length: 10 }).notNull(),
+  modelsAgreed: integer("models_agreed").notNull(),
+  modelsQueried: integer("models_queried").notNull(),
+  confidenceAdjustment: decimal("confidence_adjustment", { precision: 10, scale: 6 }),
+  decisionAction: varchar("decision_action", { length: 10 }),
+  decisionConfidence: decimal("decision_confidence", { precision: 10, scale: 6 }),
+  details: jsonb("details"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  consensusIdx: index("consensus_consensus_idx").on(table.consensus),
+}));
+
+// --- Microstructure Check Results ---
+
+export const microstructureChecks = pgTable("microstructure_checks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  marketId: varchar("market_id", { length: 100 }).notNull(),
+  allowed: boolean("allowed").notNull(),
+  reason: text("reason"),
+  bidAskSpread: decimal("bid_ask_spread", { precision: 10, scale: 6 }),
+  depthAt5Pct: decimal("depth_at_5_pct", { precision: 18, scale: 6 }),
+  liquidityScore: decimal("liquidity_score", { precision: 10, scale: 6 }),
+  priceImpactEstimate: decimal("price_impact_estimate", { precision: 10, scale: 6 }),
+  midPrice: decimal("mid_price", { precision: 10, scale: 6 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  marketIdx: index("micro_market_idx").on(table.marketId),
+}));

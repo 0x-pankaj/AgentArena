@@ -100,6 +100,9 @@ export const REDIS_KEYS = {
   FEED_CATEGORY_PREFIX: "feed:category:",
   AGENT_EVENTS_STREAM: "agent:events",
   GLOBAL_STATS: "cache:global_stats",
+  CALIBRATION_PREFIX: "calibration:",
+  CONSENSUS_PREFIX: "consensus:",
+  PRICE_MONITOR_PREFIX: "monitor:",
 } as const;
 
 export const REVENUE_SPLIT = {

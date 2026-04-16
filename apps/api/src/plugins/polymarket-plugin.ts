@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { JUPITER_PREDICT_BASE_URL } from "@agent-arena/shared";
+import { jupiterRateLimiter, getAgentPriority, withJupiterRateLimit } from "../services/jupiter-rate-limiter";
 
 const API_KEY = process.env.JUPITER_API_KEY ?? "";
 
@@ -152,7 +153,8 @@ class JupiterPredictClient {
 
   private async request<T>(
     path: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    category?: string
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {
@@ -161,19 +163,53 @@ class JupiterPredictClient {
       ...(options.headers as Record<string, string> ?? {}),
     };
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+    // Determine category from path for rate limiting
+    const requestCategory = category ?? this.extractCategory(path);
+    const priority = category ? getAgentPriority(category) : undefined;
 
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(
-        `Jupiter Predict API error ${response.status}: ${body}`
-      );
+    // Execute with rate limiting
+    return withJupiterRateLimit(requestCategory, async () => {
+      try {
+        const response = await fetch(url, {
+          ...options,
+          headers,
+        });
+
+        if (!response.ok) {
+          const body = await response.text();
+          const error = new Error(
+            `Jupiter Predict API error ${response.status}: ${body}`
+          );
+          // Record failure for rate limiter
+          jupiterRateLimiter.recordFailure(requestCategory, response.status);
+          throw error;
+        }
+
+        // Record success
+        jupiterRateLimiter.recordSuccess(requestCategory);
+        return response.json() as Promise<T>;
+      } catch (err) {
+        if (err instanceof Error && !err.message.includes('Jupiter Predict API error')) {
+          jupiterRateLimiter.recordFailure(requestCategory);
+        }
+        throw err;
+      }
+    }, priority);
+  }
+
+  // Extract category from API path for rate limiting
+  private extractCategory(path: string): string {
+    if (path.includes('/events')) {
+      // Try to extract category from query params
+      const match = path.match(/category=([^&]+)/);
+      if (match) return match[1];
+      return 'general';
     }
-
-    return response.json() as Promise<T>;
+    if (path.includes('/markets')) return 'markets';
+    if (path.includes('/orderbook')) return 'markets';
+    if (path.includes('/positions')) return 'positions';
+    if (path.includes('/orders')) return 'orders';
+    return 'general';
   }
 
   // --- Events ---
@@ -191,7 +227,9 @@ class JupiterPredictClient {
 
     const qs = searchParams.toString();
     const raw = await this.request<any>(
-      `/events${qs ? `?${qs}` : ""}`
+      `/events${qs ? `?${qs}` : ""}`,
+      undefined,
+      params.category // Pass category for rate limiting
     );
 
     // Jupiter API returns { data: [...], pagination: {...} }

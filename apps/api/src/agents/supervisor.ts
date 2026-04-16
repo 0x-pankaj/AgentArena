@@ -13,6 +13,7 @@ import { publishFeedEvent, buildFeedEvent } from "../feed";
 import { createAgentWallet, fundAgentWallet, getWalletBalance } from "../utils/privy";
 import { buildInitializeJobTx, getJobProfilePDA } from "../anchor/job-client";
 import { PublicKey } from "@solana/web3.js";
+import { startBackgroundPriceMonitor, stopBackgroundPriceMonitor } from "../services/price-monitor";
 
 // --- Category to registry ID mapping ---
 
@@ -334,6 +335,7 @@ export function startAgentLoop(ctx: AgentRuntimeContext, category: string = "geo
   agent.intervalId = setInterval(tick, 5 * 60 * 1000);
 
   activeAgents.set(ctx.jobId, agent);
+  startBackgroundPriceMonitor({ jobId: ctx.jobId, agentId: ctx.agentId, agentWalletId: ctx.agentWalletId, agentName: category });
   console.log(`[Supervisor] Started agent loop: job ${ctx.jobId} (${category})`);
 }
 
@@ -343,6 +345,7 @@ export function stopAgentLoop(jobId: string): boolean {
   const agent = activeAgents.get(jobId);
   if (!agent) return false;
 
+  stopBackgroundPriceMonitor(jobId);
   if (agent.intervalId) {
     clearInterval(agent.intervalId);
   }
@@ -360,6 +363,7 @@ export function pauseAgentLoop(jobId: string, reason: string = "User paused"): b
   const agent = activeAgents.get(jobId);
   if (!agent) return false;
 
+  stopBackgroundPriceMonitor(jobId);
   if (agent.intervalId) {
     clearInterval(agent.intervalId);
     agent.intervalId = null;

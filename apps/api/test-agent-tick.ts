@@ -139,8 +139,8 @@ async function main() {
 
     console.log(`\n${"─".repeat(60)}`);
     log(`Tick completed in ${elapsed}ms`);
-    console.log(`─".repeat(60)}`);
-    log(`State`, result.state);
+console.log(`${"─".repeat(60)}`);
+  log(`State`, result.state);
     log(`Action`, result.action);
     log(`Detail`, result.detail);
     log(`Tokens`, String(result.tokensUsed ?? 0));
@@ -159,7 +159,7 @@ async function main() {
 
     // Check feed events
     try {
-      const feedEvents = await redis.lrange("feed:recent", 0, -1);
+      const feedEvents = await redis.zrange("feed:recent", 0, -1);
       log(`Feed events published`, `${feedEvents.length}`);
       if (feedEvents.length > 0) {
         const last = JSON.parse(feedEvents[feedEvents.length - 1]);
@@ -177,11 +177,11 @@ async function main() {
     console.log(`\n${"─".repeat(60)}`);
     log(`Tick failed after ${elapsed}ms`);
     log(`Error`, err instanceof Error ? err.message : String(err));
-    console.log(`─".repeat(60)}`);
+    console.log(`${"─".repeat(60)}`);
 
     // Check what feed events were published before failure
     try {
-      const feedEvents = await redis.lrange("feed:recent", 0, -1);
+      const feedEvents = await redis.zrange("feed:recent", 0, -1);
       log(`Feed events before failure`, `${feedEvents.length}`);
       for (const evt of feedEvents.slice(-5)) {
         const parsed = JSON.parse(evt);

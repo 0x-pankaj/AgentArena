@@ -88,38 +88,38 @@ export async function scanMarkets(
     const categories = categoryMap[category] ?? ["crypto", "politics", "sports", "economics"];
     const allMarkets: MarketContext[] = [];
 
-    for (const cat of categories) {
-      try {
-        const { markets } = await getTrendingMarkets({
-          category: cat,
-          limit: 20,
+    const results = await Promise.allSettled(
+      categories.map((cat) =>
+        getTrendingMarkets({ category: cat, limit: 20 })
+      )
+    );
+
+    for (const result of results) {
+      if (result.status !== "fulfilled") continue;
+      const { markets } = result.value;
+
+      for (const m of markets) {
+        const volume = Number(m.volume ?? 0);
+        if (volume < minVolume) continue;
+
+        const daysUntilClose = m.closesAt
+          ? (new Date(m.closesAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+          : Infinity;
+        if (daysUntilClose > AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION) continue;
+
+        const outcomes = Array.isArray(m.outcomes)
+          ? (m.outcomes as Array<{ name: string; price?: number }>)
+              .map((o) => ({ name: o.name, price: o.price ?? 0 }))
+          : [];
+
+        allMarkets.push({
+          marketId: m.marketId,
+          question: m.question,
+          outcomes,
+          volume,
+          liquidity: Number(m.liquidity ?? 0),
+          closesAt: m.closesAt ? new Date(m.closesAt).toISOString() : null,
         });
-
-        for (const m of markets) {
-          const volume = Number(m.volume ?? 0);
-          if (volume < minVolume) continue;
-
-          const daysUntilClose = m.closesAt
-            ? (new Date(m.closesAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-            : Infinity;
-          if (daysUntilClose > AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION) continue;
-
-          const outcomes = Array.isArray(m.outcomes)
-            ? (m.outcomes as Array<{ name: string; price?: number }>)
-                .map((o) => ({ name: o.name, price: o.price ?? 0 }))
-            : [];
-
-          allMarkets.push({
-            marketId: m.marketId,
-            question: m.question,
-            outcomes,
-            volume,
-            liquidity: Number(m.liquidity ?? 0),
-            closesAt: m.closesAt ? new Date(m.closesAt).toISOString() : null,
-          });
-        }
-      } catch {
-        // Skip failed category
       }
     }
 

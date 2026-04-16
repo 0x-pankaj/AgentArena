@@ -127,6 +127,32 @@ export const MODELS = {
     temperature: 0.3,
     maxTokens: 1000,
   } satisfies ModelConfig,
+
+  // --- Specialized models for different pipeline stages ---
+
+  // Fast model for scanning/research (cheap, quick)
+  fastScan: {
+    model: "qwen/qwen3.6-plus:free",
+    provider: "openrouter" as const,
+    temperature: 0.4,
+    maxTokens: 2000,
+  } satisfies ModelConfig,
+
+  // Heavy model for deep analysis (expensive, thorough)
+  deepAnalysis: {
+    model: "claude-sonnet-4-20250514",
+    provider: "anthropic" as const,
+    temperature: 0.2,
+    maxTokens: 4000,
+  } satisfies ModelConfig,
+
+  // Decision model (balanced, structured output)
+  decision: {
+    model: "qwen/qwen3.6-plus:free",
+    provider: "openrouter" as const,
+    temperature: 0.2,
+    maxTokens: 1500,
+  } satisfies ModelConfig,
 } as const;
 
 export const DEFAULT_POLITICS_AGENT_MODELS: AgentModels = {
