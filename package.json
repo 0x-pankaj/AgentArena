@@ -13,7 +13,10 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "dev:api": "turbo dev --filter=@agent-arena/api",
-    "dev:mobile": "turbo dev --filter=@agent-arena/mobile"
+    "dev:mobile": "turbo dev --filter=@agent-arena/mobile",
+    "graphify": "python3 -c \"from pathlib import Path; from graphify import detect, extract, build, cluster, analyze, report, export; detected = detect.detect(Path('.')); code_files = [Path(f) for f in detected['files']['code']]; result = extract.extract(code_files); G = build.build_from_json(result); communities = cluster.cluster(G); cohesion = cluster.score_all(G, communities); gods = analyze.god_nodes(G); surprises = analyze.surprising_connections(G, communities); labels = {cid: 'Community ' + str(cid) for cid in communities}; questions = analyze.suggest_questions(G, communities, labels); rep = report.generate(G, communities, cohesion, labels, gods, surprises, detected, {'input': result['input_tokens'], 'output': result['output_tokens']}, str(Path('.')), suggested_questions=questions); (Path('graphify-out') / 'GRAPH_REPORT.md').write_text(rep); export.to_json(G, communities, str(Path('graphify-out') / 'graph.json'))\"",
+    "graphify:query": "graphify query",
+    "graphify:watch": "python3 -c \"from pathlib import Path; from graphify.watch import watch; watch.watch(Path('.'))\""
   },
   "devDependencies": {
     "turbo": "^2.0.0",

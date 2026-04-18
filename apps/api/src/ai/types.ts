@@ -13,7 +13,7 @@ export interface AgentIdentity {
 // --- Model config per pipeline step ---
 
 export interface ModelConfig {
-  /** Model identifier — e.g. "qwen/qwen3.6-plus-free", "gpt-4o", "claude-sonnet-4-20250514" */
+  /** Model identifier — e.g. "qwen/qwen3.6-plus", "gpt-4o", "claude-sonnet-4-20250514" */
   model: string;
   /** Provider — "openai" (compatible: Kimi, OpenRouter, etc.), "anthropic", "openrouter" */
   provider: "openai" | "anthropic" | "openrouter";

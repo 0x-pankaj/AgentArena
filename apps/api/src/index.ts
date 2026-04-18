@@ -5,13 +5,15 @@ import { trpcServer } from "@hono/trpc-server";
 import { eq } from "drizzle-orm";
 import { appRouter } from "./routers/_app";
 import { createContext } from "./utils/context";
-import { startWebSocketServer } from "./ws";
+import { startWebSocketServer, stopWebSocketServer } from "./ws";
 import { startWorker, stopWorker, setTradeProcessor, scheduleRecurringJobs } from "./services/queue-service";
 import { initializeSupervisor, resumeActiveAgents } from "./agents/supervisor";
 import { runAgentTick } from "./agents/registry";
 import { syncMarketsFromJupiter } from "./services/market-service";
 import { runEvolutionCycle } from "./services/evolution-service";
-import { stopWebSocketServer } from "./ws";
+import { realTimePriceMonitor } from "./services/realtime-price-monitor";
+import { preWarmCategoryCaches } from "./services/jupiter-cache-manager";
+import { startMetricsLogging } from "./services/jupiter-metrics";
 import { db, schema } from "./db";
 import { EVOLUTION_CONFIG } from "@agent-arena/shared";
 import type { TradeJobData, TradeJobResult } from "./services/queue-service";
@@ -99,13 +101,26 @@ async function startup() {
 
   startWorker();
 
-  // 3. Schedule recurring jobs
+  // 3. Start real-time price monitor
+  realTimePriceMonitor.start();
+  console.log("[Startup] Real-time price monitor started (15s polling)");
+
+  // 4. Pre-warm Jupiter caches before agents start
+  console.log("[Startup] Pre-warming Jupiter caches...");
+  preWarmCategoryCaches().catch(err => {
+    console.error("[Startup] Cache pre-warming failed:", err);
+  });
+
+  // 4.5. Start metrics logging
+  startMetricsLogging();
+
+  // 5. Schedule recurring jobs
   await scheduleRecurringJobs();
 
-  // 4. Resume active agents from DB
+  // 6. Resume active agents from DB
   await resumeActiveAgents();
 
-  // 5. Seed initial prompt versions if not already done
+  // 7. Seed initial prompt versions if not already done
   try {
     const [existingVersion] = await db
       .select({ id: schema.agentPromptVersions.id })
@@ -121,7 +136,7 @@ async function startup() {
     console.warn("[Startup] Prompt seeding skipped:", err instanceof Error ? err.message : err);
   }
 
-  // 6. Schedule evolution cycle (every 6 hours)
+  // 8. Schedule evolution cycle (every 6 hours)
   const evolutionInterval = setInterval(async () => {
     try {
       console.log("[Scheduler] Running evolution cycle...");
@@ -135,6 +150,7 @@ async function startup() {
   async function shutdown(signal: string) {
     console.log(`[Shutdown] ${signal} received, shutting down gracefully...`);
     clearInterval(evolutionInterval);
+    try { realTimePriceMonitor.stop(); } catch (err) { console.error("[Shutdown] Price monitor stop error:", err); }
     try { await stopWorker(); } catch (err) { console.error("[Shutdown] Worker stop error:", err); }
     try { await stopWebSocketServer(); } catch (err) { console.error("[Shutdown] WS stop error:", err); }
     console.log("[Shutdown] Complete");

@@ -100,6 +100,9 @@ export const REDIS_KEYS = {
   FEED_CATEGORY_PREFIX: "feed:category:",
   AGENT_EVENTS_STREAM: "agent:events",
   GLOBAL_STATS: "cache:global_stats",
+  CALIBRATION_PREFIX: "calibration:",
+  CONSENSUS_PREFIX: "consensus:",
+  PRICE_MONITOR_PREFIX: "monitor:",
 } as const;
 
 export const REVENUE_SPLIT = {
@@ -108,7 +111,7 @@ export const REVENUE_SPLIT = {
   OPERATOR_SHARE: 93,
 } as const;
 
-export const LLM_MODEL = "qwen/qwen3.6-plus:free";
+export const LLM_MODEL = "qwen/qwen3.6-plus";
 export const LLM_BASE_URL = "https://openrouter.ai/api/v1";
 export const WEB_SEARCH_COST_PER_CALL = 0;
 

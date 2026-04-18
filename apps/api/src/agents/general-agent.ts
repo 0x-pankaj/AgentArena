@@ -13,7 +13,7 @@ import {
 import { redis } from "../utils/redis";
 import { REDIS_KEYS, AGENT_LIMITS, AGENT_PROFILES, EXECUTE_TRADES } from "@agent-arena/shared";
 import { getActivePositions } from "../services/trade-service";
-import { getSharedSignals } from "../services/signal-cache";
+import { getSharedSignals, type SharedSignals } from "../services/signal-cache";
 import { getActivePrompts, recordPromptLinks } from "../services/evolution-service";
 import { publishFeedEvent, buildFeedEvent } from "../feed";
 import type {
@@ -34,6 +34,18 @@ import { GENERAL_AGENT_TOOLS } from "../ai/tools";
 import { quickDecision, quickAnalysis } from "../ai/pipeline";
 import { checkThresholds } from "./strategy-engine";
 import type { GeoSignals } from "./strategy-engine";
+import { runAdversarialReview } from "../services/adversarial-review";
+import { runMultiModelConsensus } from "../services/multi-model-consensus";
+import { checkMicrostructure } from "../services/market-microstructure";
+import { checkCrossMarketCorrelation } from "../services/correlation-matrix";
+import { checkMonitoredPositions, registerPositionForMonitoring } from "../services/price-monitor";
+import { getAllCalibratedWeights, decayConfidence, getConfidenceAdjustment } from "../services/calibration-service";
+import { recordAgentPrediction } from "../services/outcome-feedback";
+import { runScenarioAnalysis, quickScenarioGate } from "../services/scenario-analysis";
+import { db, schema } from "../db";
+
+const FAST_PATH_EDGE_THRESHOLD = 0.15;
+const FAST_PATH_CONFIDENCE_THRESHOLD = 0.85;
 
 const AGENT_NAME = "General Agent";
 const AGENT_ID = "general-agent";
@@ -60,9 +72,9 @@ export function buildGeneralAgentConfig(promptOverrides?: {
     tools: [],
     pipeline: [
       {
-        name: "research",
+        name: "research_analysis",
         modelKey: "analysis",
-        systemPrompt: promptOverrides?.research ?? `You are a prediction market research analyst. Your job is to identify the most important factors that could determine the outcome of prediction markets.
+        systemPrompt: promptOverrides?.research ?? `You are a prediction market research analyst. Your job is to identify the most important factors that could determine the outcome of prediction markets, synthesize all research signals into a probability estimate, and provide Bayesian reasoning.
 
 For each market, identify:
 1. The top 5 factors that would determine the outcome
@@ -71,25 +83,7 @@ For each market, identify:
 4. Recent developments that might shift probability
 5. Potential contrarian signals (when crowd is wrong)
 
-Be thorough, specific, and cite sources. Use web_search and data tools to gather real-time information.
-Focus on FACTS and DATA, not speculation.`,
-        toolNames: [
-          "web_search",
-          "gdelt_search", "gdelt_tone", "gdelt_all_signals",
-          "acled_search", "acled_conflict_signal",
-          "fred_series", "fred_macro_signal", "fred_all_signals",
-          "twitter_search", "twitter_social_signal", "twitter_key_accounts",
-          "coingecko_price", "coingecko_trending", "coingecko_global",
-          "defillama_tvl", "defillama_solana", "defillama_protocols",
-        ],
-        maxTokens: 4000,
-      },
-      {
-        name: "analysis",
-        modelKey: "analysis",
-        systemPrompt: promptOverrides?.analysis ?? `You are a senior prediction market analyst performing deep analysis.
-
-Your job: synthesize all research signals into a probability estimate for each market.
+Then synthesize all research signals into a probability estimate for each market.
 
 METHODOLOGY:
 1. Start with the market's implied probability (current price) as your baseline
@@ -107,19 +101,21 @@ SIGNAL SOURCES:
 - Twitter: Social sentiment and breaking news from key accounts
 - Web search: Breaking developments
 
-OUTPUT: For each market analyzed, provide your independent probability estimate.
+Be thorough, specific, and cite sources. Use web_search and data tools to gather real-time information.
+Focus on FACTS and DATA, not speculation. Provide your independent probability estimate for each market.
 Explain your reasoning step by step. Be specific about which signals changed your estimate from the market price.`,
         toolNames: [
           "web_search",
-          "gdelt_search", "gdelt_tone",
+          "gdelt_search", "gdelt_tone", "gdelt_all_signals",
           "acled_search", "acled_conflict_signal",
-          "fred_series", "fred_macro_signal",
+          "fred_series", "fred_macro_signal", "fred_all_signals",
+          "twitter_search", "twitter_social_signal", "twitter_key_accounts",
+          "coingecko_price", "coingecko_trending", "coingecko_global",
+          "defillama_tvl", "defillama_solana", "defillama_protocols",
           "firms_hotspots",
-          "twitter_search", "twitter_social_signal",
-          "coingecko_price", "defillama_tvl",
           "market_detail",
         ],
-        maxTokens: 4000,
+        maxTokens: 6000,
       },
       {
         name: "decision",
@@ -425,7 +421,7 @@ export async function runGeneralAgentTick(
     await saveState();
   }
 
-  // --- ANALYZING (3-stage pipeline) ---
+  // --- ANALYZING (2-stage pipeline) ---
   if (fsm.getState() === "ANALYZING") {
     // Fetch signals from shared cache
     await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} fetching live signals from all sources...`, { pipeline_stage: "signal_fetch_start" });
@@ -521,87 +517,105 @@ export async function runGeneralAgentTick(
       daily_pnl: portfolio.dailyPnl
     });
 
-    // STAGE 1: Research (gather data + identify factors)
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🔍 Stage 1/3: Starting research phase — analyzing ${markets.length} markets...`, { pipeline_stage: "research_start" });
+    // STAGE 1/2: Combined Research + Analysis
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🔍 Stage 1/2: Starting research + analysis phase — analyzing ${markets.length} markets...`, { pipeline_stage: "research_analysis_start" });
 
-    const researchPrompt = buildResearchContext(signals, markets, positions, portfolio.totalBalance, thresholdCheck.reasons);
+    const researchAnalysisPrompt = buildGeneralResearchContext(signals, markets, positions, portfolio.totalBalance, thresholdCheck.reasons);
 
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for research (model: ${config.models.analysis.model})...`, { pipeline_stage: "llm_research_call" });
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for research + analysis (model: ${config.models.analysis.model})...`, { pipeline_stage: "llm_research_analysis_call" });
+    const primaryMarket = markets[0];
+    const primaryYesPrice = primaryMarket?.outcomes.find(o => o.name.toLowerCase() === "yes")?.price ?? 0;
+    const primaryNoPrice = primaryMarket?.outcomes.find(o => o.name.toLowerCase() === "no")?.price ?? 0;
     const researchModel = config.models.analysis;
-    const research = await quickAnalysis({
+    const researchAnalysis = await quickAnalysis({
       modelConfig: researchModel,
       systemPrompt: config.pipeline[0].systemPrompt,
-      userMessage: researchPrompt,
+      userMessage: researchAnalysisPrompt,
       tools: config.pipeline[0].toolNames,
       agentId: ctx.agentId,
+      marketContext: primaryMarket ? { marketId: primaryMarket.marketId, yesPrice: primaryYesPrice, noPrice: primaryNoPrice } : undefined,
     });
 
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ✅ Stage 1/3: Research complete`, { 
-      pipeline_stage: "research_complete", 
-      tokens_used: research.tokensUsed,
-      tool_calls: research.toolCalls,
-      reasoning_snippet: research.text.slice(0, 300)
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ✅ Stage 1/2: Research + Analysis complete`, { 
+      pipeline_stage: "research_analysis_complete", 
+      tokens_used: researchAnalysis.tokensUsed,
+      tool_calls: researchAnalysis.toolCalls,
+      reasoning_snippet: researchAnalysis.text.slice(0, 300)
     }, "significant");
-
-    // STAGE 2: Deep analysis (Bayesian + signal aggregation)
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📊 Stage 2/3: Running Bayesian analysis and signal aggregation...`, { pipeline_stage: "analysis_start" });
-
-    const analysisPrompt = buildAnalysisContext(research.text, signals, markets, positions, portfolio.totalBalance);
-
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for deep analysis (model: ${config.models.analysis.model})...`, { pipeline_stage: "llm_analysis_call" });
-    const analysisModel = config.models.analysis;
-    const analysis = await quickAnalysis({
-      modelConfig: analysisModel,
-      systemPrompt: config.pipeline[1].systemPrompt,
-      userMessage: analysisPrompt,
-      tools: config.pipeline[1].toolNames,
-      agentId: ctx.agentId,
-    });
 
     // Run Bayesian estimation on top markets
     await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} running Bayesian probability estimation on ${Math.min(markets.length, 5)} markets...`, { pipeline_stage: "bayesian_estimation" });
-    const bayesianResults = runBayesianEstimation(markets.slice(0, 5), signals, analysis.text);
+    const bayesianResults = runScaledBayesianEstimation(markets.slice(0, 5), signals, researchAnalysis.text);
 
     await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} Bayesian estimates:`, {
       pipeline_stage: "bayesian_results",
       estimates: bayesianResults.map(b => ({ marketId: b.marketId, probability: (b.probability * 100).toFixed(1) + "%" }))
     });
 
-    // Aggregate signals
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} aggregating all signals (LLM + GDELT + ACLED + Bayesian)...`, { pipeline_stage: "signal_aggregation" });
-    const aggregatedSignal = aggregateSignals([
-      { name: "llm_analysis", value: extractProbabilityFromText(analysis.text), confidence: 0.7, weight: 3.0 },
-      { name: "gdelt_sentiment", value: gdeltToProbability(signals.gdelt), confidence: 0.5, weight: 1.0 },
-      { name: "conflict_signal", value: conflictToProbability(signals.acled), confidence: 0.6, weight: 1.5 },
-      ...bayesianResults.map((b) => ({ name: `bayesian_${b.marketId}`, value: b.probability, confidence: 0.7, weight: 2.0 })),
-    ]);
+    // Aggregate signals — Features 1+2+9: Calibrated weights + signal decay + confidence calibration
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} aggregating all signals (LLM + GDELT + ACLED + Bayesian + calibrated + decayed)...`, { pipeline_stage: "signal_aggregation" });
 
-    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} ✅ Stage 2/3: Signal aggregation complete`, { 
+    const signalAgeMinutes = signals.fetchedAt
+      ? (Date.now() - new Date(signals.fetchedAt).getTime()) / 60000
+      : 0;
+    const calibratedWeights = await getAllCalibratedWeights("general");
+
+    const defaultGeneralWeights: Record<string, number> = {
+      llm_analysis: 3.0, gdelt_sentiment: 1.0, conflict_signal: 1.5,
+    };
+    const decayedSignals = [
+      { name: "llm_analysis", value: extractProbabilityFromText(researchAnalysis.text), confidence: decayConfidence(0.7, signalAgeMinutes, "market"), weight: calibratedWeights["llm_analysis"] ?? defaultGeneralWeights["llm_analysis"] ?? 3.0 },
+      { name: "gdelt_sentiment", value: gdeltToProbability(signals.gdelt), confidence: decayConfidence(0.5, signalAgeMinutes, "gdelt"), weight: calibratedWeights["gdelt_sentiment"] ?? defaultGeneralWeights["gdelt_sentiment"] ?? 1.0 },
+      { name: "conflict_signal", value: conflictToProbability(signals.acled), confidence: decayConfidence(0.6, signalAgeMinutes, "acled"), weight: calibratedWeights["conflict_signal"] ?? defaultGeneralWeights["conflict_signal"] ?? 1.5 },
+      ...bayesianResults.map((b) => ({
+        name: `bayesian_${b.marketId}`,
+        value: b.probability,
+        confidence: decayConfidence(0.7, signalAgeMinutes, "market"),
+        weight: calibratedWeights[`bayesian_${b.marketId}`] ?? 2.0,
+      })),
+    ];
+    const finalAggregatedSignal = aggregateSignals(decayedSignals);
+
+    const temporalAdj = computeGeneralTemporalAdjustment(markets);
+
+    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} ✅ Signal aggregation complete (calibrated + decayed + temporal adjusted)`, { 
       pipeline_stage: "analysis_complete", 
-      aggregated_probability: (aggregatedSignal.probability * 100).toFixed(1) + "%",
-      aggregated_confidence: (aggregatedSignal.confidence * 100).toFixed(1) + "%",
-      signals_combined: aggregatedSignal.nSignals,
-      reasoning_snippet: analysis.text.slice(0, 300)
+      aggregated_probability: (finalAggregatedSignal.probability * 100).toFixed(1) + "%",
+      aggregated_confidence: (finalAggregatedSignal.confidence * 100).toFixed(1) + "%",
+      calibration_info: Object.keys(calibratedWeights).length > 0 ? `${Object.keys(calibratedWeights).length} calibrated weights` : "using defaults",
+      signals_combined: finalAggregatedSignal.nSignals,
+      signal_age_minutes: signalAgeMinutes.toFixed(1),
+      reasoning_snippet: researchAnalysis.text.slice(0, 300)
     }, "significant");
 
-    // STAGE 3: Trade decision (structured output)
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🎯 Stage 3/3: Making trade decision with edge detection...`, { pipeline_stage: "decision_start" });
+    // STAGE 2/2: Trade decision (structured output)
+    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🎯 Stage 2/2: Making trade decision with edge detection...`, { pipeline_stage: "decision_start" });
 
     const decisionModel = config.models.decision;
-    let decision: any;
+    let decision: TradeDecision;
     let decisionTokens = 0;
     try {
       await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for final decision (model: ${config.models.decision.model})...`, { pipeline_stage: "llm_decision_call" });
       const result = await quickDecision<TradeDecision>({
         modelConfig: decisionModel,
-        systemPrompt: config.pipeline[2].systemPrompt,
-        userMessage: buildDecisionContext(analysis.text, aggregatedSignal, markets, positions, portfolio.totalBalance),
+        systemPrompt: config.pipeline[1].systemPrompt,
+        userMessage: buildGeneralDecisionContext(researchAnalysis.text, finalAggregatedSignal, markets, positions, portfolio.totalBalance, temporalAdj),
         schema: TradeDecisionSchema,
-        tools: config.pipeline[2].toolNames,
+        tools: config.pipeline[1].toolNames,
         agentId: ctx.agentId,
       });
       decision = result.decision;
       decisionTokens = result.tokensUsed;
+
+      // Feature 9: Adjust LLM confidence based on calibration data
+      const llmConfidenceAdj = await getConfidenceAdjustment("general", config.models.decision.model, decision.confidence);
+      if (llmConfidenceAdj !== 1.0) {
+        const originalConf = decision.confidence;
+        decision.confidence = Math.max(0, Math.min(1, decision.confidence * llmConfidenceAdj));
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} confidence calibrated: ${(originalConf * 100).toFixed(0)}% → ${(decision.confidence * 100).toFixed(0)}% (adj: ${(llmConfidenceAdj * 100).toFixed(0)}%)`, {
+          pipeline_stage: "confidence_calibration", original: originalConf, adjusted: decision.confidence, calibration_factor: llmConfidenceAdj,
+        });
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
       fsm.transition("no_edge");
@@ -619,11 +633,11 @@ export async function runGeneralAgentTick(
         state: fsm.getState(),
         action: "analyzed",
         detail: `Decision stage error: ${errorMsg}`,
-        tokensUsed: research.tokensUsed + analysis.tokensUsed,
+        tokensUsed: researchAnalysis.tokensUsed,
       };
     }
 
-    const totalTokens = research.tokensUsed + analysis.tokensUsed + decisionTokens;
+    const totalTokens = researchAnalysis.tokensUsed + decisionTokens;
 
     // Validate LLM decision against known markets
     await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} validating decision against known markets...`, { pipeline_stage: "decision_validation" });
@@ -635,46 +649,175 @@ export async function runGeneralAgentTick(
       return { state: fsm.getState(), action: "analyzed", detail: `Decision rejected: ${validation.error}`, decision, tokensUsed: totalTokens };
     }
 
-    await redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`, String(Date.now()));
-
-    if (decision.action === "hold" || decision.confidence < config.minConfidence) {
+    // Skip further checks for hold decisions
+    const action: string = decision.action;
+    if (action === "hold" || decision.confidence < config.minConfidence) {
+      await redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`, String(Date.now()));
       fsm.transition("no_edge");
       await saveState();
-
-      await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:consecutive_no_edge`, 3600, String(consecutiveNoEdge + 1));
-
       await publishReasoningEvent(ctx.agentId, ctx.jobId, decision, AGENT_NAME);
-
-      const bestMarket = markets.length > 0 ? markets[0] : null;
-      if (bestMarket) {
-        const yesPrice = bestMarket.outcomes.find((o) => o.name.toLowerCase() === "yes")?.price ?? 0.5;
-        const bestEdge = calculateEdge(aggregatedSignal.probability, yesPrice, aggregatedSignal.confidence);
-        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📋 Decision: HOLD — confidence ${(decision.confidence * 100).toFixed(0)}% below ${(config.minConfidence * 100).toFixed(0)}% threshold. Best available edge: ${bestMarket.question} (${(bestEdge.netEdge * 100).toFixed(1)}%)`, { 
-          pipeline_stage: "hold", 
-          confidence: decision.confidence,
-          reasoning: decision.reasoning,
-          best_available_edge: {
-            marketId: bestMarket.marketId,
-            question: bestMarket.question,
-            net_edge_percent: (bestEdge.netEdge * 100).toFixed(1) + "%",
-            aggregated_probability: (aggregatedSignal.probability * 100).toFixed(1) + "%",
-          },
-          consecutive_no_edge: consecutiveNoEdge + 1
-        });
-      } else {
-        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📋 Decision: HOLD — confidence ${(decision.confidence * 100).toFixed(0)}% below ${(config.minConfidence * 100).toFixed(0)}% threshold`, { 
-          pipeline_stage: "hold", 
-          confidence: decision.confidence,
-          reasoning: decision.reasoning,
-          consecutive_no_edge: consecutiveNoEdge + 1
-        });
-      }
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📋 Decision: HOLD — confidence ${(decision.confidence * 100).toFixed(0)}%${decision.confidence < config.minConfidence ? ` below ${(config.minConfidence * 100).toFixed(0)}% threshold` : ""}`, { 
+        pipeline_stage: "hold", 
+        confidence: decision.confidence,
+        reasoning: decision.reasoning
+      });
       return { state: fsm.getState(), action: "analyzed", detail: `Decision: hold (confidence: ${(decision.confidence * 100).toFixed(0)}%)`, decision, tokensUsed: totalTokens };
     }
 
-    // Edge detected — calculate edge for feed
-    const marketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
-    const edge = calculateEdge(aggregatedSignal.probability, marketPrice, aggregatedSignal.confidence);
+    // FAST-PATH: Skip adversarial + consensus if strong edge and high confidence
+    const preEdgeMarketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
+    const preEdge = calculateEdge(finalAggregatedSignal.probability, preEdgeMarketPrice, finalAggregatedSignal.confidence);
+    const useFastPath = preEdge.netEdge > FAST_PATH_EDGE_THRESHOLD && decision.confidence >= FAST_PATH_CONFIDENCE_THRESHOLD;
+    if (useFastPath) {
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⚡ FAST-PATH: edge=${(preEdge.netEdge * 100).toFixed(1)}% > ${(FAST_PATH_EDGE_THRESHOLD * 100).toFixed(0)}% AND confidence=${(decision.confidence * 100).toFixed(0)}% >= ${(FAST_PATH_CONFIDENCE_THRESHOLD * 100).toFixed(0)}% — skipping adversarial + consensus`, { 
+        pipeline_stage: "fast_path_triggered", 
+        edge: preEdge.netEdge,
+        confidence: decision.confidence,
+      }, "significant");
+    }
+
+    // ===== POST-DECISION PIPELINE (Features 3, 5, 6, 7, 10) =====
+
+    // Feature 10: Scenario Tree Analysis (quick gate check)
+    if (decision.marketId) {
+      const scenarioMarketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
+      const scenarioGate = quickScenarioGate(
+        finalAggregatedSignal.probability,
+        scenarioMarketPrice,
+        decision.amount ?? 0,
+        !!decision.isYes,
+        portfolio.totalBalance,
+        positions
+      );
+
+      if (!scenarioGate.pass) {
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⛔ Scenario gate: ${scenarioGate.reason}`, { pipeline_stage: "scenario_gate_failed" }, "critical");
+        fsm.transition("no_edge");
+        await saveState();
+        return { state: fsm.getState(), action: "analyzed", detail: `Scenario gate blocked: ${scenarioGate.reason}`, decision, tokensUsed: totalTokens };
+      }
+
+      // Full scenario analysis
+      const scenarioResult = runScenarioAnalysis({
+        estimatedProbability: finalAggregatedSignal.probability,
+        marketPrice: scenarioMarketPrice,
+        amount: decision.amount ?? 0,
+        isYes: !!decision.isYes,
+        platformFee: 0.02,
+        positions,
+        balance: portfolio.totalBalance,
+      });
+
+      // Persist scenario analysis
+      try {
+        await db.insert(schema.scenarioResults).values({
+          agentId: ctx.agentId,
+          jobId: ctx.jobId,
+          marketId: decision.marketId ?? "",
+          action: decision.action,
+          estimatedProbability: String(finalAggregatedSignal.probability),
+          totalExpectedValue: String(scenarioResult.totalExpectedValue),
+          riskRewardRatio: String(scenarioResult.riskRewardRatio),
+          shouldTrade: scenarioResult.shouldTrade,
+          reason: scenarioResult.reason,
+          scenarios: scenarioResult.scenarios,
+        }).onConflictDoNothing().catch(() => {});
+      } catch {}
+
+      if (!scenarioResult.shouldTrade) {
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⛔ Scenario analysis rejected: ${scenarioResult.reason}`, { 
+          pipeline_stage: "scenario_rejected",
+          expected_value: scenarioResult.totalExpectedValue.toFixed(2),
+          risk_reward: scenarioResult.riskRewardRatio.toFixed(2),
+        }, "critical");
+        fsm.transition("no_edge");
+        await saveState();
+        return { state: fsm.getState(), action: "analyzed", detail: `Scenario rejected: ${scenarioResult.reason}`, decision, tokensUsed: totalTokens };
+      }
+
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ✅ Scenario analysis passed: EV=$${scenarioResult.totalExpectedValue.toFixed(2)}, R/R=${scenarioResult.riskRewardRatio.toFixed(2)}:1`, { 
+        pipeline_stage: "scenario_passed",
+        expected_value: scenarioResult.totalExpectedValue.toFixed(2),
+        risk_reward: scenarioResult.riskRewardRatio.toFixed(2),
+      });
+    }
+
+    // Feature 3: Adversarial Self-Review (devil's advocate)
+    if (decision.marketId && !useFastPath) {
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🔍 Running adversarial review...`, { pipeline_stage: "adversarial_review" });
+      const review = await runAdversarialReview(decision, markets, positions, portfolio.totalBalance, ctx.agentId, AGENT_NAME);
+
+      try {
+        await db.insert(schema.adversarialReviews).values({
+          agentId: ctx.agentId,
+          marketId: decision.marketId ?? "",
+          action: decision.action,
+          overturned: review.overturn,
+          originalConfidence: String(decision.confidence),
+          riskAdjustedConfidence: String(review.riskAdjustedConfidence),
+          reason: review.reason,
+          risks: review.risks,
+        }).onConflictDoNothing().catch(() => {});
+      } catch {}
+
+      if (review.overturn) {
+        fsm.transition("no_edge");
+        await saveState();
+        return { state: fsm.getState(), action: "analyzed", detail: `Adversarial review overturned: ${review.reason}`, decision, tokensUsed: totalTokens };
+      }
+
+      // Adjust confidence based on adversarial review
+      decision.confidence = Math.min(decision.confidence, review.riskAdjustedConfidence);
+    }
+
+    // Feature 5: Multi-Model Consensus
+    if (decision.marketId && !useFastPath) {
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🤝 Running multi-model consensus...`, { pipeline_stage: "multi_model_consensus" });
+      const consensus = await runMultiModelConsensus({
+        systemPrompt: config.pipeline[1].systemPrompt,
+        userMessage: buildGeneralDecisionContext(researchAnalysis.text, finalAggregatedSignal, markets, positions, portfolio.totalBalance, temporalAdj),
+        schema: TradeDecisionSchema,
+        agentId: ctx.agentId,
+        agentName: AGENT_NAME,
+        primaryDecision: decision,
+      });
+
+      try {
+        await db.insert(schema.consensusResults).values({
+          agentId: ctx.agentId,
+          marketId: decision.marketId ?? "",
+          consensus: consensus.consensus,
+          modelsAgreed: consensus.modelsAgreed,
+          modelsQueried: consensus.modelsQueried,
+          confidenceAdjustment: String(consensus.confidenceAdjustment),
+          decisionAction: consensus.decision.action,
+          decisionConfidence: String(consensus.decision.confidence),
+          details: consensus.details,
+        }).onConflictDoNothing().catch(() => {});
+      } catch {}
+
+      // Use consensus-adjusted decision
+      decision = consensus.decision;
+
+      if (decision.action === "hold") {
+        fsm.transition("no_edge");
+        await saveState();
+        return { state: fsm.getState(), action: "analyzed", detail: `Consensus disagreement — defaulting to hold`, decision, tokensUsed: totalTokens };
+      }
+    }
+
+    // Feature 4: Record prediction for outcome feedback
+    if (decision.marketId) {
+      await recordAgentPrediction("general", ctx.agentId, decision, signals, markets, config.models.decision.model).catch((err) =>
+        console.error(`[General Agent] Failed to record prediction: ${err.message}`)
+      );
+    }
+
+    // Record analysis timestamp
+    await redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`, String(Date.now()));
+
+    const finalMarketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId ?? "", "yes") : getMarketPrice(markets, decision.marketId ?? "", "no");
+    const edge = calculateEdge(finalAggregatedSignal.probability, finalMarketPrice, finalAggregatedSignal.confidence);
 
     await publishFeedStep(ctx.agentId, "edge_detected", `${AGENT_NAME} 🎯 Edge detected: ${edge.direction.toUpperCase()} on "${decision.marketQuestion}"`, { 
       pipeline_stage: "edge_found", 
@@ -686,7 +829,6 @@ export async function runGeneralAgentTick(
       is_yes: decision.isYes
     }, "significant");
 
-    // Store decision
     await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:decision`, 600, JSON.stringify(decision));
     fsm.transition("edge_found");
     await saveState();
@@ -714,6 +856,72 @@ export async function runGeneralAgentTick(
     const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
 
     if (decision.action === "buy") {
+      // Feature 6: Market microstructure check
+      if (decision.marketId) {
+        const microCheck = await checkMicrostructure(decision.marketId, decision.amount ?? 0);
+        if (!microCheck.allowed) {
+          fsm.transition("order_failed");
+          await saveState();
+          await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⛔ Microstructure rejection: ${microCheck.reason}`, { pipeline_stage: "microstructure_rejected" }, "critical");
+          return { state: fsm.getState(), action: "executed", detail: `Microstructure rejection: ${microCheck.reason}`, decision };
+        }
+        if (microCheck.microstructure) {
+          await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ✅ Microstructure OK: spread=${(microCheck.microstructure.bidAskSpread * 100).toFixed(2)}% impact=${(microCheck.microstructure.priceImpactEstimate * 100).toFixed(2)}%`, {
+            pipeline_stage: "microstructure_ok",
+            bid_ask_spread: microCheck.microstructure.bidAskSpread.toFixed(4),
+            price_impact: microCheck.microstructure.priceImpactEstimate.toFixed(4),
+            liquidity_score: microCheck.microstructure.liquidityScore.toFixed(4),
+          });
+        }
+
+        try {
+          if (microCheck.microstructure) {
+            await db.insert(schema.microstructureChecks).values({
+              marketId: decision.marketId,
+              allowed: microCheck.allowed,
+              reason: microCheck.reason ?? "",
+              bidAskSpread: String(microCheck.microstructure.bidAskSpread),
+              depthAt5Pct: String(microCheck.microstructure.depthAt5Pct),
+              liquidityScore: String(microCheck.microstructure.liquidityScore),
+              priceImpactEstimate: String(microCheck.microstructure.priceImpactEstimate),
+              midPrice: String(microCheck.microstructure.midPrice),
+            }).onConflictDoNothing().catch(() => {});
+          }
+        } catch {}
+      }
+
+      // Feature 7: Cross-market correlation check
+      if (decision.marketId) {
+        const positionRisks: Array<{ marketId: string; marketQuestion: string; side: string; amount: number; category: string }> =
+          positions.map((p) => ({ marketId: p.marketId, marketQuestion: p.marketId, side: p.side, amount: p.amount, category: "general" }));
+        const correlationCheck = checkCrossMarketCorrelation(
+          decision.marketQuestion ?? decision.marketId ?? "",
+          decision.amount ?? 0,
+          positionRisks,
+          portfolio.totalBalance
+        );
+
+        try {
+          await db.insert(schema.microstructureChecks).values({
+            marketId: decision.marketId ?? "",
+            allowed: correlationCheck.allowed,
+            reason: correlationCheck.reason ?? "",
+            bidAskSpread: "0",
+            depthAt5Pct: "0",
+            liquidityScore: "0",
+            priceImpactEstimate: "0",
+            midPrice: "0",
+          }).onConflictDoNothing().catch(() => {});
+        } catch {}
+
+        if (!correlationCheck.allowed) {
+          fsm.transition("order_failed");
+          await saveState();
+          await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⛔ Correlation rejection: ${correlationCheck.reason}`, { pipeline_stage: "correlation_rejected", effective_exposure: correlationCheck.effectiveExposure.toFixed(2) }, "critical");
+          return { state: fsm.getState(), action: "executed", detail: `Correlation rejection: ${correlationCheck.reason}`, decision };
+        }
+      }
+
       await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
 
       const result = await executeBuy(decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "general");
@@ -722,6 +930,22 @@ export async function runGeneralAgentTick(
           await recordPromptLinks(result.positionId, "general").catch((err) =>
             console.error(`[General Agent] Failed to record prompt links: ${err.message}`)
           );
+
+          // Feature 8: Register position for real-time price monitoring
+          await registerPositionForMonitoring({
+            positionId: result.positionId,
+            marketId: decision.marketId ?? "",
+            marketQuestion: decision.marketQuestion ?? "",
+            agentId: ctx.agentId,
+            agentName: AGENT_NAME,
+            jobId: ctx.jobId,
+            agentWalletId: ctx.agentWalletId,
+            side: decision.isYes ? "yes" : "no",
+            entryPrice: 0.5,
+            stopLossPrice: 0.5 * (1 - AGENT_LIMITS.STOP_LOSS_PERCENT),
+            amount: decision.amount ?? 0,
+            ownerPubkey: ctx.ownerPubkey,
+          }).catch((err) => console.error(`[General Agent] Failed to register position monitoring: ${err.message}`));
         }
         fsm.transition("order_placed");
         await saveState();
@@ -762,39 +986,9 @@ export async function runGeneralAgentTick(
 
   // --- MONITORING ---
   if (fsm.getState() === "MONITORING") {
-    const { closedCount } = await monitorPositions(
-      ctx.agentId,
-      ctx.jobId,
-      ctx.agentWalletId,
-      AGENT_NAME
-    );
-
-    if (closedCount > 0) {
-      fsm.transition("position_closed");
-      await saveState();
-      return {
-        state: fsm.getState(),
-        action: "monitored",
-        detail: `Closed ${closedCount} (stop-loss)`,
-      };
-    }
-
-    const { positions } = await getActivePositions(ctx.jobId);
-    if (positions.length === 0) {
-      fsm.transition("position_closed");
-      await saveState();
-      return {
-        state: fsm.getState(),
-        action: "monitored",
-        detail: "All positions closed",
-      };
-    }
-
-    return {
-      state: fsm.getState(),
-      action: "monitored",
-      detail: `${positions.length} open positions`,
-    };
+    // Background price monitor handles stop-losses independently (30s interval)
+    // No blocking calls needed — return immediately and let tick cycle continue
+    return { state: fsm.getState(), action: "monitored", detail: "Background monitoring active" };
   }
 
   // --- CLOSING / SETTLING ---
@@ -822,167 +1016,106 @@ export async function runGeneralAgentTick(
 
 // --- Context builders ---
 
-function buildResearchContext(
-  signals: GeoSignals,
+function buildGeneralResearchContext(
+  signals: SharedSignals,
   markets: MarketContext[],
   positions: AgentPosition[],
   balance: number,
   reasons: string[]
 ): string {
   const parts: string[] = [];
-
-  parts.push(`## Portfolio
-Balance: $${balance.toFixed(2)} | Open positions: ${positions.length}/${AGENT_LIMITS.MAX_CONCURRENT_POSITIONS}`);
-
+  parts.push(`## Portfolio\nBalance: $${balance.toFixed(2)} | Open positions: ${positions.length}/${AGENT_LIMITS.MAX_CONCURRENT_POSITIONS}`);
   if (positions.length > 0) {
     parts.push("\n### Open Positions:");
     for (const p of positions) {
       parts.push(`- ${p.marketId}: ${p.side} $${p.amount} @ ${p.entryPrice} (PnL: $${p.pnl.toFixed(2)})`);
     }
   }
-
   parts.push("\n## Signal Triggers:");
   for (const r of reasons) parts.push(`- ${r}`);
-
-  parts.push("\n## Available Markets (all categories):");
   for (const m of markets.slice(0, 10)) {
     const prices = m.outcomes.map((o) => `${o.name}: $${o.price}`).join(", ");
-    parts.push(`- [${m.marketId}] "${m.question}" | ${prices} | Vol=$${m.volume} | Closes: ${m.closesAt ?? "N/A"}`);
+    const hoursToClose = m.closesAt ? ((new Date(m.closesAt).getTime() - Date.now()) / 3600000).toFixed(1) : "N/A";
+    parts.push(`\n### [${m.marketId}] "${m.question}"\n| Prices: ${prices} | Vol=$${m.volume} | ${hoursToClose}h to close`);
+    const relevant: string[] = [];
+    const q = m.question.toLowerCase();
+    if (q.includes("crypto") || q.includes("bitcoin") || q.includes("eth")) {
+      if (signals.crypto) {
+        for (const [coin, c] of Object.entries(signals.crypto.prices ?? {})) {
+          if (Math.abs(c.change24h) > 3) relevant.push(`${coin}: ${c.change24h.toFixed(1)}%`);
+        }
+      }
+    }
+    for (const [region, g] of Object.entries(signals.gdelt ?? {})) {
+      if (Math.abs(g.avgTone) > 2) relevant.push(`GDELT ${region}: tone=${g.avgTone.toFixed(2)}`);
+    }
+    for (const [key, f] of Object.entries(signals.fred ?? {})) {
+      if (Math.abs(f.changePercent) > 0.5) relevant.push(`FRED ${key}: ${f.trend} ${f.changePercent.toFixed(2)}%`);
+    }
+    if (relevant.length > 0) parts.push("Signals: " + relevant.slice(0, 3).join("; "));
+    else parts.push("No strong signals for this market");
   }
-
-  parts.push(`\n## GDELT News Tone:`);
-  for (const [k, v] of Object.entries(signals.gdelt)) {
-    parts.push(`- ${k}: tone=${v.avgTone} (${v.articleCount} articles)`);
-  }
-
-  parts.push(`\n## ACLED Conflict Data:`);
-  for (const [k, v] of Object.entries(signals.acled)) {
-    parts.push(`- ${k}: ${v.totalEvents} events, ${v.totalFatalities} fatalities, 7d delta=${v.delta7d}%`);
-  }
-
-  parts.push(`\n## FRED Economic Indicators:`);
-  for (const [k, v] of Object.entries(signals.fred)) {
-    parts.push(`- ${k}: ${v.latestValue} (${v.trend}, ${v.changePercent}% change)`);
-  }
-
-  parts.push(`\n## NASA FIRMS Wildfire Data:`);
-  for (const [k, v] of Object.entries(signals.fires)) {
-    parts.push(`- ${k}: ${v.hotspotCount} hotspots, FRP=${v.totalFrp} MW`);
-  }
-
-  parts.push(`\n## Research Task:
-For each market above, identify the top 5 factors that would determine the outcome. Use web_search and data tools to gather real-time information. Focus on what recent data says about the likely outcome.`);
-
+  parts.push(`\n## Research + Analysis Task:\nFor EACH market above, identify top 5 factors and provide probability estimates with Bayesian reasoning.`);
   return parts.join("\n");
 }
 
-function buildAnalysisContext(
-  research: string,
-  signals: GeoSignals,
-  markets: MarketContext[],
-  positions: AgentPosition[],
-  balance: number
-): string {
-  const parts: string[] = [];
-
-  parts.push(`## Research Findings
-${research}
-
-## Deep Analysis Task:
-Based on the research above, provide your independent probability estimate for each market.
-
-For each market:
-1. Start with the market's implied probability (current price)
-2. Consider each factor identified in research
-3. Estimate P(evidence | Yes) and P(evidence | No) for key signals
-4. Apply Bayesian reasoning to update from the market price
-5. Provide your final probability estimate with step-by-step reasoning`);
-
-  parts.push(`\n## Market Prices (implied probabilities):`);
-  for (const m of markets.slice(0, 5)) {
-    const yesPrice = m.outcomes.find((o) => o.name.toLowerCase() === "yes")?.price ?? 0.5;
-    parts.push(`- "${m.question}": Yes=$${yesPrice} (implies ${(yesPrice * 100).toFixed(1)}% probability)`);
-  }
-
-  return parts.join("\n");
-}
-
-function buildDecisionContext(
+function buildGeneralDecisionContext(
   analysis: string,
   aggregated: { probability: number; confidence: number; nSignals: number },
   markets: MarketContext[],
   positions: AgentPosition[],
-  balance: number
+  balance: number,
+  temporalAdj: Record<string, number>
 ): string {
-  return `## Analysis Results
-${analysis}
-
-## Signal Aggregation
-- Aggregated probability: ${(aggregated.probability * 100).toFixed(1)}%
-- Overall confidence: ${(aggregated.confidence * 100).toFixed(1)}%
-- Signals combined: ${aggregated.nSignals}
-
-## Portfolio
-- Balance: $${balance.toFixed(2)} USDC
-- Open positions: ${positions.length}/${AGENT_LIMITS.MAX_CONCURRENT_POSITIONS}
-${positions.length > 0 ? positions.map((p) => `  - ${p.marketId}: ${p.side} $${p.amount} @ ${p.entryPrice} (PnL: $${p.pnl.toFixed(2)})`).join("\n") : ""}
-
-## Available Markets
-${markets.slice(0, 5).map((m) => {
-  const prices = m.outcomes.map((o) => `${o.name}: $${o.price}`).join(", ");
-  return `- [${m.marketId}] "${m.question}" | ${prices} | Vol=$${m.volume}`;
-}).join("\n")}
-
-## Decision Required
-Based on the analysis and aggregated signals, make a trade decision.
-If edge > 5% and confidence > ${(AGENT_LIMITS.MIN_CONFIDENCE * 100).toFixed(0)}%, recommend a trade.
-Otherwise, recommend hold. Remember: quarter-Kelly for position sizing.`;
+  const marketLines = markets.slice(0, 5).map((m) => {
+    const hoursToClose = m.closesAt ? ((new Date(m.closesAt).getTime() - Date.now()) / 3600000).toFixed(1) : "N/A";
+    const prices = m.outcomes.map((o) => `${o.name}: $${o.price}`).join(", ");
+    const adj = temporalAdj[m.marketId] ?? 1.0;
+    return `- [${m.marketId}] "${m.question}" | ${prices} | ${hoursToClose}h | adj: ${(adj * 100).toFixed(0)}%`;
+  }).join("\n");
+  return `## Analysis\n${analysis}\n\n## Aggregation\nprob=${(aggregated.probability * 100).toFixed(1)}% conf=${(aggregated.confidence * 100).toFixed(1)}% n=${aggregated.nSignals}\n## Temporal\n${Object.entries(temporalAdj).map(([k, v]) => `${k}: ${(v * 100).toFixed(0)}%`).join(", ")}\n## Portfolio\nBalance: $${balance.toFixed(2)} | ${positions.length} positions\n${marketLines}\n\n## Decision\nEdge > 5%, confidence > ${(AGENT_LIMITS.MIN_CONFIDENCE * 100).toFixed(0)}%, quarter-Kelly.`;
 }
 
-// --- Helper functions for signal processing ---
+function computeGeneralTemporalAdjustment(markets: MarketContext[]): Record<string, number> {
+  const adj: Record<string, number> = {};
+  for (const m of markets) {
+    if (!m.closesAt) { adj[m.marketId] = 0.85; continue; }
+    const h = (new Date(m.closesAt).getTime() - Date.now()) / 3600000;
+    if (h < 1) adj[m.marketId] = 0.7;
+    else if (h < 6) adj[m.marketId] = 0.85;
+    else if (h < 24) adj[m.marketId] = 0.95;
+    else if (h < 72) adj[m.marketId] = 1.0;
+    else adj[m.marketId] = 0.9;
+  }
+  return adj;
+}
 
-function runBayesianEstimation(
+function runScaledBayesianEstimation(
   markets: MarketContext[],
-  signals: GeoSignals,
+  signals: SharedSignals,
   analysis: string
 ): Array<{ marketId: string; probability: number }> {
   return markets.map((m) => {
     const prior = m.outcomes.find((o) => o.name.toLowerCase() === "yes")?.price ?? 0.5;
-
-    // Build evidence from signals
     const evidence: Array<{ likelihoodYes: number; likelihoodNo: number }> = [];
-
-    // GDELT tone as evidence
-    for (const [, signal] of Object.entries(signals.gdelt)) {
-      if (Math.abs(signal.avgTone) > 2) {
-        if (signal.avgTone > 0) {
-          evidence.push({ likelihoodYes: 0.7, likelihoodNo: 0.3 });
-        } else {
-          evidence.push({ likelihoodYes: 0.3, likelihoodNo: 0.7 });
+    if (signals.crypto) {
+      for (const [, c] of Object.entries(signals.crypto.prices ?? {})) {
+        if (Math.abs(c.change24h) > 3) {
+          const strength = Math.min(Math.abs(c.change24h) / 20, 1);
+          const mag = 0.25 * strength;
+          evidence.push({ likelihoodYes: 0.5 + (c.change24h > 0 ? mag : -mag), likelihoodNo: 0.5 - (c.change24h > 0 ? mag : -mag) });
         }
       }
     }
-
-    // Conflict escalation as evidence
-    for (const [, signal] of Object.entries(signals.acled)) {
-      if (Math.abs(signal.delta7d) > 30) {
-        evidence.push({ likelihoodYes: 0.65, likelihoodNo: 0.35 });
+    for (const [, g] of Object.entries(signals.gdelt ?? {})) {
+      if (Math.abs(g.avgTone) > 2) {
+        const strength = Math.min(Math.abs(g.avgTone) / 10, 1);
+        const mag = 0.2 * strength;
+        evidence.push({ likelihoodYes: 0.5 + (g.avgTone > 0 ? mag : -mag), likelihoodNo: 0.5 - (g.avgTone > 0 ? mag : -mag) });
       }
     }
-
-    // Macro surprises as evidence
-    for (const [, signal] of Object.entries(signals.fred)) {
-      if (Math.abs(signal.changePercent) > 1) {
-        evidence.push({ likelihoodYes: 0.6, likelihoodNo: 0.4 });
-      }
-    }
-
-    if (evidence.length === 0) {
-      return { marketId: m.marketId, probability: prior };
-    }
-
-    const posterior = bayesianUpdate(prior, evidence.slice(0, 5)); // cap at 5 evidence items
-    return { marketId: m.marketId, probability: posterior };
+    if (evidence.length === 0) return { marketId: m.marketId, probability: prior };
+    return { marketId: m.marketId, probability: bayesianUpdate(prior, evidence.slice(0, 8)) };
   });
 }
 

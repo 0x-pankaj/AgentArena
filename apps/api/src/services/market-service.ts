@@ -7,43 +7,16 @@ import {
   type JupiterEvent,
   type JupiterMarket,
 } from "../plugins/polymarket-plugin";
+import { getCachedJupiterEvents, invalidateCategoryCache, AGENT_TO_JUPITER_CATEGORIES } from "./jupiter-cache-manager";
 
-const CACHE_TTL_SECONDS = 15 * 60; // 15 minutes
-const EVENTS_CACHE_TTL = 10 * 60; // 10 minutes for raw events
+const CACHE_TTL_SECONDS = {
+  trending: 60,
+  category: 120,
+  single: 300,
+};
 
-// --- Cache Jupiter events in Redis (shared across agents) ---
-
-export async function getCachedEvents(
-  category?: string,
-  limit: number = 50
-): Promise<JupiterEvent[]> {
-  const cacheKey = category
-    ? `jupiter:events:${category}:${limit}`
-    : `jupiter:events:all:${limit}`;
-
-  const cached = await redis.get(cacheKey);
-  if (cached) {
-    return JSON.parse(cached);
-  }
-
-  try {
-    const events = await jupiterPredict.listEvents({
-      category,
-      sortBy: "volume",
-      sortDirection: "desc",
-      includeMarkets: true,
-      start: 0,
-      end: limit,
-    });
-
-    await redis.setex(cacheKey, EVENTS_CACHE_TTL, JSON.stringify(events));
-    return events;
-  } catch (err) {
-    console.error("Failed to fetch events from Jupiter:", err);
-    // Return empty — agents will skip this tick
-    return [];
-  }
-}
+// Re-export for backward compatibility
+export { getCachedJupiterEvents as getCachedEvents };
 
 // --- Market listing with Redis cache ---
 
@@ -58,6 +31,8 @@ export async function listMarkets(params: {
   const cacheKey = category
     ? `${REDIS_KEYS.MARKET_CACHE}:${category}`
     : REDIS_KEYS.MARKET_CACHE;
+
+  const ttl = category ? CACHE_TTL_SECONDS.category : CACHE_TTL_SECONDS.trending;
 
   const cached = await redis.get(cacheKey);
   if (cached) {
@@ -88,7 +63,7 @@ export async function listMarkets(params: {
 
   // Cache results
   if (markets.length > 0) {
-    await redis.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(markets));
+    await redis.setex(cacheKey, ttl, JSON.stringify(markets));
   }
 
   return { markets, total: markets.length };
@@ -114,7 +89,7 @@ export async function getMarket(
     .limit(1);
 
   if (row) {
-    await redis.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(row));
+    await redis.setex(cacheKey, CACHE_TTL_SECONDS.single, JSON.stringify(row));
     return row;
   }
 
@@ -129,7 +104,7 @@ export async function getMarket(
         target: schema.marketData.marketId,
         set: mapped,
       });
-    await redis.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(mapped));
+    await redis.setex(cacheKey, CACHE_TTL_SECONDS.single, JSON.stringify(mapped));
     return mapped;
   } catch {
     return null;
@@ -144,7 +119,7 @@ export async function getTrendingMarkets(params: {
 }): Promise<{ markets: typeof schema.marketData.$inferSelect[] }> {
   const { category, limit = 10 } = params;
 
-  // Try cache
+  // Try cache first
   const cacheKey = category
     ? `${REDIS_KEYS.MARKET_CACHE}:trending:${category}`
     : `${REDIS_KEYS.MARKET_CACHE}:trending`;
@@ -154,13 +129,37 @@ export async function getTrendingMarkets(params: {
     return { markets: JSON.parse(cached) };
   }
 
-  // Use cached events (avoids duplicate Jupiter API calls)
+  // Use new cache manager (avoids duplicate Jupiter API calls)
   try {
-    const events = await getCachedEvents(category, limit);
+    // Jupiter doesn't accept "general" — map to valid Jupiter categories
+    const jupiterCategories = category
+      ? (AGENT_TO_JUPITER_CATEGORIES[category] ?? [category])
+      : ['sports', 'crypto', 'politics', 'economics'];
 
-    const markets = eventsToMarkets(events, category);
-    await redis.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(markets));
-    return { markets };
+    const allMarkets: typeof schema.marketData.$inferSelect[] = [];
+    const results = await Promise.allSettled(
+      jupiterCategories.map((cat) =>
+        getCachedJupiterEvents(cat, { maxEvents: Math.ceil(limit / jupiterCategories.length) })
+      )
+    );
+
+    for (const result of results) {
+      if (result.status !== "fulfilled") continue;
+      const { events } = result.value;
+      const markets = eventsToMarkets(events, category);
+      allMarkets.push(...markets);
+    }
+
+    // Deduplicate by marketId
+    const seen = new Set<string>();
+    const unique = allMarkets.filter((m) => {
+      if (seen.has(m.marketId)) return false;
+      seen.add(m.marketId);
+      return true;
+    });
+
+    await redis.setex(cacheKey, CACHE_TTL_SECONDS.trending, JSON.stringify(unique));
+    return { markets: unique };
   } catch {
     // Fall back to DB
     const rows = await db
@@ -204,35 +203,42 @@ export async function syncMarketsFromJupiter(
   category?: string
 ): Promise<number> {
   try {
-    const events = await getCachedEvents(category, 100);
-
+    // Use new cache manager
+    const categories = category ? [category] : ['sports', 'crypto', 'politics', 'economics'];
+    
     let count = 0;
-    for (const event of events) {
-      if (!event.markets) continue;
-      for (const market of event.markets) {
-        try {
-          const mapped = mapJupiterMarketToDb({
-            ...market,
-            eventId: event.eventId,
-            category: event.category ?? undefined,
-          });
-
-          await db
-            .insert(schema.marketData)
-            .values(mapped)
-            .onConflictDoUpdate({
-              target: schema.marketData.marketId,
-              set: mapped,
+    for (const cat of categories) {
+      const { events } = await getCachedJupiterEvents(cat, { maxEvents: 100 });
+      
+      if (!events || events.length === 0) continue;
+      
+      for (const event of events) {
+        if (!event.markets) continue;
+        for (const market of event.markets) {
+          try {
+            const mapped = mapJupiterMarketToDb({
+              ...market,
+              eventId: event.eventId,
+              category: event.category ?? cat,
             });
-          count++;
-        } catch (dbErr) {
-          // Skip individual market failures
+
+            await db
+              .insert(schema.marketData)
+              .values(mapped)
+              .onConflictDoUpdate({
+                target: schema.marketData.marketId,
+                set: mapped,
+              });
+            count++;
+          } catch (dbErr) {
+            // Skip individual market failures
+          }
         }
       }
     }
 
-    // Invalidate trending cache only
-    const keys = await redis.keys(`${REDIS_KEYS.MARKET_CACHE}:trending*`);
+    // Invalidate market caches after sync
+    const keys = await redis.keys(`${REDIS_KEYS.MARKET_CACHE}*`);
     if (keys.length > 0) {
       await redis.del(...keys);
     }

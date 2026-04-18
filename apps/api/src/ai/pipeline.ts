@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ModelConfig, AgentTool } from "./types";
 import { resolveModel } from "./models";
 import { toAITools } from "./tools";
+import { getCachedLLMResponse, cacheLLMResponse } from "../services/llm-cache";
 
 export interface PipelineResult {
   step: string;
@@ -97,8 +98,22 @@ export async function quickAnalysis(params: {
   userMessage: string;
   tools?: string[];
   agentId?: string;
+  marketContext?: { marketId: string; yesPrice: number; noPrice: number };
 }): Promise<{ text: string; tokensUsed: number; toolCalls: number }> {
-  const { modelConfig, systemPrompt, userMessage, tools = [], agentId } = params;
+  const { modelConfig, systemPrompt, userMessage, tools = [], agentId, marketContext } = params;
+
+  const marketKey = marketContext
+    ? `${marketContext.marketId}:${marketContext.yesPrice}:${marketContext.noPrice}`
+    : undefined;
+
+  // Check cache first (only for analysis without tools, as tool calls are dynamic)
+  if (!tools || tools.length === 0) {
+    const cached = await getCachedLLMResponse(userMessage, modelConfig.model, marketKey);
+    if (cached) {
+      console.log(`[Pipeline] Using cached LLM response for analysis`);
+      return { text: cached, tokensUsed: 0, toolCalls: 0 }; // Cached, no tokens charged
+    }
+  }
 
   await acquireLLMSlot(agentId);
   try {
@@ -121,6 +136,17 @@ export async function quickAnalysis(params: {
       "quickAnalysis"
     );
 
+    // Cache the response (only if no tools were used)
+    if (!tools || tools.length === 0) {
+      await cacheLLMResponse(
+        userMessage,
+        result.text ?? "",
+        modelConfig.model,
+        result.usage?.totalTokens ?? 0,
+        marketKey
+      );
+    }
+
     return {
       text: result.text ?? "",
       tokensUsed: result.usage?.totalTokens ?? 0,
@@ -131,19 +157,213 @@ export async function quickAnalysis(params: {
   }
 }
 
-function extractJsonFromText(text: string): string {
-  // Try to find JSON object in markdown code blocks
-  const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-  if (codeBlockMatch) return codeBlockMatch[1].trim();
+// ============================================================
+// Robust JSON extraction — multiple strategies to handle LLM
+// output that may contain markdown, prose, trailing commas,
+// single-quoted strings, comments, or wrapped JSON.
+// ============================================================
 
-  // Try to find JSON object directly
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (jsonMatch) return jsonMatch[0];
+function extractJsonFromText(text: string): string {
+  if (!text || !text.trim()) return "";
+
+  // Strategy 1: Extract from markdown code blocks (```json ... ```)
+  const codeBlockPatterns = [
+    /```(?:json)?\s*\n?([\s\S]*?)\n?```/,
+    /```\s*\n?([\s\S]*?)\n?```/,
+  ];
+  for (const pattern of codeBlockPatterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      const candidate = match[1].trim();
+      if (candidate.startsWith("{")) return candidate;
+    }
+  }
+
+  // Strategy 2: Find balanced brace pairs (handles nested objects)
+  const firstBrace = text.indexOf("{");
+  if (firstBrace !== -1) {
+    let depth = 0;
+    let inStr = false;
+    let escape = false;
+    for (let i = firstBrace; i < text.length; i++) {
+      const ch = text[i];
+      if (escape) { escape = false; continue; }
+      if (ch === "\\") { if (inStr) escape = true; continue; }
+      if (ch === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === "{") depth++;
+      if (ch === "}") depth--;
+      if (depth === 0) {
+        return text.slice(firstBrace, i + 1);
+      }
+    }
+  }
+
+  // Strategy 3: Greedy regex as last resort
+  const greedyMatch = text.match(/\{[\s\S]*\}/);
+  if (greedyMatch) return greedyMatch[0];
 
   return text.trim();
 }
 
-const STRICT_JSON_PROMPT = `\n\nCRITICAL: Return ONLY valid JSON. No explanations, no conversational text, no markdown. Start your response with { and end with }.`;
+// ============================================================
+// JSON repair — fixes common LLM output issues:
+//   - Trailing commas before } or ]
+//   - Single-quoted strings → double-quoted
+//   - JS-style comments (// and /* */)
+//   - Missing quotes around keys
+//   - True/False/None → true/false/null
+//   - NaN / Infinity → null
+//   - Unquoted string values
+// ============================================================
+
+function repairJson(raw: string): string {
+  let s = raw;
+
+  // Remove JS line/block comments (not inside strings)
+  s = s.replace(/\/\/.*$/gm, "");
+  s = s.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  // Remove trailing commas before } or ]
+  s = s.replace(/,\s*([}\]])/g, "$1");
+
+  // Replace single-quoted strings with double-quoted (simple cases only)
+  s = s.replace(/:\s*'([^']*)'/g, ': "$1"');
+
+  // Replace True → true, False → false, None → null
+  s = s.replace(/\bTrue\b/g, "true");
+  s = s.replace(/\bFalse\b/g, "false");
+  s = s.replace(/\bNone\b/g, "null");
+  s = s.replace(/\bNaN\b/g, "null");
+  s = s.replace(/\bInfinity\b/g, "null");
+
+  // Fix unquoted keys: word chars followed by colon (not already quoted)
+  s = s.replace(/(?<=[{,]\s*)([a-zA-Z_]\w*)\s*:/g, '"$1":');
+
+  return s;
+}
+
+// ============================================================
+// Parse JSON with progressive repair attempts.
+// Returns parsed object or null if all attempts fail.
+// ============================================================
+
+function parseJsonWithRepair(raw: string): Record<string, unknown> | null {
+  // Attempt 1: parse as-is
+  try { return JSON.parse(raw); } catch {}
+
+  // Attempt 2: repair + parse
+  try { return JSON.parse(repairJson(raw)); } catch {}
+
+  // Attempt 3: extract + repair + parse (in case extraction was imperfect)
+  const reExtracted = extractJsonFromText(repairJson(raw));
+  try { return JSON.parse(reExtracted); } catch {}
+
+  // Attempt 4: aggressive — strip all non-JSON characters outside braces
+  const firstBrace = raw.indexOf("{");
+  const lastBrace = raw.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = raw.slice(firstBrace, lastBrace + 1);
+    try { return JSON.parse(repairJson(candidate)); } catch {}
+  }
+
+  return null;
+}
+
+// ============================================================
+// Normalize LLM output into a consistent shape for schema validation.
+// Handles: snake_case → camelCase, wrong field names, type mismatches,
+// missing fields, etc.
+// ============================================================
+
+function normalizeDecisionFields(raw: Record<string, unknown>): Record<string, unknown> {
+  const n: Record<string, unknown> = { ...raw };
+
+  // --- action ---
+  if (!n.action || typeof n.action !== "string") {
+    if (typeof n.decision === "string") n.action = n.decision;
+    else if (typeof n.trade_action === "string") n.action = n.trade_action;
+    else n.action = "hold";
+  }
+  const actionStr = String(n.action).toLowerCase().trim();
+  if (!["buy", "sell", "hold"].includes(actionStr)) n.action = "hold";
+  else n.action = actionStr;
+
+  // --- marketId ---
+  if (!n.marketId) {
+    if (n.market_id) n.marketId = n.market_id;
+    else if (n.id) n.marketId = n.id;
+  }
+  if (typeof n.marketId === "string") n.marketId = n.marketId.trim() || undefined;
+
+  // --- marketQuestion ---
+  if (!n.marketQuestion) {
+    if (n.market_question) n.marketQuestion = n.market_question;
+    else if (n.question) n.marketQuestion = n.question;
+  }
+
+  // --- isYes ---
+  if (n.isYes === undefined) {
+    if (n.is_yes !== undefined) n.isYes = n.is_yes;
+    else if (n.side === "yes" || n.side === "Yes") n.isYes = true;
+    else if (n.side === "no" || n.side === "No") n.isYes = false;
+  }
+  if (typeof n.isYes === "string") n.isYes = n.isYes.toLowerCase() === "true" || n.isYes === "yes";
+
+  // --- amount ---
+  if (n.amount === undefined || n.amount === null) {
+    if (n.size_usdc !== undefined) n.amount = Number(n.size_usdc);
+    else if (n.size !== undefined) n.amount = Number(n.size);
+    else if (n.trade_amount !== undefined) n.amount = Number(n.trade_amount);
+  }
+  if (typeof n.amount === "string") n.amount = parseFloat(n.amount);
+  if (typeof n.amount === "number" && (isNaN(n.amount) || !isFinite(n.amount))) n.amount = undefined;
+
+  // --- confidence ---
+  let conf: number;
+  if (typeof n.confidence === "string") conf = parseFloat(n.confidence);
+  else if (typeof n.confidence === "number") conf = n.confidence;
+  else conf = 0;
+  if (isNaN(conf)) conf = 0;
+  if (conf > 1 && conf <= 100) conf = conf / 100;
+  n.confidence = Math.max(0, Math.min(1, conf));
+
+  // --- reasoning ---
+  if (!n.reasoning || typeof n.reasoning !== "string") {
+    n.reasoning = typeof n.reason === "string" ? n.reason
+      : typeof n.explanation === "string" ? n.explanation
+      : typeof n.rationale === "string" ? n.rationale
+      : `Hold decision — LLM reasoning field missing`;
+  }
+
+  // --- signals ---
+  if (!Array.isArray(n.signals)) {
+    if (typeof n.signal === "string") n.signals = [n.signal];
+    else if (typeof n.signal_list === "string") n.signals = [n.signal_list];
+    else n.signals = undefined;
+  }
+
+  // Strip unknown extra keys that schemas won't expect
+  delete n.decision;
+  delete n.market_id;
+  delete n.market_question;
+  delete n.is_yes;
+  delete n.size_usdc;
+  delete n.size;
+  delete n.trade_amount;
+  delete n.reason;
+  delete n.explanation;
+  delete n.rationale;
+  delete n.signal;
+  delete n.signal_list;
+  delete n.side;
+  delete n.id;
+  delete n.question;
+
+  return n;
+}
+
+const STRICT_JSON_PROMPT = `\n\nCRITICAL: Return ONLY valid JSON. No explanations, no conversational text, no markdown, no code fences. Start your response with { and end with }. The response must be a single JSON object.`;
 
 export async function quickDecision<T>(params: {
   modelConfig: ModelConfig;
@@ -158,9 +378,6 @@ export async function quickDecision<T>(params: {
   await acquireLLMSlot(agentId);
   try {
     const model = resolveModel(modelConfig);
-    const agentTools = toAITools(tools);
-    const sdkTools = toSdkTools(agentTools);
-    const hasTools = Object.keys(sdkTools).length > 0;
 
     // Qwen requires the word "json" in the prompt when using response_format json_object
     const systemWithJsonHint = systemPrompt.toLowerCase().includes("json")
@@ -171,7 +388,7 @@ export async function quickDecision<T>(params: {
     let tokensUsed = 0;
     let toolCalls = 0;
 
-    // Try generateObject first (structured output)
+    // ---- Attempt 1: generateObject (structured output) ----
     try {
       const result: any = await withRetry(
         () => (generateObject as any)({
@@ -189,7 +406,8 @@ export async function quickDecision<T>(params: {
       );
 
       if (result.object) {
-        decision = result.object as T;
+        const normalized = normalizeDecisionFields(result.object as Record<string, unknown>);
+        decision = schema.parse(normalized);
         tokensUsed = (result.usage?.totalTokens ?? 0) as number;
         toolCalls = (result.toolCalls?.length ?? 0) as number;
         return { decision, tokensUsed, toolCalls };
@@ -198,7 +416,7 @@ export async function quickDecision<T>(params: {
       console.warn("[Pipeline] generateObject failed, falling back to generateText:", objErr instanceof Error ? objErr.message : String(objErr));
     }
 
-    // Fallback: use generateText and parse JSON manually
+    // ---- Attempt 2: generateText + parse with repair ----
     const textResult = await withRetry(
       () => generateText({
         model,
@@ -215,59 +433,65 @@ export async function quickDecision<T>(params: {
     const rawText = textResult.text ?? "";
     let jsonText = extractJsonFromText(rawText);
 
-    if (!jsonText.startsWith("{")) {
-      console.warn("[Pipeline] LLM response was not JSON, retrying with strict prompt:", rawText.slice(0, 300));
-      const strictResult = await generateText({
-        model,
-        system: systemWithJsonHint + STRICT_JSON_PROMPT,
-        prompt: userMessage + "\n\nRespond with ONLY the JSON object. No other text.",
-        temperature: 0.1,
-        maxRetries: 0,
-        abortSignal: AbortSignal.timeout(30_000),
-      });
+    // Try parsing with repair
+    let parsed: Record<string, unknown> | null = null;
+
+    if (jsonText.startsWith("{")) {
+      parsed = parseJsonWithRepair(jsonText);
+    }
+
+    // ---- Attempt 3: strict retry if parsing failed ----
+    if (!parsed) {
+      console.warn("[Pipeline] LLM response was not valid JSON, retrying with strict prompt. Raw preview:", rawText.slice(0, 300));
+
+      const strictResult = await withRetry(
+        () => generateText({
+          model,
+          system: systemWithJsonHint + STRICT_JSON_PROMPT,
+          prompt: userMessage + "\n\nRespond with ONLY the JSON object. No other text, no markdown.",
+          temperature: 0.1,
+          maxRetries: 0,
+          abortSignal: AbortSignal.timeout(45_000),
+        }),
+        1,
+        "quickDecision.strictRetry"
+      );
+
       const strictText = strictResult.text ?? "";
-      jsonText = extractJsonFromText(strictText);
-      if (!jsonText.startsWith("{")) {
-        console.error("[Pipeline] LLM still did not return JSON after retry:", strictText.slice(0, 500));
-        throw new Error(`LLM did not return JSON after retry. Response: ${strictText.slice(0, 200)}`);
+      const strictJson = extractJsonFromText(strictText);
+      parsed = parseJsonWithRepair(strictJson);
+      tokensUsed += strictResult.usage?.totalTokens ?? 0;
+
+      if (!parsed) {
+        console.error("[Pipeline] LLM still did not return parseable JSON after strict retry. Raw:", strictText.slice(0, 500));
       }
     }
 
-    const parsed = JSON.parse(jsonText);
-
-    // Normalize field names from various LLM output formats
-    const normalized: Record<string, unknown> = { ...parsed };
-
-    // Map "decision" → "action" if action is missing/null
-    if (!normalized.action && normalized.decision) {
-      normalized.action = normalized.decision;
+    // ---- Attempt 4: final aggressive extraction — scan all substrings ----
+    if (!parsed) {
+      // Look for any substring that might be a JSON object with "action" key
+      const actionJsonMatch = rawText.match(/\{[^{}]*"action"\s*:\s*"(?:buy|sell|hold)"[^{}]*\}/);
+      if (actionJsonMatch) {
+        parsed = parseJsonWithRepair(actionJsonMatch[0]);
+      }
     }
 
-    // Map snake_case to camelCase
-    if (normalized.market_id && !normalized.marketId) normalized.marketId = normalized.market_id;
-    if (normalized.market_question && !normalized.marketQuestion) normalized.marketQuestion = normalized.market_question;
-    if (normalized.size_usdc && !normalized.amount) normalized.amount = normalized.size_usdc;
-    if (normalized.is_yes !== undefined && normalized.isYes === undefined) normalized.isYes = normalized.is_yes;
-
-    // Normalize confidence: if > 1, assume percentage and convert to decimal
-    if (typeof normalized.confidence === "number" && normalized.confidence > 1) {
-      normalized.confidence = normalized.confidence / 100;
+    // ---- All parsing attempts failed — safe hold fallback ----
+    if (!parsed) {
+      console.error("[Pipeline] All JSON parsing attempts failed. Returning safe hold decision.");
+      const safeHold: Record<string, unknown> = {
+        action: "hold",
+        confidence: 0,
+        reasoning: `Pipeline parse failure — LLM output could not be parsed. Raw: ${rawText.slice(0, 200)}`,
+        signals: [],
+      };
+      const normalized = normalizeDecisionFields(safeHold);
+      decision = schema.parse(normalized);
+      return { decision, tokensUsed: textResult.usage?.totalTokens ?? 0, toolCalls: 0 };
     }
 
-    // Ensure reasoning exists
-    if (!normalized.reasoning) {
-      normalized.reasoning = normalized.reason || normalized.explanation || `Decision: ${normalized.action ?? "hold"}`;
-    }
-
-    // Clamp confidence to valid range
-    const conf = typeof normalized.confidence === "number" ? normalized.confidence : 0;
-    normalized.confidence = Math.max(0, Math.min(1, conf));
-
-    // Ensure action is valid
-    if (!normalized.action || !["buy", "sell", "hold"].includes(normalized.action as string)) {
-      normalized.action = "hold";
-    }
-
+    // ---- Normalize and validate ----
+    const normalized = normalizeDecisionFields(parsed);
     decision = schema.parse(normalized);
 
     return {
@@ -276,8 +500,24 @@ export async function quickDecision<T>(params: {
       toolCalls: textResult.toolCalls?.length ?? 0,
     };
   } catch (err) {
-    console.error("[Pipeline] quickDecision failed:", err);
-    throw err;
+    // ---- Outer catch: schema validation or unrecoverable error ----
+    console.error("[Pipeline] quickDecision failed, returning safe hold:", err instanceof Error ? err.message : String(err));
+
+    // Last resort: try to return a safe hold so the agent doesn't crash
+    try {
+      const safeHold: Record<string, unknown> = {
+        action: "hold",
+        confidence: 0,
+        reasoning: `Pipeline error — ${err instanceof Error ? err.message.slice(0, 200) : "unknown error"}`,
+        signals: [],
+      };
+      const normalized = normalizeDecisionFields(safeHold);
+      const decision = schema.parse(normalized);
+      return { decision, tokensUsed: 0, toolCalls: 0 };
+    } catch (schemaErr) {
+      // Schema parse itself failed — re-throw original error
+      throw err;
+    }
   } finally {
     releaseLLMSlot(agentId);
   }
