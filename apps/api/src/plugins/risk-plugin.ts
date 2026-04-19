@@ -1,4 +1,4 @@
-import { AGENT_LIMITS, TEST_MODE } from "@agent-arena/shared";
+import { AGENT_LIMITS, IS_SIMULATED } from "@agent-arena/shared";
 
 export interface PositionRecord {
   marketId: string;
@@ -28,8 +28,8 @@ export function checkPortfolioLimit(
   proposedAmount: number,
   totalBalance: number
 ): RiskCheckResult {
-  // Test mode: bypass balance check
-  if (TEST_MODE) return { allowed: true };
+  // Simulated mode: skip balance-dependent checks since balance is fake
+  if (IS_SIMULATED) return { allowed: true };
 
   const maxAllowed = totalBalance * AGENT_LIMITS.MAX_PORTFOLIO_PERCENT_PER_MARKET;
   if (proposedAmount > maxAllowed) {

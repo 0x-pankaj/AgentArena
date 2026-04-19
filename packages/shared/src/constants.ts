@@ -1,3 +1,16 @@
+// --- Deploy phase configuration ---
+// "development" | "traction" | "production"
+// Controls balance simulation, trade execution, and policy strictness
+export type DeployPhase = "development" | "traction" | "production";
+export const DEPLOY_PHASE = (process.env.DEPLOY_PHASE ?? "development") as DeployPhase;
+export const IS_DEVELOPMENT = DEPLOY_PHASE === "development";
+export const IS_TRACTION = DEPLOY_PHASE === "traction";
+export const IS_PRODUCTION = DEPLOY_PHASE === "production";
+export const IS_SIMULATED = DEPLOY_PHASE === "development" || DEPLOY_PHASE === "traction";
+
+// Backward compatibility aliases
+export const TEST_MODE = IS_SIMULATED;
+
 // --- Cluster Configuration ---
 // Set SOLANA_CLUSTER=mainnet in .env to switch to mainnet
 export const SOLANA_CLUSTER = (process.env.SOLANA_CLUSTER ?? "devnet") as "devnet" | "mainnet";
@@ -24,12 +37,18 @@ export const JUPITER_PREDICT_DOCS = "https://prediction-market-api.jup.ag/docs";
 export const JUPUSD_MINT = "JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD";
 
 // Whether to execute trades (false = decision-only mode, log but don't trade)
-export const EXECUTE_TRADES = process.env.EXECUTE_TRADES === "true" || IS_MAINNET;
+// In production, real trades are executed. In dev/traction, always decision-only.
+export const EXECUTE_TRADES = IS_PRODUCTION;
 
-// Test mode: bypasses portfolio balance check for testing (never use in production)
-export const TEST_MODE = process.env.TEST_MODE === "true";
+// Simulated mode: uses TEST_WALLET_BALANCE instead of real on-chain balance
+// Also skips server-side risk checks since balance is simulated
+// In dev/traction: agents see simulated balance and log decisions (no real trades)
+// In production: real balance and real trade execution
 export const TEST_WALLET_BALANCE_USDC = Number(process.env.TEST_WALLET_BALANCE_USDC ?? "1000");
 export const TEST_WALLET_BALANCE_SOL = Number(process.env.TEST_WALLET_BALANCE_SOL ?? "0");
+
+// Emergency kill switch: if "true", all agent loops pause immediately
+export const EMERGENCY_STOP = process.env.EMERGENCY_STOP === "true";
 
 export const AGENT_LIMITS = {
   MAX_PORTFOLIO_PERCENT_PER_MARKET: 0.1,

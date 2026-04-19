@@ -24,10 +24,10 @@ export const solanaConnection = new Connection(
   SOLANA_COMMITMENT
 );
 
-export async function createAgentWallet(agentName: string) {
+export async function createAgentWallet(agentName: string, policyIds: string[] = []) {
   const wallet = await privy.walletApi.create({
     chainType: "solana",
-    policyIds: [],
+    policyIds,
   });
   return wallet;
 }

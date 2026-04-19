@@ -1,5 +1,6 @@
 import { jupiterPredict, type JupiterMarket } from "../plugins/polymarket-plugin";
-import { signSolanaTransaction, getWalletBalance } from "../utils/privy";
+import { signSolanaTransaction } from "../utils/privy";
+import { getEffectiveBalance } from "../utils/balance";
 import {
   executeBuyOrder,
   closePosition,
@@ -9,7 +10,7 @@ import { getMarket, getTrendingMarkets } from "../services/market-service";
 import { publishFeedEvent, buildFeedEvent } from "../feed";
 import type { LLMDecision, MarketContext, AgentPosition } from "./strategy-engine";
 import type { PortfolioSnapshot } from "../plugins/risk-plugin";
-import { EXECUTE_TRADES, TEST_MODE, TEST_WALLET_BALANCE_USDC, TEST_WALLET_BALANCE_SOL } from "@agent-arena/shared";
+import { EXECUTE_TRADES, IS_SIMULATED, TEST_WALLET_BALANCE_USDC, TEST_WALLET_BALANCE_SOL } from "@agent-arena/shared";
 import { db, schema } from "../db";
 import { eq, and, gte, sql } from "drizzle-orm";
 import type { TradeDecision } from "../ai/types";
@@ -314,11 +315,11 @@ export async function buildPortfolioSnapshot(
   await refreshSOLPrice();
 
   let balance: { sol: number; usdc: number };
-  if (TEST_MODE) {
+  if (IS_SIMULATED) {
     balance = { sol: TEST_WALLET_BALANCE_SOL, usdc: TEST_WALLET_BALANCE_USDC };
-    console.log(`[TEST MODE] Using simulated $${TEST_WALLET_BALANCE_USDC} USDC balance`);
+    console.log(`[SIMULATED] Using simulated $${TEST_WALLET_BALANCE_USDC} USDC balance`);
   } else {
-    balance = await getWalletBalance(agentWalletAddress);
+    balance = await getEffectiveBalance(agentWalletAddress);
   }
 
   const totalPnl = positions.reduce((sum, p) => sum + p.pnl, 0);

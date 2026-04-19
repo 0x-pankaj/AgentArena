@@ -49,9 +49,14 @@ async function acquireLLMSlot(agentId: string = "global"): Promise<void> {
     limiter.active++;
     return;
   }
-  return new Promise((resolve, reject) => {
-    limiter.queue.push({ resolve, reject });
+  const timeoutMs = 90_000;
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`LLM slot acquisition timeout after ${timeoutMs}ms for agent ${agentId}`)), timeoutMs)
+  );
+  const slotPromise = new Promise<void>((resolve) => {
+    limiter.queue.push({ resolve, reject: () => resolve() }); // reject used as "skip" on timeout
   });
+  return Promise.race([slotPromise, timeoutPromise]) as Promise<void>;
 }
 
 function releaseLLMSlot(agentId: string = "global"): void {
@@ -71,7 +76,22 @@ function releaseLLMSlot(agentId: string = "global"): void {
 // Check if error is a rate limit / upstream error that should be retried
 function isRetryableError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return msg.includes("rate-limited") || msg.includes("429") || msg.includes("overloaded") || msg.includes("timeout");
+  return (
+    msg.includes("rate-limited") ||
+    msg.includes("429") ||
+    msg.includes("overloaded") ||
+    msg.includes("timeout") ||
+    msg.includes("timed out") ||
+    msg.includes("connection") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("upstream") ||
+    msg.includes("ENOTFOUND") ||
+    msg.includes("service unavailable") ||
+    msg.includes("gateway") ||
+    msg.includes("502") ||
+    msg.includes("503") ||
+    msg.includes("504")
+  );
 }
 
 async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 2, label: string = "LLM call"): Promise<T> {
@@ -81,7 +101,10 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 2, label:
       return await fn();
     } catch (err: unknown) {
       lastErr = err;
-      if (!isRetryableError(err)) throw err;
+      if (!isRetryableError(err)) {
+        console.error(`[Pipeline] ${label} failed with non-retryable error: ${err instanceof Error ? err.message : String(err)}`);
+        throw err;
+      }
       if (attempt < maxRetries) {
         const delay = 1000 * Math.pow(2, attempt);
         console.warn(`[Pipeline] ${label} attempt ${attempt + 1}/${maxRetries + 1} failed (${err instanceof Error ? err.message : String(err)}), retrying in ${delay}ms...`);

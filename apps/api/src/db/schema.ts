@@ -32,6 +32,7 @@ export const jobs = pgTable("jobs", {
   agentId: uuid("agent_id").notNull().references(() => agents.id),
   privyWalletId: varchar("privy_wallet_id", { length: 200 }),
   privyWalletAddress: varchar("privy_wallet_address", { length: 200 }),
+  privyPolicyId: varchar("privy_policy_id", { length: 200 }), // Privy policy ID attached to this job's wallet
   onChainAddress: varchar("on_chain_address", { length: 44 }),
   maxCap: decimal("max_cap", { precision: 18, scale: 6 }),
   dailyCap: decimal("daily_cap", { precision: 18, scale: 6 }),

@@ -9,7 +9,7 @@ import {
   getAgentProfile,
   agentProfileExists,
 } from "../anchor/registry-client";
-import { getWalletBalance } from "../utils/privy";
+import { getEffectiveBalance } from "../utils/balance";
 
 const agentInputSchema = z.object({
   name: z.string().min(1).max(100),
@@ -271,6 +271,6 @@ export const agentRouter = router({
         return { sol: 0, usdc: 0 };
       }
 
-      return getWalletBalance(job.privyWalletAddress);
+      return getEffectiveBalance(job.privyWalletAddress);
     }),
 });

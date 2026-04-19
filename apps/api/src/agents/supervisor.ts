@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { TEST_MODE, TEST_WALLET_BALANCE_USDC, TEST_WALLET_BALANCE_SOL } from "@agent-arena/shared";
+import { TEST_MODE, TEST_WALLET_BALANCE_USDC, TEST_WALLET_BALANCE_SOL, DEPLOY_PHASE, IS_SIMULATED, IS_PRODUCTION, EMERGENCY_STOP } from "@agent-arena/shared";
 import { db, schema } from "../db";
 import { redis } from "../utils/redis";
 import { REDIS_KEYS } from "@agent-arena/shared";
@@ -10,7 +10,9 @@ import {
 } from "./registry";
 import type { AgentRuntimeContext, AgentTickResult } from "../ai/types";
 import { publishFeedEvent, buildFeedEvent } from "../feed";
-import { createAgentWallet, fundAgentWallet, getWalletBalance } from "../utils/privy";
+import { createAgentWallet, fundAgentWallet } from "../utils/privy";
+import { getEffectiveBalance } from "../utils/balance";
+import { createAgentPolicy } from "../utils/privy-policies";
 import { buildInitializeJobTx, getJobProfilePDA } from "../anchor/job-client";
 import { PublicKey } from "@solana/web3.js";
 import { startBackgroundPriceMonitor, stopBackgroundPriceMonitor } from "../services/price-monitor";
@@ -76,13 +78,17 @@ export async function hireAgent(params: {
     throw new Error("Agent is not active");
   }
 
-  // 2. Create Privy wallet for this job (always real, even in test mode)
-  let agentWallet: { id: string; address: string };
-  agentWallet = await createAgentWallet(agent.name);
-  console.log(`[Supervisor] Created Privy wallet for job (${agent.name}): ${agentWallet.address}`);
+  // 2. Create phase-appropriate Privy policy for this job's wallet
+  const policyId = await createAgentPolicy(DEPLOY_PHASE);
+  console.log(`[Supervisor] Created ${DEPLOY_PHASE} policy for job: ${policyId}`);
 
-  // 3. Fund wallet with SOL for tx fees (skip auto-funding in test mode — fund manually on devnet)
-  if (!TEST_MODE) {
+  // 3. Create Privy wallet with policy attached
+  let agentWallet: { id: string; address: string };
+  agentWallet = await createAgentWallet(agent.name, [policyId]);
+  console.log(`[Supervisor] Created Privy wallet for job (${agent.name}): ${agentWallet.address} with policy ${policyId}`);
+
+  // 4. Fund wallet with SOL for tx fees (skip in simulated mode — fund manually on devnet)
+  if (IS_PRODUCTION) {
     try {
       const { solSig } = await fundAgentWallet(agentWallet.address, 0.05);
       console.log(`[Supervisor] Funded wallet with 0.05 SOL: ${solSig}`);
@@ -90,10 +96,10 @@ export async function hireAgent(params: {
       console.error(`[Supervisor] Failed to fund wallet with SOL: ${err.message}`);
     }
   } else {
-    console.log(`[Supervisor] TEST MODE: Skipping auto SOL funding — fund wallet manually on devnet`);
+    console.log(`[Supervisor] SIMULATED MODE: Skipping auto SOL funding — fund wallet manually on devnet`);
   }
 
-  // 4. Create job in DB (paused by default)
+  // 5. Create job in DB (paused by default)
   const [job] = await db
     .insert(schema.jobs)
     .values({
@@ -101,6 +107,7 @@ export async function hireAgent(params: {
       agentId: params.agentId,
       privyWalletId: agentWallet.id,
       privyWalletAddress: agentWallet.address,
+      privyPolicyId: policyId,
       maxCap: String(params.maxCap),
       dailyCap: String(params.dailyCap),
       status: "paused",
@@ -155,10 +162,10 @@ export async function fundJob(jobId: string): Promise<{
     throw new Error("Job not found or has no wallet");
   }
 
-  // Test mode: trust manual setup, use configured test balance
-  const effectiveBalance = TEST_MODE
+  // Simulated mode: trust manual setup, use configured test balance
+  const effectiveBalance = IS_SIMULATED
     ? { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL }
-    : await getWalletBalance(job.privyWalletAddress);
+    : await getEffectiveBalance(job.privyWalletAddress);
 
   if (effectiveBalance.usdc <= 0 && effectiveBalance.sol <= 0) {
     return { success: false, balance: effectiveBalance };
@@ -198,13 +205,13 @@ export async function resumeJob(jobId: string): Promise<boolean> {
   // Check real devnet balance; fall back to test balance if RPC fails
   let effectiveBalance: { usdc: number; sol: number };
   try {
-    effectiveBalance = await getWalletBalance(job.privyWalletAddress);
+    effectiveBalance = await getEffectiveBalance(job.privyWalletAddress);
   } catch {
     effectiveBalance = { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL };
   }
 
-  // In test mode, trust manual setup — use configured balance even if RPC returns 0
-  if (TEST_MODE) {
+  // In simulated mode, trust manual setup — use configured balance even if RPC returns 0
+  if (IS_SIMULATED) {
     effectiveBalance = { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL };
   }
 
@@ -283,6 +290,13 @@ export function startAgentLoop(ctx: AgentRuntimeContext, category: string = "geo
   };
 
   const tick = async () => {
+    // Emergency stop: halt all agent loops if EMERGENCY_STOP is set
+    if (EMERGENCY_STOP) {
+      console.log(`[Supervisor] EMERGENCY_STOP active — pausing agent loop for job ${ctx.jobId}`);
+      stopAgentLoop(ctx.jobId);
+      return;
+    }
+
     // Check DB status — stop if job was paused/cancelled
     const [jobStatus] = await db
       .select({ status: schema.jobs.status })
