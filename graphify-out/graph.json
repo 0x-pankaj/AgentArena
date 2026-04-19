@@ -25,7 +25,7 @@
       "source_file": "apps/mobile/app/(tabs)/index.tsx",
       "source_location": "L1",
       "id": "index",
-      "community": 4
+      "community": 3
     },
     {
       "label": "deploy.ts",
@@ -41,7 +41,7 @@
       "source_file": "apps/api/src/anchor/agent_registry.ts",
       "source_location": "L1",
       "id": "agent_registry",
-      "community": 3
+      "community": 5
     },
     {
       "label": "error.rs",
@@ -57,7 +57,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L1",
       "id": "lib",
-      "community": 6
+      "community": 4
     },
     {
       "label": "register_agent()",
@@ -65,7 +65,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L10",
       "id": "lib_register_agent",
-      "community": 6
+      "community": 4
     },
     {
       "label": "update_agent()",
@@ -73,7 +73,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L64",
       "id": "lib_update_agent",
-      "community": 6
+      "community": 4
     },
     {
       "label": "deactivate_agent()",
@@ -81,7 +81,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L111",
       "id": "lib_deactivate_agent",
-      "community": 6
+      "community": 4
     },
     {
       "label": "verify_agent()",
@@ -89,7 +89,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L117",
       "id": "lib_verify_agent",
-      "community": 6
+      "community": 4
     },
     {
       "label": "reset_daily_spent()",
@@ -97,7 +97,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L123",
       "id": "lib_reset_daily_spent",
-      "community": 6
+      "community": 4
     },
     {
       "label": "record_spending()",
@@ -105,7 +105,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L129",
       "id": "lib_record_spending",
-      "community": 6
+      "community": 4
     },
     {
       "label": "initialize_job()",
@@ -113,7 +113,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L156",
       "id": "lib_initialize_job",
-      "community": 6
+      "community": 4
     },
     {
       "label": "RegisterAgent",
@@ -121,7 +121,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L183",
       "id": "lib_registeragent",
-      "community": 6
+      "community": 4
     },
     {
       "label": "UpdateAgent",
@@ -129,7 +129,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L198",
       "id": "lib_updateagent",
-      "community": 6
+      "community": 4
     },
     {
       "label": "VerifyAgent",
@@ -137,7 +137,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L210",
       "id": "lib_verifyagent",
-      "community": 6
+      "community": 4
     },
     {
       "label": "ResetDailySpent",
@@ -145,7 +145,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L221",
       "id": "lib_resetdailyspent",
-      "community": 6
+      "community": 4
     },
     {
       "label": "RecordSpending",
@@ -153,7 +153,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L233",
       "id": "lib_recordspending",
-      "community": 6
+      "community": 4
     },
     {
       "label": "InitializeJob",
@@ -161,7 +161,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L244",
       "id": "lib_initializejob",
-      "community": 6
+      "community": 4
     },
     {
       "label": "AgentProfile",
@@ -169,7 +169,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L260",
       "id": "lib_agentprofile",
-      "community": 6
+      "community": 4
     },
     {
       "label": "JobProfile",
@@ -177,7 +177,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L284",
       "id": "lib_jobprofile",
-      "community": 6
+      "community": 4
     },
     {
       "label": "AgentRegistered",
@@ -185,7 +185,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L294",
       "id": "lib_agentregistered",
-      "community": 6
+      "community": 4
     },
     {
       "label": "SpendingRecorded",
@@ -193,7 +193,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L302",
       "id": "lib_spendingrecorded",
-      "community": 6
+      "community": 4
     },
     {
       "label": "JobRegistered",
@@ -201,7 +201,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L310",
       "id": "lib_jobregistered",
-      "community": 6
+      "community": 4
     },
     {
       "label": "AgentRegistryError",
@@ -209,7 +209,7 @@
       "source_file": "programs/agent-registry/programs/agent-registry/src/lib.rs",
       "source_location": "L318",
       "id": "lib_agentregistryerror",
-      "community": 6
+      "community": 4
     },
     {
       "label": "agent-escrow.ts",
@@ -233,7 +233,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L10",
       "id": "lib_create_job",
-      "community": 6
+      "community": 4
     },
     {
       "label": "activate_job()",
@@ -241,7 +241,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L55",
       "id": "lib_activate_job",
-      "community": 6
+      "community": 4
     },
     {
       "label": "complete_job()",
@@ -249,7 +249,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L70",
       "id": "lib_complete_job",
-      "community": 6
+      "community": 4
     },
     {
       "label": "approve_release()",
@@ -257,7 +257,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L85",
       "id": "lib_approve_release",
-      "community": 6
+      "community": 4
     },
     {
       "label": "dispute()",
@@ -265,7 +265,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L123",
       "id": "lib_dispute",
-      "community": 6
+      "community": 4
     },
     {
       "label": "resolve_dispute()",
@@ -273,7 +273,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L138",
       "id": "lib_resolve_dispute",
-      "community": 6
+      "community": 4
     },
     {
       "label": "cancel_job()",
@@ -281,7 +281,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L180",
       "id": "lib_cancel_job",
-      "community": 6
+      "community": 4
     },
     {
       "label": "CreateJob",
@@ -289,7 +289,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L221",
       "id": "lib_createjob",
-      "community": 6
+      "community": 4
     },
     {
       "label": "ActivateJob",
@@ -297,7 +297,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L254",
       "id": "lib_activatejob",
-      "community": 6
+      "community": 4
     },
     {
       "label": "AgentAction",
@@ -305,7 +305,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L266",
       "id": "lib_agentaction",
-      "community": 6
+      "community": 4
     },
     {
       "label": "ApproveRelease",
@@ -313,7 +313,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L278",
       "id": "lib_approverelease",
-      "community": 6
+      "community": 4
     },
     {
       "label": "ResolveDispute",
@@ -321,7 +321,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L313",
       "id": "lib_resolvedispute",
-      "community": 6
+      "community": 4
     },
     {
       "label": "CancelJob",
@@ -329,7 +329,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L339",
       "id": "lib_canceljob",
-      "community": 6
+      "community": 4
     },
     {
       "label": "JobState",
@@ -337,7 +337,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L364",
       "id": "lib_jobstate",
-      "community": 6
+      "community": 4
     },
     {
       "label": "JobStatus",
@@ -345,7 +345,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L376",
       "id": "lib_jobstatus",
-      "community": 6
+      "community": 4
     },
     {
       "label": "JobCreated",
@@ -353,7 +353,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L390",
       "id": "lib_jobcreated",
-      "community": 6
+      "community": 4
     },
     {
       "label": "JobActivated",
@@ -361,7 +361,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L398",
       "id": "lib_jobactivated",
-      "community": 6
+      "community": 4
     },
     {
       "label": "JobCompleted",
@@ -369,7 +369,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L403",
       "id": "lib_jobcompleted",
-      "community": 6
+      "community": 4
     },
     {
       "label": "JobReleased",
@@ -377,7 +377,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L408",
       "id": "lib_jobreleased",
-      "community": 6
+      "community": 4
     },
     {
       "label": "JobDisputed",
@@ -385,7 +385,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L415",
       "id": "lib_jobdisputed",
-      "community": 6
+      "community": 4
     },
     {
       "label": "JobResolved",
@@ -393,7 +393,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L420",
       "id": "lib_jobresolved",
-      "community": 6
+      "community": 4
     },
     {
       "label": "JobCancelled",
@@ -401,7 +401,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L425",
       "id": "lib_jobcancelled",
-      "community": 6
+      "community": 4
     },
     {
       "label": "EscrowError",
@@ -409,7 +409,7 @@
       "source_file": "programs/agent-escrow/programs/agent-escrow/src/lib.rs",
       "source_location": "L433",
       "id": "lib_escrowerror",
-      "community": 6
+      "community": 4
     },
     {
       "label": "test-agent-tick.ts",
@@ -417,7 +417,7 @@
       "source_file": "apps/api/test-agent-tick.ts",
       "source_location": "L1",
       "id": "test_agent_tick",
-      "community": 25
+      "community": 1
     },
     {
       "label": "log()",
@@ -425,7 +425,7 @@
       "source_file": "apps/api/test-agent-tick.ts",
       "source_location": "L18",
       "id": "test_agent_tick_log",
-      "community": 25
+      "community": 1
     },
     {
       "label": "section()",
@@ -433,7 +433,7 @@
       "source_file": "apps/api/test-agent-tick.ts",
       "source_location": "L23",
       "id": "test_agent_tick_section",
-      "community": 25
+      "community": 1
     },
     {
       "label": "cleanup()",
@@ -441,7 +441,7 @@
       "source_file": "apps/api/test-agent-tick.ts",
       "source_location": "L29",
       "id": "test_agent_tick_cleanup",
-      "community": 25
+      "community": 1
     },
     {
       "label": "main()",
@@ -449,7 +449,7 @@
       "source_file": "apps/api/test-agent-tick.ts",
       "source_location": "L37",
       "id": "test_agent_tick_main",
-      "community": 25
+      "community": 1
     },
     {
       "label": "test-data-sources.ts",
@@ -457,7 +457,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L1",
       "id": "test_data_sources",
-      "community": 18
+      "community": 20
     },
     {
       "label": "pass()",
@@ -465,7 +465,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L31",
       "id": "test_data_sources_pass",
-      "community": 18
+      "community": 20
     },
     {
       "label": "fail()",
@@ -473,7 +473,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L36",
       "id": "test_data_sources_fail",
-      "community": 18
+      "community": 20
     },
     {
       "label": "skip()",
@@ -481,7 +481,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L42",
       "id": "test_data_sources_skip",
-      "community": 18
+      "community": 20
     },
     {
       "label": "section()",
@@ -489,7 +489,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L47",
       "id": "test_data_sources_section",
-      "community": 18
+      "community": 20
     },
     {
       "label": "testExaWebSearch()",
@@ -497,7 +497,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L56",
       "id": "test_data_sources_testexawebsearch",
-      "community": 18
+      "community": 20
     },
     {
       "label": "testGdelt()",
@@ -505,7 +505,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L84",
       "id": "test_data_sources_testgdelt",
-      "community": 18
+      "community": 20
     },
     {
       "label": "testCoinGecko()",
@@ -513,7 +513,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L123",
       "id": "test_data_sources_testcoingecko",
-      "community": 18
+      "community": 20
     },
     {
       "label": "testDefiLlama()",
@@ -521,7 +521,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L159",
       "id": "test_data_sources_testdefillama",
-      "community": 18
+      "community": 20
     },
     {
       "label": "testFred()",
@@ -529,7 +529,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L192",
       "id": "test_data_sources_testfred",
-      "community": 18
+      "community": 20
     },
     {
       "label": "testAcled()",
@@ -537,7 +537,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L214",
       "id": "test_data_sources_testacled",
-      "community": 18
+      "community": 20
     },
     {
       "label": "testNasaFirms()",
@@ -545,7 +545,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L236",
       "id": "test_data_sources_testnasafirms",
-      "community": 18
+      "community": 20
     },
     {
       "label": "testSportsOdds()",
@@ -553,7 +553,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L258",
       "id": "test_data_sources_testsportsodds",
-      "community": 18
+      "community": 20
     },
     {
       "label": "testSharedSignals()",
@@ -561,7 +561,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L285",
       "id": "test_data_sources_testsharedsignals",
-      "community": 18
+      "community": 20
     },
     {
       "label": "main()",
@@ -569,7 +569,7 @@
       "source_file": "apps/api/test-data-sources.ts",
       "source_location": "L313",
       "id": "test_data_sources_main",
-      "community": 18
+      "community": 20
     },
     {
       "label": "test-pipeline.ts",
@@ -577,7 +577,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L1",
       "id": "test_pipeline",
-      "community": 11
+      "community": 12
     },
     {
       "label": "pass()",
@@ -585,7 +585,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L33",
       "id": "test_pipeline_pass",
-      "community": 11
+      "community": 12
     },
     {
       "label": "fail()",
@@ -593,7 +593,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L38",
       "id": "test_pipeline_fail",
-      "community": 11
+      "community": 12
     },
     {
       "label": "skip()",
@@ -601,7 +601,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L44",
       "id": "test_pipeline_skip",
-      "community": 11
+      "community": 12
     },
     {
       "label": "section()",
@@ -609,7 +609,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L49",
       "id": "test_pipeline_section",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testModelResolution()",
@@ -617,7 +617,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L58",
       "id": "test_pipeline_testmodelresolution",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testJupiterMarkets()",
@@ -625,7 +625,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L73",
       "id": "test_pipeline_testjupitermarkets",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testExaWebSearch()",
@@ -633,7 +633,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L106",
       "id": "test_pipeline_testexawebsearch",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testGdeltSignals()",
@@ -641,7 +641,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L136",
       "id": "test_pipeline_testgdeltsignals",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testCoinGecko()",
@@ -649,7 +649,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L154",
       "id": "test_pipeline_testcoingecko",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testSignalProcessing()",
@@ -657,7 +657,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L175",
       "id": "test_pipeline_testsignalprocessing",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testEdgeAndSizing()",
@@ -665,7 +665,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L215",
       "id": "test_pipeline_testedgeandsizing",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testSignalWeights()",
@@ -673,7 +673,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L244",
       "id": "test_pipeline_testsignalweights",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testLLMAnalysis()",
@@ -681,7 +681,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L263",
       "id": "test_pipeline_testllmanalysis",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testLLMDecision()",
@@ -689,7 +689,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L297",
       "id": "test_pipeline_testllmdecision",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testRiskChecks()",
@@ -697,7 +697,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L350",
       "id": "test_pipeline_testriskchecks",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testAlertService()",
@@ -705,7 +705,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L424",
       "id": "test_pipeline_testalertservice",
-      "community": 11
+      "community": 12
     },
     {
       "label": "testFullPipeline()",
@@ -713,7 +713,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L442",
       "id": "test_pipeline_testfullpipeline",
-      "community": 11
+      "community": 12
     },
     {
       "label": "main()",
@@ -721,7 +721,7 @@
       "source_file": "apps/api/test-pipeline.ts",
       "source_location": "L581",
       "id": "test_pipeline_main",
-      "community": 11
+      "community": 12
     },
     {
       "label": "seed.ts",
@@ -761,7 +761,7 @@
       "source_file": "apps/api/src/index.ts",
       "source_location": "L47",
       "id": "index_startup",
-      "community": 4
+      "community": 3
     },
     {
       "label": "registry-client.ts",
@@ -769,7 +769,7 @@
       "source_file": "apps/api/src/anchor/registry-client.ts",
       "source_location": "L1",
       "id": "registry_client",
-      "community": 3
+      "community": 5
     },
     {
       "label": "getProgram()",
@@ -777,7 +777,7 @@
       "source_file": "apps/api/src/anchor/registry-client.ts",
       "source_location": "L16",
       "id": "registry_client_getprogram",
-      "community": 3
+      "community": 5
     },
     {
       "label": "getAgentProfilePDA()",
@@ -785,7 +785,7 @@
       "source_file": "apps/api/src/anchor/registry-client.ts",
       "source_location": "L25",
       "id": "registry_client_getagentprofilepda",
-      "community": 3
+      "community": 5
     },
     {
       "label": "buildRegisterAgentTx()",
@@ -793,7 +793,7 @@
       "source_file": "apps/api/src/anchor/registry-client.ts",
       "source_location": "L59",
       "id": "registry_client_buildregisteragenttx",
-      "community": 3
+      "community": 5
     },
     {
       "label": "registerAgentWithPrivy()",
@@ -801,7 +801,7 @@
       "source_file": "apps/api/src/anchor/registry-client.ts",
       "source_location": "L102",
       "id": "registry_client_registeragentwithprivy",
-      "community": 3
+      "community": 5
     },
     {
       "label": "getAgentProfile()",
@@ -809,7 +809,7 @@
       "source_file": "apps/api/src/anchor/registry-client.ts",
       "source_location": "L120",
       "id": "registry_client_getagentprofile",
-      "community": 3
+      "community": 5
     },
     {
       "label": "agentProfileExists()",
@@ -817,7 +817,7 @@
       "source_file": "apps/api/src/anchor/registry-client.ts",
       "source_location": "L149",
       "id": "registry_client_agentprofileexists",
-      "community": 3
+      "community": 5
     },
     {
       "label": "job-client.ts",
@@ -825,7 +825,7 @@
       "source_file": "apps/api/src/anchor/job-client.ts",
       "source_location": "L1",
       "id": "job_client",
-      "community": 3
+      "community": 11
     },
     {
       "label": "getInstructionDiscriminator()",
@@ -833,7 +833,7 @@
       "source_file": "apps/api/src/anchor/job-client.ts",
       "source_location": "L19",
       "id": "job_client_getinstructiondiscriminator",
-      "community": 3
+      "community": 11
     },
     {
       "label": "jobIdToSeed()",
@@ -841,7 +841,7 @@
       "source_file": "apps/api/src/anchor/job-client.ts",
       "source_location": "L30",
       "id": "job_client_jobidtoseed",
-      "community": 3
+      "community": 11
     },
     {
       "label": "getJobProfilePDA()",
@@ -849,7 +849,7 @@
       "source_file": "apps/api/src/anchor/job-client.ts",
       "source_location": "L34",
       "id": "job_client_getjobprofilepda",
-      "community": 3
+      "community": 11
     },
     {
       "label": "buildInitializeJobTx()",
@@ -857,7 +857,7 @@
       "source_file": "apps/api/src/anchor/job-client.ts",
       "source_location": "L50",
       "id": "job_client_buildinitializejobtx",
-      "community": 3
+      "community": 11
     },
     {
       "label": "getJobProfile()",
@@ -865,7 +865,7 @@
       "source_file": "apps/api/src/anchor/job-client.ts",
       "source_location": "L94",
       "id": "job_client_getjobprofile",
-      "community": 3
+      "community": 11
     },
     {
       "label": "jobProfileExists()",
@@ -873,7 +873,7 @@
       "source_file": "apps/api/src/anchor/job-client.ts",
       "source_location": "L141",
       "id": "job_client_jobprofileexists",
-      "community": 3
+      "community": 11
     },
     {
       "label": "politics-agent.ts",
@@ -1017,7 +1017,7 @@
       "source_file": "apps/api/src/agents/signal-weights.ts",
       "source_location": "L1",
       "id": "signal_weights",
-      "community": 11
+      "community": 12
     },
     {
       "label": "parseWeightOverride()",
@@ -1025,7 +1025,7 @@
       "source_file": "apps/api/src/agents/signal-weights.ts",
       "source_location": "L44",
       "id": "signal_weights_parseweightoverride",
-      "community": 11
+      "community": 12
     },
     {
       "label": "getBayesianWeight()",
@@ -1033,7 +1033,7 @@
       "source_file": "apps/api/src/agents/signal-weights.ts",
       "source_location": "L51",
       "id": "signal_weights_getbayesianweight",
-      "community": 11
+      "community": 12
     },
     {
       "label": "getSignalSourceWeight()",
@@ -1041,7 +1041,7 @@
       "source_file": "apps/api/src/agents/signal-weights.ts",
       "source_location": "L68",
       "id": "signal_weights_getsignalsourceweight",
-      "community": 11
+      "community": 12
     },
     {
       "label": "getAllBayesianWeights()",
@@ -1049,7 +1049,7 @@
       "source_file": "apps/api/src/agents/signal-weights.ts",
       "source_location": "L85",
       "id": "signal_weights_getallbayesianweights",
-      "community": 11
+      "community": 12
     },
     {
       "label": "getAllSignalSourceWeights()",
@@ -1057,7 +1057,7 @@
       "source_file": "apps/api/src/agents/signal-weights.ts",
       "source_location": "L89",
       "id": "signal_weights_getallsignalsourceweights",
-      "community": 11
+      "community": 12
     },
     {
       "label": "execution-engine.ts",
@@ -1065,87 +1065,87 @@
       "source_file": "apps/api/src/agents/execution-engine.ts",
       "source_location": "L1",
       "id": "execution_engine",
-      "community": 7
+      "community": 5
     },
     {
       "label": "getSOLPrice()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L27",
+      "source_location": "L28",
       "id": "execution_engine_getsolprice",
-      "community": 7
+      "community": 5
     },
     {
       "label": "refreshSOLPrice()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L31",
+      "source_location": "L32",
       "id": "execution_engine_refreshsolprice",
-      "community": 7
+      "community": 5
     },
     {
       "label": "validateDecision()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L49",
+      "source_location": "L50",
       "id": "execution_engine_validatedecision",
-      "community": 7
+      "community": 5
     },
     {
       "label": "scanMarkets()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L76",
+      "source_location": "L77",
       "id": "execution_engine_scanmarkets",
-      "community": 7
+      "community": 5
     },
     {
       "label": "executeBuy()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L135",
+      "source_location": "L136",
       "id": "execution_engine_executebuy",
-      "community": 7
+      "community": 5
     },
     {
       "label": "executeSell()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L235",
+      "source_location": "L236",
       "id": "execution_engine_executesell",
-      "community": 7
+      "community": 5
     },
     {
       "label": "monitorPositions()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L281",
+      "source_location": "L282",
       "id": "execution_engine_monitorpositions",
-      "community": 7
+      "community": 5
     },
     {
       "label": "buildPortfolioSnapshot()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L309",
+      "source_location": "L310",
       "id": "execution_engine_buildportfoliosnapshot",
-      "community": 7
+      "community": 5
     },
     {
       "label": "publishAnalysisEvent()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L367",
+      "source_location": "L368",
       "id": "execution_engine_publishanalysisevent",
-      "community": 7
+      "community": 5
     },
     {
       "label": "publishReasoningEvent()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L388",
+      "source_location": "L389",
       "id": "execution_engine_publishreasoningevent",
-      "community": 7
+      "community": 5
     },
     {
       "label": "fsm.ts",
@@ -1153,7 +1153,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L1",
       "id": "fsm",
-      "community": 20
+      "community": 8
     },
     {
       "label": "AgentFSM",
@@ -1161,7 +1161,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L66",
       "id": "fsm_agentfsm",
-      "community": 20
+      "community": 8
     },
     {
       "label": ".constructor()",
@@ -1169,7 +1169,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L70",
       "id": "fsm_agentfsm_constructor",
-      "community": 20
+      "community": 8
     },
     {
       "label": ".getState()",
@@ -1177,7 +1177,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L81",
       "id": "fsm_agentfsm_getstate",
-      "community": 20
+      "community": 8
     },
     {
       "label": ".getContext()",
@@ -1185,7 +1185,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L85",
       "id": "fsm_agentfsm_getcontext",
-      "community": 20
+      "community": 8
     },
     {
       "label": ".canTransition()",
@@ -1193,7 +1193,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L89",
       "id": "fsm_agentfsm_cantransition",
-      "community": 20
+      "community": 8
     },
     {
       "label": ".transition()",
@@ -1201,7 +1201,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L98",
       "id": "fsm_agentfsm_transition",
-      "community": 20
+      "community": 8
     },
     {
       "label": ".isPaused()",
@@ -1209,7 +1209,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L144",
       "id": "fsm_agentfsm_ispaused",
-      "community": 20
+      "community": 8
     },
     {
       "label": ".unpause()",
@@ -1217,7 +1217,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L148",
       "id": "fsm_agentfsm_unpause",
-      "community": 20
+      "community": 8
     },
     {
       "label": ".pause()",
@@ -1225,7 +1225,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L153",
       "id": "fsm_agentfsm_pause",
-      "community": 20
+      "community": 8
     },
     {
       "label": ".reset()",
@@ -1233,7 +1233,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L158",
       "id": "fsm_agentfsm_reset",
-      "community": 20
+      "community": 8
     },
     {
       "label": ".restoreState()",
@@ -1241,7 +1241,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L166",
       "id": "fsm_agentfsm_restorestate",
-      "community": 20
+      "community": 8
     },
     {
       "label": ".timeInState()",
@@ -1249,7 +1249,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L186",
       "id": "fsm_agentfsm_timeinstate",
-      "community": 20
+      "community": 8
     },
     {
       "label": ".toJSON()",
@@ -1257,7 +1257,7 @@
       "source_file": "apps/api/src/agents/fsm.ts",
       "source_location": "L191",
       "id": "fsm_agentfsm_tojson",
-      "community": 20
+      "community": 8
     },
     {
       "label": "sports-agent.ts",
@@ -1521,7 +1521,7 @@
       "source_file": "apps/api/src/agents/strategy-engine.ts",
       "source_location": "L1",
       "id": "strategy_engine",
-      "community": 2
+      "community": 1
     },
     {
       "label": "fetchSignals()",
@@ -1529,7 +1529,7 @@
       "source_file": "apps/api/src/agents/strategy-engine.ts",
       "source_location": "L50",
       "id": "strategy_engine_fetchsignals",
-      "community": 2
+      "community": 1
     },
     {
       "label": "checkThresholds()",
@@ -1537,7 +1537,7 @@
       "source_file": "apps/api/src/agents/strategy-engine.ts",
       "source_location": "L71",
       "id": "strategy_engine_checkthresholds",
-      "community": 2
+      "community": 1
     },
     {
       "label": "shared-pipeline-utils.ts",
@@ -1545,7 +1545,7 @@
       "source_file": "apps/api/src/agents/shared-pipeline-utils.ts",
       "source_location": "L1",
       "id": "shared_pipeline_utils",
-      "community": 2
+      "community": 24
     },
     {
       "label": "bayesianUpdate()",
@@ -1553,7 +1553,7 @@
       "source_file": "apps/api/src/agents/shared-pipeline-utils.ts",
       "source_location": "L6",
       "id": "shared_pipeline_utils_bayesianupdate",
-      "community": 2
+      "community": 24
     },
     {
       "label": "aggregateSignals()",
@@ -1561,7 +1561,7 @@
       "source_file": "apps/api/src/agents/shared-pipeline-utils.ts",
       "source_location": "L25",
       "id": "shared_pipeline_utils_aggregatesignals",
-      "community": 2
+      "community": 24
     },
     {
       "label": "calculateEdge()",
@@ -1569,7 +1569,7 @@
       "source_file": "apps/api/src/agents/shared-pipeline-utils.ts",
       "source_location": "L65",
       "id": "shared_pipeline_utils_calculateedge",
-      "community": 2
+      "community": 24
     },
     {
       "label": "kellyPositionSize()",
@@ -1577,7 +1577,7 @@
       "source_file": "apps/api/src/agents/shared-pipeline-utils.ts",
       "source_location": "L88",
       "id": "shared_pipeline_utils_kellypositionsize",
-      "community": 2
+      "community": 24
     },
     {
       "label": "extractProbabilityFromText()",
@@ -1585,7 +1585,7 @@
       "source_file": "apps/api/src/agents/shared-pipeline-utils.ts",
       "source_location": "L103",
       "id": "shared_pipeline_utils_extractprobabilityfromtext",
-      "community": 2
+      "community": 24
     },
     {
       "label": "computeTemporalAdjustment()",
@@ -1593,7 +1593,7 @@
       "source_file": "apps/api/src/agents/shared-pipeline-utils.ts",
       "source_location": "L131",
       "id": "shared_pipeline_utils_computetemporaladjustment",
-      "community": 2
+      "community": 24
     },
     {
       "label": "registry.ts",
@@ -1649,111 +1649,111 @@
       "source_file": "apps/api/src/agents/supervisor.ts",
       "source_location": "L1",
       "id": "supervisor",
-      "community": 3
+      "community": 11
     },
     {
       "label": "initializeSupervisor()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L43",
+      "source_location": "L45",
       "id": "supervisor_initializesupervisor",
-      "community": 3
+      "community": 11
     },
     {
       "label": "hireAgent()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L53",
+      "source_location": "L55",
       "id": "supervisor_hireagent",
-      "community": 3
+      "community": 11
     },
     {
       "label": "fundJob()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L144",
+      "source_location": "L151",
       "id": "supervisor_fundjob",
-      "community": 3
+      "community": 11
     },
     {
       "label": "resumeJob()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L179",
+      "source_location": "L186",
       "id": "supervisor_resumejob",
-      "community": 3
+      "community": 11
     },
     {
       "label": "startAgentLoop()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L267",
+      "source_location": "L274",
       "id": "supervisor_startagentloop",
-      "community": 3
+      "community": 11
     },
     {
       "label": "stopAgentLoop()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L344",
+      "source_location": "L358",
       "id": "supervisor_stopagentloop",
-      "community": 3
+      "community": 11
     },
     {
       "label": "pauseAgentLoop()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L362",
+      "source_location": "L376",
       "id": "supervisor_pauseagentloop",
-      "community": 3
+      "community": 11
     },
     {
       "label": "resumeAgentLoop()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L379",
+      "source_location": "L393",
       "id": "supervisor_resumeagentloop",
-      "community": 3
+      "community": 11
     },
     {
       "label": "cancelJob()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L428",
+      "source_location": "L442",
       "id": "supervisor_canceljob",
-      "community": 3
+      "community": 11
     },
     {
       "label": "approveJob()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L452",
+      "source_location": "L466",
       "id": "supervisor_approvejob",
-      "community": 3
+      "community": 11
     },
     {
       "label": "getAgentStatus()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L476",
+      "source_location": "L490",
       "id": "supervisor_getagentstatus",
-      "community": 3
+      "community": 11
     },
     {
       "label": "listActiveAgents()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L493",
+      "source_location": "L507",
       "id": "supervisor_listactiveagents",
-      "community": 3
+      "community": 11
     },
     {
       "label": "resumeActiveAgents()",
       "file_type": "code",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L499",
+      "source_location": "L513",
       "id": "supervisor_resumeactiveagents",
-      "community": 3
+      "community": 11
     },
     {
       "label": "crypto-agent.ts",
@@ -1761,7 +1761,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L1",
       "id": "crypto_agent",
-      "community": 12
+      "community": 15
     },
     {
       "label": "buildCryptoAgentConfig()",
@@ -1769,7 +1769,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L52",
       "id": "crypto_agent_buildcryptoagentconfig",
-      "community": 12
+      "community": 15
     },
     {
       "label": "publishFeedStep()",
@@ -1777,7 +1777,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L176",
       "id": "crypto_agent_publishfeedstep",
-      "community": 12
+      "community": 15
     },
     {
       "label": "bayesianUpdate()",
@@ -1785,7 +1785,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L194",
       "id": "crypto_agent_bayesianupdate",
-      "community": 12
+      "community": 15
     },
     {
       "label": "aggregateSignals()",
@@ -1793,7 +1793,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L218",
       "id": "crypto_agent_aggregatesignals",
-      "community": 12
+      "community": 15
     },
     {
       "label": "calculateEdge()",
@@ -1801,7 +1801,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L249",
       "id": "crypto_agent_calculateedge",
-      "community": 12
+      "community": 15
     },
     {
       "label": "kellyPositionSize()",
@@ -1809,7 +1809,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L270",
       "id": "crypto_agent_kellypositionsize",
-      "community": 12
+      "community": 15
     },
     {
       "label": "runCryptoAgentTick()",
@@ -1817,7 +1817,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L279",
       "id": "crypto_agent_runcryptoagenttick",
-      "community": 12
+      "community": 15
     },
     {
       "label": "buildPerMarketResearchContext()",
@@ -1825,7 +1825,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L879",
       "id": "crypto_agent_buildpermarketresearchcontext",
-      "community": 12
+      "community": 15
     },
     {
       "label": "buildPerMarketDecisionContext()",
@@ -1833,7 +1833,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L964",
       "id": "crypto_agent_buildpermarketdecisioncontext",
-      "community": 12
+      "community": 15
     },
     {
       "label": "runScaledBayesianEstimation()",
@@ -1841,7 +1841,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L982",
       "id": "crypto_agent_runscaledbayesianestimation",
-      "community": 12
+      "community": 15
     },
     {
       "label": "computeTemporalAdjustment()",
@@ -1849,7 +1849,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L1037",
       "id": "crypto_agent_computetemporaladjustment",
-      "community": 12
+      "community": 15
     },
     {
       "label": "extractProbabilityFromText()",
@@ -1857,7 +1857,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L1062",
       "id": "crypto_agent_extractprobabilityfromtext",
-      "community": 12
+      "community": 15
     },
     {
       "label": "gdeltToProbability()",
@@ -1865,7 +1865,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L1096",
       "id": "crypto_agent_gdelttoprobability",
-      "community": 12
+      "community": 15
     },
     {
       "label": "cryptoToProbability()",
@@ -1873,7 +1873,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L1103",
       "id": "crypto_agent_cryptotoprobability",
-      "community": 12
+      "community": 15
     },
     {
       "label": "macroToProbability()",
@@ -1881,7 +1881,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L1110",
       "id": "crypto_agent_macrotoprobability",
-      "community": 12
+      "community": 15
     },
     {
       "label": "getMarketPrice()",
@@ -1889,7 +1889,7 @@
       "source_file": "apps/api/src/agents/crypto-agent.ts",
       "source_location": "L1117",
       "id": "crypto_agent_getmarketprice",
-      "community": 12
+      "community": 15
     },
     {
       "label": "shared-helpers.ts",
@@ -1897,7 +1897,7 @@
       "source_file": "apps/api/src/agents/shared-helpers.ts",
       "source_location": "L1",
       "id": "shared_helpers",
-      "community": 10
+      "community": 19
     },
     {
       "label": "bayesianUpdate()",
@@ -1905,7 +1905,7 @@
       "source_file": "apps/api/src/agents/shared-helpers.ts",
       "source_location": "L11",
       "id": "shared_helpers_bayesianupdate",
-      "community": 10
+      "community": 19
     },
     {
       "label": "aggregateSignals()",
@@ -1913,7 +1913,7 @@
       "source_file": "apps/api/src/agents/shared-helpers.ts",
       "source_location": "L39",
       "id": "shared_helpers_aggregatesignals",
-      "community": 10
+      "community": 19
     },
     {
       "label": "calculateEdge()",
@@ -1921,7 +1921,7 @@
       "source_file": "apps/api/src/agents/shared-helpers.ts",
       "source_location": "L69",
       "id": "shared_helpers_calculateedge",
-      "community": 10
+      "community": 19
     },
     {
       "label": "kellyPositionSize()",
@@ -1929,7 +1929,7 @@
       "source_file": "apps/api/src/agents/shared-helpers.ts",
       "source_location": "L108",
       "id": "shared_helpers_kellypositionsize",
-      "community": 10
+      "community": 19
     },
     {
       "label": "getMarketPrice()",
@@ -1937,7 +1937,7 @@
       "source_file": "apps/api/src/agents/shared-helpers.ts",
       "source_location": "L123",
       "id": "shared_helpers_getmarketprice",
-      "community": 10
+      "community": 19
     },
     {
       "label": "publishFeedStep()",
@@ -1945,7 +1945,7 @@
       "source_file": "apps/api/src/agents/shared-helpers.ts",
       "source_location": "L135",
       "id": "shared_helpers_publishfeedstep",
-      "community": 10
+      "community": 19
     },
     {
       "label": "defillama.ts",
@@ -1953,7 +1953,7 @@
       "source_file": "apps/api/src/data-sources/defillama.ts",
       "source_location": "L1",
       "id": "defillama",
-      "community": 13
+      "community": 9
     },
     {
       "label": "getTopProtocols()",
@@ -1961,7 +1961,7 @@
       "source_file": "apps/api/src/data-sources/defillama.ts",
       "source_location": "L53",
       "id": "defillama_gettopprotocols",
-      "community": 13
+      "community": 9
     },
     {
       "label": "getChainTVLs()",
@@ -1969,7 +1969,7 @@
       "source_file": "apps/api/src/data-sources/defillama.ts",
       "source_location": "L84",
       "id": "defillama_getchaintvls",
-      "community": 13
+      "community": 9
     },
     {
       "label": "getSolanaTVL()",
@@ -1977,7 +1977,7 @@
       "source_file": "apps/api/src/data-sources/defillama.ts",
       "source_location": "L112",
       "id": "defillama_getsolanatvl",
-      "community": 13
+      "community": 9
     },
     {
       "label": "getStablecoinData()",
@@ -1985,7 +1985,7 @@
       "source_file": "apps/api/src/data-sources/defillama.ts",
       "source_location": "L161",
       "id": "defillama_getstablecoindata",
-      "community": 13
+      "community": 9
     },
     {
       "label": "getTopYields()",
@@ -1993,7 +1993,7 @@
       "source_file": "apps/api/src/data-sources/defillama.ts",
       "source_location": "L187",
       "id": "defillama_gettopyields",
-      "community": 13
+      "community": 9
     },
     {
       "label": "getDeFiSignals()",
@@ -2001,7 +2001,7 @@
       "source_file": "apps/api/src/data-sources/defillama.ts",
       "source_location": "L220",
       "id": "defillama_getdefisignals",
-      "community": 13
+      "community": 9
     },
     {
       "label": "sports-odds.ts",
@@ -2009,7 +2009,7 @@
       "source_file": "apps/api/src/data-sources/sports-odds.ts",
       "source_location": "L1",
       "id": "sports_odds",
-      "community": 13
+      "community": 9
     },
     {
       "label": "oddsApiRequest()",
@@ -2017,7 +2017,7 @@
       "source_file": "apps/api/src/data-sources/sports-odds.ts",
       "source_location": "L69",
       "id": "sports_odds_oddsapirequest",
-      "community": 13
+      "community": 9
     },
     {
       "label": "getUpcomingEvents()",
@@ -2025,7 +2025,7 @@
       "source_file": "apps/api/src/data-sources/sports-odds.ts",
       "source_location": "L95",
       "id": "sports_odds_getupcomingevents",
-      "community": 13
+      "community": 9
     },
     {
       "label": "getScores()",
@@ -2033,7 +2033,7 @@
       "source_file": "apps/api/src/data-sources/sports-odds.ts",
       "source_location": "L121",
       "id": "sports_odds_getscores",
-      "community": 13
+      "community": 9
     },
     {
       "label": "getSportsSignals()",
@@ -2041,7 +2041,7 @@
       "source_file": "apps/api/src/data-sources/sports-odds.ts",
       "source_location": "L137",
       "id": "sports_odds_getsportssignals",
-      "community": 13
+      "community": 9
     },
     {
       "label": "getAvailableSports()",
@@ -2049,7 +2049,7 @@
       "source_file": "apps/api/src/data-sources/sports-odds.ts",
       "source_location": "L230",
       "id": "sports_odds_getavailablesports",
-      "community": 13
+      "community": 9
     },
     {
       "label": "fred.ts",
@@ -2137,7 +2137,7 @@
       "source_file": "apps/api/src/data-sources/coingecko.ts",
       "source_location": "L1",
       "id": "coingecko",
-      "community": 12
+      "community": 9
     },
     {
       "label": "getTopCoins()",
@@ -2145,7 +2145,7 @@
       "source_file": "apps/api/src/data-sources/coingecko.ts",
       "source_location": "L57",
       "id": "coingecko_gettopcoins",
-      "community": 12
+      "community": 9
     },
     {
       "label": "getCoinData()",
@@ -2153,7 +2153,7 @@
       "source_file": "apps/api/src/data-sources/coingecko.ts",
       "source_location": "L94",
       "id": "coingecko_getcoindata",
-      "community": 12
+      "community": 9
     },
     {
       "label": "getGlobalMarket()",
@@ -2161,7 +2161,7 @@
       "source_file": "apps/api/src/data-sources/coingecko.ts",
       "source_location": "L129",
       "id": "coingecko_getglobalmarket",
-      "community": 12
+      "community": 9
     },
     {
       "label": "getPriceHistory()",
@@ -2169,7 +2169,7 @@
       "source_file": "apps/api/src/data-sources/coingecko.ts",
       "source_location": "L156",
       "id": "coingecko_getpricehistory",
-      "community": 12
+      "community": 9
     },
     {
       "label": "getTrendingCoins()",
@@ -2177,7 +2177,7 @@
       "source_file": "apps/api/src/data-sources/coingecko.ts",
       "source_location": "L178",
       "id": "coingecko_gettrendingcoins",
-      "community": 12
+      "community": 9
     },
     {
       "label": "getCryptoSignals()",
@@ -2185,7 +2185,7 @@
       "source_file": "apps/api/src/data-sources/coingecko.ts",
       "source_location": "L211",
       "id": "coingecko_getcryptosignals",
-      "community": 12
+      "community": 9
     },
     {
       "label": "getSolanaSignals()",
@@ -2193,7 +2193,7 @@
       "source_file": "apps/api/src/data-sources/coingecko.ts",
       "source_location": "L245",
       "id": "coingecko_getsolanasignals",
-      "community": 12
+      "community": 9
     },
     {
       "label": "twitter.ts",
@@ -2321,7 +2321,7 @@
       "source_file": "apps/api/src/leaderboard/index.ts",
       "source_location": "L45",
       "id": "index_updateagentstats",
-      "community": 4
+      "community": 3
     },
     {
       "label": "updateUserLeaderboardEntry()",
@@ -2329,7 +2329,7 @@
       "source_file": "apps/api/src/leaderboard/index.ts",
       "source_location": "L108",
       "id": "index_updateuserleaderboardentry",
-      "community": 4
+      "community": 3
     },
     {
       "label": "enrichLeaderboardEntry()",
@@ -2337,7 +2337,7 @@
       "source_file": "apps/api/src/leaderboard/index.ts",
       "source_location": "L137",
       "id": "index_enrichleaderboardentry",
-      "community": 4
+      "community": 3
     },
     {
       "label": "getAllTimeLeaderboard()",
@@ -2345,7 +2345,7 @@
       "source_file": "apps/api/src/leaderboard/index.ts",
       "source_location": "L193",
       "id": "index_getalltimeleaderboard",
-      "community": 4
+      "community": 3
     },
     {
       "label": "getTodayLeaderboard()",
@@ -2353,7 +2353,7 @@
       "source_file": "apps/api/src/leaderboard/index.ts",
       "source_location": "L236",
       "id": "index_gettodayleaderboard",
-      "community": 4
+      "community": 3
     },
     {
       "label": "getLeaderboardByCategory()",
@@ -2361,7 +2361,7 @@
       "source_file": "apps/api/src/leaderboard/index.ts",
       "source_location": "L276",
       "id": "index_getleaderboardbycategory",
-      "community": 4
+      "community": 3
     },
     {
       "label": "getAgentRank()",
@@ -2369,7 +2369,7 @@
       "source_file": "apps/api/src/leaderboard/index.ts",
       "source_location": "L325",
       "id": "index_getagentrank",
-      "community": 4
+      "community": 3
     },
     {
       "label": "getGlobalStats()",
@@ -2377,7 +2377,7 @@
       "source_file": "apps/api/src/leaderboard/index.ts",
       "source_location": "L342",
       "id": "index_getglobalstats",
-      "community": 4
+      "community": 3
     },
     {
       "label": "getUserLeaderboard()",
@@ -2385,7 +2385,7 @@
       "source_file": "apps/api/src/leaderboard/index.ts",
       "source_location": "L396",
       "id": "index_getuserleaderboard",
-      "community": 4
+      "community": 3
     },
     {
       "label": "getTrendingAgents()",
@@ -2393,7 +2393,7 @@
       "source_file": "apps/api/src/leaderboard/index.ts",
       "source_location": "L513",
       "id": "index_gettrendingagents",
-      "community": 4
+      "community": 3
     },
     {
       "label": "tools.ts",
@@ -2425,7 +2425,7 @@
       "source_file": "apps/api/src/ai/pipeline.ts",
       "source_location": "L1",
       "id": "pipeline",
-      "community": 21
+      "community": 17
     },
     {
       "label": "toSdkTools()",
@@ -2433,7 +2433,7 @@
       "source_file": "apps/api/src/ai/pipeline.ts",
       "source_location": "L15",
       "id": "pipeline_tosdktools",
-      "community": 21
+      "community": 17
     },
     {
       "label": "getAgentLimiter()",
@@ -2441,7 +2441,7 @@
       "source_file": "apps/api/src/ai/pipeline.ts",
       "source_location": "L35",
       "id": "pipeline_getagentlimiter",
-      "community": 21
+      "community": 17
     },
     {
       "label": "acquireLLMSlot()",
@@ -2449,79 +2449,79 @@
       "source_file": "apps/api/src/ai/pipeline.ts",
       "source_location": "L46",
       "id": "pipeline_acquirellmslot",
-      "community": 21
+      "community": 17
     },
     {
       "label": "releaseLLMSlot()",
       "file_type": "code",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L57",
+      "source_location": "L62",
       "id": "pipeline_releasellmslot",
-      "community": 21
+      "community": 17
     },
     {
       "label": "isRetryableError()",
       "file_type": "code",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L72",
+      "source_location": "L77",
       "id": "pipeline_isretryableerror",
-      "community": 21
+      "community": 17
     },
     {
       "label": "withRetry()",
       "file_type": "code",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L77",
+      "source_location": "L97",
       "id": "pipeline_withretry",
-      "community": 21
+      "community": 17
     },
     {
       "label": "quickAnalysis()",
       "file_type": "code",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L95",
+      "source_location": "L118",
       "id": "pipeline_quickanalysis",
-      "community": 21
+      "community": 17
     },
     {
       "label": "extractJsonFromText()",
       "file_type": "code",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L166",
+      "source_location": "L189",
       "id": "pipeline_extractjsonfromtext",
-      "community": 21
+      "community": 17
     },
     {
       "label": "repairJson()",
       "file_type": "code",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L220",
+      "source_location": "L243",
       "id": "pipeline_repairjson",
-      "community": 21
+      "community": 17
     },
     {
       "label": "parseJsonWithRepair()",
       "file_type": "code",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L251",
+      "source_location": "L274",
       "id": "pipeline_parsejsonwithrepair",
-      "community": 21
+      "community": 17
     },
     {
       "label": "normalizeDecisionFields()",
       "file_type": "code",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L279",
+      "source_location": "L302",
       "id": "pipeline_normalizedecisionfields",
-      "community": 21
+      "community": 17
     },
     {
       "label": "quickDecision()",
       "file_type": "code",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L368",
+      "source_location": "L391",
       "id": "pipeline_quickdecision",
-      "community": 21
+      "community": 17
     },
     {
       "label": "models.ts",
@@ -2585,7 +2585,7 @@
       "source_file": "apps/api/src/db/schema.ts",
       "source_location": "L1",
       "id": "schema",
-      "community": 4
+      "community": 3
     },
     {
       "label": "context.ts",
@@ -2609,7 +2609,7 @@
       "source_file": "apps/api/src/utils/cache.ts",
       "source_location": "L1",
       "id": "cache",
-      "community": 13
+      "community": 9
     },
     {
       "label": "cacheKey()",
@@ -2617,7 +2617,7 @@
       "source_file": "apps/api/src/utils/cache.ts",
       "source_location": "L40",
       "id": "cache_cachekey",
-      "community": 13
+      "community": 9
     },
     {
       "label": "getCached()",
@@ -2625,7 +2625,7 @@
       "source_file": "apps/api/src/utils/cache.ts",
       "source_location": "L47",
       "id": "cache_getcached",
-      "community": 13
+      "community": 9
     },
     {
       "label": "setCached()",
@@ -2633,7 +2633,7 @@
       "source_file": "apps/api/src/utils/cache.ts",
       "source_location": "L59",
       "id": "cache_setcached",
-      "community": 13
+      "community": 9
     },
     {
       "label": "deleteCached()",
@@ -2641,7 +2641,7 @@
       "source_file": "apps/api/src/utils/cache.ts",
       "source_location": "L69",
       "id": "cache_deletecached",
-      "community": 13
+      "community": 9
     },
     {
       "label": "acquireLock()",
@@ -2649,7 +2649,7 @@
       "source_file": "apps/api/src/utils/cache.ts",
       "source_location": "L75",
       "id": "cache_acquirelock",
-      "community": 13
+      "community": 9
     },
     {
       "label": "releaseLock()",
@@ -2657,7 +2657,7 @@
       "source_file": "apps/api/src/utils/cache.ts",
       "source_location": "L82",
       "id": "cache_releaselock",
-      "community": 13
+      "community": 9
     },
     {
       "label": "cachedFetch()",
@@ -2665,7 +2665,7 @@
       "source_file": "apps/api/src/utils/cache.ts",
       "source_location": "L90",
       "id": "cache_cachedfetch",
-      "community": 13
+      "community": 9
     },
     {
       "label": "cachedFetchBatch()",
@@ -2673,7 +2673,7 @@
       "source_file": "apps/api/src/utils/cache.ts",
       "source_location": "L146",
       "id": "cache_cachedfetchbatch",
-      "community": 13
+      "community": 9
     },
     {
       "label": "flushNamespace()",
@@ -2681,7 +2681,7 @@
       "source_file": "apps/api/src/utils/cache.ts",
       "source_location": "L165",
       "id": "cache_flushnamespace",
-      "community": 13
+      "community": 9
     },
     {
       "label": "trpc.ts",
@@ -2689,7 +2689,7 @@
       "source_file": "apps/api/src/utils/trpc.ts",
       "source_location": "L1",
       "id": "trpc",
-      "community": 3
+      "community": 5
     },
     {
       "label": "redis.ts",
@@ -2705,7 +2705,7 @@
       "source_file": "apps/api/src/utils/circuit-breaker.ts",
       "source_location": "L1",
       "id": "circuit_breaker",
-      "community": 23
+      "community": 2
     },
     {
       "label": "getCircuit()",
@@ -2713,7 +2713,7 @@
       "source_file": "apps/api/src/utils/circuit-breaker.ts",
       "source_location": "L15",
       "id": "circuit_breaker_getcircuit",
-      "community": 23
+      "community": 2
     },
     {
       "label": "isCircuitOpen()",
@@ -2721,7 +2721,7 @@
       "source_file": "apps/api/src/utils/circuit-breaker.ts",
       "source_location": "L22",
       "id": "circuit_breaker_iscircuitopen",
-      "community": 23
+      "community": 2
     },
     {
       "label": "recordCircuitSuccess()",
@@ -2729,7 +2729,7 @@
       "source_file": "apps/api/src/utils/circuit-breaker.ts",
       "source_location": "L35",
       "id": "circuit_breaker_recordcircuitsuccess",
-      "community": 23
+      "community": 2
     },
     {
       "label": "recordCircuitFailure()",
@@ -2737,7 +2737,7 @@
       "source_file": "apps/api/src/utils/circuit-breaker.ts",
       "source_location": "L41",
       "id": "circuit_breaker_recordcircuitfailure",
-      "community": 23
+      "community": 2
     },
     {
       "label": "withCircuitBreaker()",
@@ -2745,7 +2745,7 @@
       "source_file": "apps/api/src/utils/circuit-breaker.ts",
       "source_location": "L51",
       "id": "circuit_breaker_withcircuitbreaker",
-      "community": 23
+      "community": 2
     },
     {
       "label": "privy.ts",
@@ -2753,7 +2753,7 @@
       "source_file": "apps/mobile/src/lib/privy.ts",
       "source_location": "L1",
       "id": "privy",
-      "community": 3
+      "community": 5
     },
     {
       "label": "createAgentWallet()",
@@ -2761,7 +2761,7 @@
       "source_file": "apps/api/src/utils/privy.ts",
       "source_location": "L27",
       "id": "privy_createagentwallet",
-      "community": 3
+      "community": 5
     },
     {
       "label": "signSolanaTransaction()",
@@ -2769,7 +2769,7 @@
       "source_file": "apps/api/src/utils/privy.ts",
       "source_location": "L35",
       "id": "privy_signsolanatransaction",
-      "community": 3
+      "community": 5
     },
     {
       "label": "fundAgentWallet()",
@@ -2777,7 +2777,7 @@
       "source_file": "apps/api/src/utils/privy.ts",
       "source_location": "L51",
       "id": "privy_fundagentwallet",
-      "community": 3
+      "community": 5
     },
     {
       "label": "getWalletBalance()",
@@ -2785,7 +2785,87 @@
       "source_file": "apps/api/src/utils/privy.ts",
       "source_location": "L85",
       "id": "privy_getwalletbalance",
-      "community": 3
+      "community": 5
+    },
+    {
+      "label": "privy-policies.ts",
+      "file_type": "code",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L1",
+      "id": "privy_policies",
+      "community": 11
+    },
+    {
+      "label": "createPolicy()",
+      "file_type": "code",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L31",
+      "id": "privy_policies_createpolicy",
+      "community": 11
+    },
+    {
+      "label": "createDevelopmentPolicy()",
+      "file_type": "code",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L42",
+      "id": "privy_policies_createdevelopmentpolicy",
+      "community": 11
+    },
+    {
+      "label": "createTractionPolicy()",
+      "file_type": "code",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L78",
+      "id": "privy_policies_createtractionpolicy",
+      "community": 11
+    },
+    {
+      "label": "createProductionPolicy()",
+      "file_type": "code",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L143",
+      "id": "privy_policies_createproductionpolicy",
+      "community": 11
+    },
+    {
+      "label": "createAgentPolicy()",
+      "file_type": "code",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L221",
+      "id": "privy_policies_createagentpolicy",
+      "community": 11
+    },
+    {
+      "label": "deletePolicy()",
+      "file_type": "code",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L232",
+      "id": "privy_policies_deletepolicy",
+      "community": 11
+    },
+    {
+      "label": "getPolicy()",
+      "file_type": "code",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L237",
+      "id": "privy_policies_getpolicy",
+      "community": 11
+    },
+    {
+      "label": "balance.ts",
+      "file_type": "code",
+      "source_file": "apps/api/src/utils/balance.ts",
+      "source_location": "L1",
+      "id": "balance",
+      "community": 5
+    },
+    {
+      "label": "getEffectiveBalance()",
+      "file_type": "code",
+      "source_file": "apps/api/src/utils/balance.ts",
+      "source_location": "L4",
+      "id": "balance_geteffectivebalance",
+      "community": 5
     },
     {
       "label": "agent.ts",
@@ -2793,7 +2873,7 @@
       "source_file": "apps/api/src/routers/agent.ts",
       "source_location": "L1",
       "id": "agent",
-      "community": 3
+      "community": 5
     },
     {
       "label": "evolution.ts",
@@ -2801,7 +2881,7 @@
       "source_file": "apps/api/src/routers/evolution.ts",
       "source_location": "L1",
       "id": "evolution",
-      "community": 3
+      "community": 5
     },
     {
       "label": "requireAdmin()",
@@ -2809,7 +2889,7 @@
       "source_file": "apps/api/src/routers/evolution.ts",
       "source_location": "L16",
       "id": "evolution_requireadmin",
-      "community": 3
+      "community": 5
     },
     {
       "label": "trade.ts",
@@ -2817,7 +2897,7 @@
       "source_file": "apps/api/src/routers/trade.ts",
       "source_location": "L1",
       "id": "trade",
-      "community": 3
+      "community": 5
     },
     {
       "label": "verifyJobOwnership()",
@@ -2825,7 +2905,7 @@
       "source_file": "apps/api/src/routers/trade.ts",
       "source_location": "L12",
       "id": "trade_verifyjobownership",
-      "community": 3
+      "community": 5
     },
     {
       "label": "leaderboard.tsx",
@@ -2841,15 +2921,15 @@
       "source_file": "apps/api/src/routers/job.ts",
       "source_location": "L1",
       "id": "job",
-      "community": 3
+      "community": 5
     },
     {
       "label": "enrichJobWithAgent()",
       "file_type": "code",
       "source_file": "apps/api/src/routers/job.ts",
-      "source_location": "L9",
+      "source_location": "L8",
       "id": "job_enrichjobwithagent",
-      "community": 3
+      "community": 5
     },
     {
       "label": "feed.tsx",
@@ -2865,7 +2945,7 @@
       "source_file": "apps/api/src/routers/_app.ts",
       "source_location": "L1",
       "id": "app",
-      "community": 3
+      "community": 5
     },
     {
       "label": "user.ts",
@@ -2873,7 +2953,7 @@
       "source_file": "apps/api/src/routers/user.ts",
       "source_location": "L1",
       "id": "user",
-      "community": 3
+      "community": 5
     },
     {
       "label": "market.ts",
@@ -2881,7 +2961,7 @@
       "source_file": "apps/api/src/routers/market.ts",
       "source_location": "L1",
       "id": "market",
-      "community": 3
+      "community": 5
     },
     {
       "label": "startWebSocketServer()",
@@ -2889,7 +2969,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L22",
       "id": "index_startwebsocketserver",
-      "community": 4
+      "community": 3
     },
     {
       "label": "ensureRedisSubscription()",
@@ -2897,7 +2977,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L116",
       "id": "index_ensureredissubscription",
-      "community": 4
+      "community": 3
     },
     {
       "label": "pruneUnusedRedisSubscriptions()",
@@ -2905,7 +2985,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L129",
       "id": "index_pruneunusedredissubscriptions",
-      "community": 4
+      "community": 3
     },
     {
       "label": "channelToRedisChannel()",
@@ -2913,7 +2993,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L153",
       "id": "index_channeltoredischannel",
-      "community": 4
+      "community": 3
     },
     {
       "label": "subscribeToRedis()",
@@ -2921,7 +3001,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L162",
       "id": "index_subscribetoredis",
-      "community": 4
+      "community": 3
     },
     {
       "label": "broadcast()",
@@ -2929,7 +3009,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L197",
       "id": "index_broadcast",
-      "community": 4
+      "community": 3
     },
     {
       "label": "broadcastFeedEvent()",
@@ -2937,7 +3017,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L216",
       "id": "index_broadcastfeedevent",
-      "community": 4
+      "community": 3
     },
     {
       "label": "broadcastLeaderboardUpdate()",
@@ -2945,7 +3025,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L220",
       "id": "index_broadcastleaderboardupdate",
-      "community": 4
+      "community": 3
     },
     {
       "label": "broadcastPositionUpdate()",
@@ -2953,7 +3033,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L224",
       "id": "index_broadcastpositionupdate",
-      "community": 4
+      "community": 3
     },
     {
       "label": "broadcastPriceUpdate()",
@@ -2961,7 +3041,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L228",
       "id": "index_broadcastpriceupdate",
-      "community": 4
+      "community": 3
     },
     {
       "label": "broadcastAgentDecision()",
@@ -2969,7 +3049,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L232",
       "id": "index_broadcastagentdecision",
-      "community": 4
+      "community": 3
     },
     {
       "label": "getClientCount()",
@@ -2977,7 +3057,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L238",
       "id": "index_getclientcount",
-      "community": 4
+      "community": 3
     },
     {
       "label": "stopWebSocketServer()",
@@ -2985,7 +3065,7 @@
       "source_file": "apps/api/src/ws/index.ts",
       "source_location": "L244",
       "id": "index_stopwebsocketserver",
-      "community": 4
+      "community": 3
     },
     {
       "label": "polymarket-plugin.ts",
@@ -3001,7 +3081,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L145",
       "id": "polymarket_plugin_jupiterpredictclient",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".constructor()",
@@ -3009,7 +3089,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L149",
       "id": "polymarket_plugin_jupiterpredictclient_constructor",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".request()",
@@ -3017,7 +3097,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L154",
       "id": "polymarket_plugin_jupiterpredictclient_request",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".extractCategory()",
@@ -3025,7 +3105,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L201",
       "id": "polymarket_plugin_jupiterpredictclient_extractcategory",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".listEvents()",
@@ -3033,7 +3113,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L217",
       "id": "polymarket_plugin_jupiterpredictclient_listevents",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".searchEvents()",
@@ -3041,7 +3121,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L240",
       "id": "polymarket_plugin_jupiterpredictclient_searchevents",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".getEvent()",
@@ -3049,7 +3129,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L252",
       "id": "polymarket_plugin_jupiterpredictclient_getevent",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".getMarket()",
@@ -3057,7 +3137,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L259",
       "id": "polymarket_plugin_jupiterpredictclient_getmarket",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".getOrderbook()",
@@ -3065,7 +3145,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L264",
       "id": "polymarket_plugin_jupiterpredictclient_getorderbook",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".createOrder()",
@@ -3073,7 +3153,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L273",
       "id": "polymarket_plugin_jupiterpredictclient_createorder",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".getOrderStatus()",
@@ -3081,7 +3161,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L292",
       "id": "polymarket_plugin_jupiterpredictclient_getorderstatus",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".listPositions()",
@@ -3089,7 +3169,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L298",
       "id": "polymarket_plugin_jupiterpredictclient_listpositions",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".closePosition()",
@@ -3097,7 +3177,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L313",
       "id": "polymarket_plugin_jupiterpredictclient_closeposition",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".claimPayout()",
@@ -3105,7 +3185,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L319",
       "id": "polymarket_plugin_jupiterpredictclient_claimpayout",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".getHistory()",
@@ -3113,7 +3193,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L327",
       "id": "polymarket_plugin_jupiterpredictclient_gethistory",
-      "community": 17
+      "community": 7
     },
     {
       "label": ".getTradingStatus()",
@@ -3121,7 +3201,7 @@
       "source_file": "apps/api/src/plugins/polymarket-plugin.ts",
       "source_location": "L338",
       "id": "polymarket_plugin_jupiterpredictclient_gettradingstatus",
-      "community": 17
+      "community": 7
     },
     {
       "label": "risk-plugin.ts",
@@ -3129,7 +3209,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L1",
       "id": "risk_plugin",
-      "community": 15
+      "community": 6
     },
     {
       "label": "checkPortfolioLimit()",
@@ -3137,7 +3217,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L27",
       "id": "risk_plugin_checkportfoliolimit",
-      "community": 15
+      "community": 6
     },
     {
       "label": "checkCategoryExposure()",
@@ -3145,7 +3225,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L44",
       "id": "risk_plugin_checkcategoryexposure",
-      "community": 15
+      "community": 6
     },
     {
       "label": "checkMaxPositions()",
@@ -3153,7 +3233,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L72",
       "id": "risk_plugin_checkmaxpositions",
-      "community": 15
+      "community": 6
     },
     {
       "label": "checkDuplicateMarket()",
@@ -3161,7 +3241,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L85",
       "id": "risk_plugin_checkduplicatemarket",
-      "community": 15
+      "community": 6
     },
     {
       "label": "checkCooldown()",
@@ -3169,7 +3249,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L106",
       "id": "risk_plugin_checkcooldown",
-      "community": 15
+      "community": 6
     },
     {
       "label": "checkDailyLossLimit()",
@@ -3177,7 +3257,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L122",
       "id": "risk_plugin_checkdailylosslimit",
-      "community": 15
+      "community": 6
     },
     {
       "label": "checkMinConfidence()",
@@ -3185,7 +3265,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L136",
       "id": "risk_plugin_checkminconfidence",
-      "community": 15
+      "community": 6
     },
     {
       "label": "checkMinMarketVolume()",
@@ -3193,7 +3273,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L146",
       "id": "risk_plugin_checkminmarketvolume",
-      "community": 15
+      "community": 6
     },
     {
       "label": "checkMarketResolution()",
@@ -3201,7 +3281,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L156",
       "id": "risk_plugin_checkmarketresolution",
-      "community": 15
+      "community": 6
     },
     {
       "label": "checkHumanApprovalThreshold()",
@@ -3209,7 +3289,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L168",
       "id": "risk_plugin_checkhumanapprovalthreshold",
-      "community": 15
+      "community": 6
     },
     {
       "label": "checkStopLoss()",
@@ -3217,7 +3297,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L182",
       "id": "risk_plugin_checkstoploss",
-      "community": 15
+      "community": 6
     },
     {
       "label": "runPreTradeChecks()",
@@ -3225,7 +3305,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L209",
       "id": "risk_plugin_runpretradechecks",
-      "community": 15
+      "community": 6
     },
     {
       "label": "calculatePositionSize()",
@@ -3233,7 +3313,7 @@
       "source_file": "apps/api/src/plugins/risk-plugin.ts",
       "source_location": "L249",
       "id": "risk_plugin_calculatepositionsize",
-      "community": 15
+      "community": 6
     },
     {
       "label": "resolveAgentName()",
@@ -3241,7 +3321,7 @@
       "source_file": "apps/api/src/feed/index.ts",
       "source_location": "L15",
       "id": "index_resolveagentname",
-      "community": 4
+      "community": 3
     },
     {
       "label": "clearAgentNameCache()",
@@ -3249,7 +3329,7 @@
       "source_file": "apps/api/src/feed/index.ts",
       "source_location": "L39",
       "id": "index_clearagentnamecache",
-      "community": 4
+      "community": 3
     },
     {
       "label": "getRecentEvents()",
@@ -3257,7 +3337,7 @@
       "source_file": "apps/api/src/feed/index.ts",
       "source_location": "L46",
       "id": "index_getrecentevents",
-      "community": 4
+      "community": 3
     },
     {
       "label": "getEventsByAgent()",
@@ -3265,7 +3345,7 @@
       "source_file": "apps/api/src/feed/index.ts",
       "source_location": "L60",
       "id": "index_geteventsbyagent",
-      "community": 4
+      "community": 3
     },
     {
       "label": "getEventsByJob()",
@@ -3273,7 +3353,7 @@
       "source_file": "apps/api/src/feed/index.ts",
       "source_location": "L90",
       "id": "index_geteventsbyjob",
-      "community": 4
+      "community": 3
     },
     {
       "label": "getEventsByCategory()",
@@ -3281,7 +3361,7 @@
       "source_file": "apps/api/src/feed/index.ts",
       "source_location": "L119",
       "id": "index_geteventsbycategory",
-      "community": 4
+      "community": 3
     },
     {
       "label": "publishFeedEvent()",
@@ -3289,7 +3369,7 @@
       "source_file": "apps/api/src/feed/index.ts",
       "source_location": "L145",
       "id": "index_publishfeedevent",
-      "community": 4
+      "community": 3
     },
     {
       "label": "subscribeToFeed()",
@@ -3297,7 +3377,7 @@
       "source_file": "apps/api/src/feed/index.ts",
       "source_location": "L236",
       "id": "index_subscribetofeed",
-      "community": 4
+      "community": 3
     },
     {
       "label": "buildFeedEvent()",
@@ -3305,7 +3385,7 @@
       "source_file": "apps/api/src/feed/index.ts",
       "source_location": "L259",
       "id": "index_buildfeedevent",
-      "community": 4
+      "community": 3
     },
     {
       "label": "web-search.ts",
@@ -3353,7 +3433,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L1",
       "id": "signal_invalidation",
-      "community": 9
+      "community": 10
     },
     {
       "label": "SignalInvalidationManager",
@@ -3361,7 +3441,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L71",
       "id": "signal_invalidation_signalinvalidationmanager",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".invalidateCategory()",
@@ -3369,7 +3449,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L80",
       "id": "signal_invalidation_signalinvalidationmanager_invalidatecategory",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".invalidateMultiple()",
@@ -3377,7 +3457,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L132",
       "id": "signal_invalidation_signalinvalidationmanager_invalidatemultiple",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".invalidateAll()",
@@ -3385,7 +3465,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L143",
       "id": "signal_invalidation_signalinvalidationmanager_invalidateall",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".queueInvalidation()",
@@ -3393,7 +3473,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L167",
       "id": "signal_invalidation_signalinvalidationmanager_queueinvalidation",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".processInvalidationQueue()",
@@ -3401,7 +3481,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L179",
       "id": "signal_invalidation_signalinvalidationmanager_processinvalidationqueue",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".getCacheKey()",
@@ -3409,7 +3489,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L202",
       "id": "signal_invalidation_signalinvalidationmanager_getcachekey",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".getStats()",
@@ -3417,7 +3497,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L215",
       "id": "signal_invalidation_signalinvalidationmanager_getstats",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".resetStats()",
@@ -3425,7 +3505,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L230",
       "id": "signal_invalidation_signalinvalidationmanager_resetstats",
-      "community": 9
+      "community": 10
     },
     {
       "label": "invalidateOnThreshold()",
@@ -3433,7 +3513,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L245",
       "id": "signal_invalidation_invalidateonthreshold",
-      "community": 9
+      "community": 10
     },
     {
       "label": "invalidateOnBreakingNews()",
@@ -3441,7 +3521,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L257",
       "id": "signal_invalidation_invalidateonbreakingnews",
-      "community": 9
+      "community": 10
     },
     {
       "label": "invalidateOnPriceSpike()",
@@ -3449,7 +3529,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L271",
       "id": "signal_invalidation_invalidateonpricespike",
-      "community": 9
+      "community": 10
     },
     {
       "label": "invalidateOnVolumeSurge()",
@@ -3457,7 +3537,7 @@
       "source_file": "apps/api/src/services/signal-invalidation.ts",
       "source_location": "L283",
       "id": "signal_invalidation_invalidateonvolumesurge",
-      "community": 9
+      "community": 10
     },
     {
       "label": "llm-cache.ts",
@@ -3465,7 +3545,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L1",
       "id": "llm_cache",
-      "community": 19
+      "community": 21
     },
     {
       "label": "calculateSimilarity()",
@@ -3473,7 +3553,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L32",
       "id": "llm_cache_calculatesimilarity",
-      "community": 19
+      "community": 21
     },
     {
       "label": "LLMResponseCache",
@@ -3481,7 +3561,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L60",
       "id": "llm_cache_llmresponsecache",
-      "community": 19
+      "community": 21
     },
     {
       "label": ".initialize()",
@@ -3489,7 +3569,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L67",
       "id": "llm_cache_llmresponsecache_initialize",
-      "community": 19
+      "community": 21
     },
     {
       "label": ".get()",
@@ -3497,7 +3577,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L104",
       "id": "llm_cache_llmresponsecache_get",
-      "community": 19
+      "community": 21
     },
     {
       "label": ".set()",
@@ -3505,7 +3585,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L146",
       "id": "llm_cache_llmresponsecache_set",
-      "community": 19
+      "community": 21
     },
     {
       "label": ".findSimilar()",
@@ -3513,7 +3593,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L175",
       "id": "llm_cache_llmresponsecache_findsimilar",
-      "community": 19
+      "community": 21
     },
     {
       "label": ".save()",
@@ -3521,7 +3601,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L192",
       "id": "llm_cache_llmresponsecache_save",
-      "community": 19
+      "community": 21
     },
     {
       "label": ".getKey()",
@@ -3529,7 +3609,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L199",
       "id": "llm_cache_llmresponsecache_getkey",
-      "community": 19
+      "community": 21
     },
     {
       "label": ".enforceMaxSize()",
@@ -3537,7 +3617,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L207",
       "id": "llm_cache_llmresponsecache_enforcemaxsize",
-      "community": 19
+      "community": 21
     },
     {
       "label": ".simpleHash()",
@@ -3545,7 +3625,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L224",
       "id": "llm_cache_llmresponsecache_simplehash",
-      "community": 19
+      "community": 21
     },
     {
       "label": ".getStats()",
@@ -3553,7 +3633,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L236",
       "id": "llm_cache_llmresponsecache_getstats",
-      "community": 19
+      "community": 21
     },
     {
       "label": ".clear()",
@@ -3561,7 +3641,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L250",
       "id": "llm_cache_llmresponsecache_clear",
-      "community": 19
+      "community": 21
     },
     {
       "label": "getCachedLLMResponse()",
@@ -3569,7 +3649,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L270",
       "id": "llm_cache_getcachedllmresponse",
-      "community": 19
+      "community": 21
     },
     {
       "label": "cacheLLMResponse()",
@@ -3577,7 +3657,7 @@
       "source_file": "apps/api/src/services/llm-cache.ts",
       "source_location": "L279",
       "id": "llm_cache_cachellmresponse",
-      "community": 19
+      "community": 21
     },
     {
       "label": "parallel-analysis.ts",
@@ -3585,7 +3665,7 @@
       "source_file": "apps/api/src/services/parallel-analysis.ts",
       "source_location": "L1",
       "id": "parallel_analysis",
-      "community": 15
+      "community": 17
     },
     {
       "label": "chunkMarkets()",
@@ -3593,7 +3673,7 @@
       "source_file": "apps/api/src/services/parallel-analysis.ts",
       "source_location": "L43",
       "id": "parallel_analysis_chunkmarkets",
-      "community": 15
+      "community": 17
     },
     {
       "label": "buildChunkAnalysisPrompt()",
@@ -3601,7 +3681,7 @@
       "source_file": "apps/api/src/services/parallel-analysis.ts",
       "source_location": "L55",
       "id": "parallel_analysis_buildchunkanalysisprompt",
-      "community": 15
+      "community": 17
     },
     {
       "label": "buildChunkUserMessage()",
@@ -3609,7 +3689,7 @@
       "source_file": "apps/api/src/services/parallel-analysis.ts",
       "source_location": "L77",
       "id": "parallel_analysis_buildchunkusermessage",
-      "community": 15
+      "community": 17
     },
     {
       "label": "analyzeMarketsInParallel()",
@@ -3617,7 +3697,7 @@
       "source_file": "apps/api/src/services/parallel-analysis.ts",
       "source_location": "L103",
       "id": "parallel_analysis_analyzemarketsinparallel",
-      "community": 15
+      "community": 17
     },
     {
       "label": "analyzeMarketsSequentially()",
@@ -3625,7 +3705,7 @@
       "source_file": "apps/api/src/services/parallel-analysis.ts",
       "source_location": "L205",
       "id": "parallel_analysis_analyzemarketssequentially",
-      "community": 15
+      "community": 17
     },
     {
       "label": "smartAnalyzeMarkets()",
@@ -3633,7 +3713,7 @@
       "source_file": "apps/api/src/services/parallel-analysis.ts",
       "source_location": "L270",
       "id": "parallel_analysis_smartanalyzemarkets",
-      "community": 15
+      "community": 17
     },
     {
       "label": "calibration-service.ts",
@@ -3641,7 +3721,7 @@
       "source_file": "apps/api/src/services/calibration-service.ts",
       "source_location": "L1",
       "id": "calibration_service",
-      "community": 8
+      "community": 22
     },
     {
       "label": "getCalibrationScores()",
@@ -3649,7 +3729,7 @@
       "source_file": "apps/api/src/services/calibration-service.ts",
       "source_location": "L42",
       "id": "calibration_service_getcalibrationscores",
-      "community": 8
+      "community": 22
     },
     {
       "label": "saveCalibrationScores()",
@@ -3657,7 +3737,7 @@
       "source_file": "apps/api/src/services/calibration-service.ts",
       "source_location": "L57",
       "id": "calibration_service_savecalibrationscores",
-      "community": 8
+      "community": 22
     },
     {
       "label": "recordSignalPrediction()",
@@ -3665,7 +3745,7 @@
       "source_file": "apps/api/src/services/calibration-service.ts",
       "source_location": "L67",
       "id": "calibration_service_recordsignalprediction",
-      "community": 8
+      "community": 22
     },
     {
       "label": "recordConfidencePrediction()",
@@ -3673,7 +3753,7 @@
       "source_file": "apps/api/src/services/calibration-service.ts",
       "source_location": "L89",
       "id": "calibration_service_recordconfidenceprediction",
-      "community": 8
+      "community": 22
     },
     {
       "label": "scoreResolvedMarket()",
@@ -3681,7 +3761,7 @@
       "source_file": "apps/api/src/services/calibration-service.ts",
       "source_location": "L112",
       "id": "calibration_service_scoreresolvedmarket",
-      "community": 8
+      "community": 22
     },
     {
       "label": "getCalibratedWeight()",
@@ -3689,7 +3769,7 @@
       "source_file": "apps/api/src/services/calibration-service.ts",
       "source_location": "L216",
       "id": "calibration_service_getcalibratedweight",
-      "community": 8
+      "community": 22
     },
     {
       "label": "getAllCalibratedWeights()",
@@ -3697,7 +3777,7 @@
       "source_file": "apps/api/src/services/calibration-service.ts",
       "source_location": "L233",
       "id": "calibration_service_getallcalibratedweights",
-      "community": 8
+      "community": 22
     },
     {
       "label": "getConfidenceAdjustment()",
@@ -3705,7 +3785,7 @@
       "source_file": "apps/api/src/services/calibration-service.ts",
       "source_location": "L250",
       "id": "calibration_service_getconfidenceadjustment",
-      "community": 8
+      "community": 22
     },
     {
       "label": "findBucket()",
@@ -3713,7 +3793,7 @@
       "source_file": "apps/api/src/services/calibration-service.ts",
       "source_location": "L320",
       "id": "calibration_service_findbucket",
-      "community": 8
+      "community": 22
     },
     {
       "label": "decayConfidence()",
@@ -3721,7 +3801,7 @@
       "source_file": "apps/api/src/services/calibration-service.ts",
       "source_location": "L328",
       "id": "calibration_service_decayconfidence",
-      "community": 8
+      "community": 22
     },
     {
       "label": "decaySignalConfidence()",
@@ -3729,7 +3809,7 @@
       "source_file": "apps/api/src/services/calibration-service.ts",
       "source_location": "L347",
       "id": "calibration_service_decaysignalconfidence",
-      "community": 8
+      "community": 22
     },
     {
       "label": "multi-model-consensus.ts",
@@ -3753,7 +3833,7 @@
       "source_file": "apps/api/src/services/market-microstructure.ts",
       "source_location": "L1",
       "id": "market_microstructure",
-      "community": 7
+      "community": 15
     },
     {
       "label": "analyzeMarketMicrostructure()",
@@ -3761,7 +3841,7 @@
       "source_file": "apps/api/src/services/market-microstructure.ts",
       "source_location": "L27",
       "id": "market_microstructure_analyzemarketmicrostructure",
-      "community": 7
+      "community": 15
     },
     {
       "label": "checkMicrostructure()",
@@ -3769,7 +3849,7 @@
       "source_file": "apps/api/src/services/market-microstructure.ts",
       "source_location": "L89",
       "id": "market_microstructure_checkmicrostructure",
-      "community": 7
+      "community": 15
     },
     {
       "label": "calculateDepthInRange()",
@@ -3777,7 +3857,7 @@
       "source_file": "apps/api/src/services/market-microstructure.ts",
       "source_location": "L139",
       "id": "market_microstructure_calculatedepthinrange",
-      "community": 7
+      "community": 15
     },
     {
       "label": "estimatePriceImpact()",
@@ -3785,7 +3865,7 @@
       "source_file": "apps/api/src/services/market-microstructure.ts",
       "source_location": "L170",
       "id": "market_microstructure_estimatepriceimpact",
-      "community": 7
+      "community": 15
     },
     {
       "label": "jupiter-rate-limiter.ts",
@@ -3793,7 +3873,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L1",
       "id": "jupiter_rate_limiter",
-      "community": 5
+      "community": 16
     },
     {
       "label": "JupiterRateLimiter",
@@ -3801,7 +3881,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L94",
       "id": "jupiter_rate_limiter_jupiterratelimiter",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".constructor()",
@@ -3809,7 +3889,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L99",
       "id": "jupiter_rate_limiter_jupiterratelimiter_constructor",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".initState()",
@@ -3817,7 +3897,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L106",
       "id": "jupiter_rate_limiter_jupiterratelimiter_initstate",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".getConfig()",
@@ -3825,7 +3905,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L119",
       "id": "jupiter_rate_limiter_jupiterratelimiter_getconfig",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".getState()",
@@ -3833,7 +3913,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L123",
       "id": "jupiter_rate_limiter_jupiterratelimiter_getstate",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".cleanWindow()",
@@ -3841,7 +3921,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L130",
       "id": "jupiter_rate_limiter_jupiterratelimiter_cleanwindow",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".canRequest()",
@@ -3849,7 +3929,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L137",
       "id": "jupiter_rate_limiter_jupiterratelimiter_canrequest",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".recordRequest()",
@@ -3857,7 +3937,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L181",
       "id": "jupiter_rate_limiter_jupiterratelimiter_recordrequest",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".releaseRequest()",
@@ -3865,7 +3945,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L192",
       "id": "jupiter_rate_limiter_jupiterratelimiter_releaserequest",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".processQueue()",
@@ -3873,7 +3953,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L203",
       "id": "jupiter_rate_limiter_jupiterratelimiter_processqueue",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".acquire()",
@@ -3881,7 +3961,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L227",
       "id": "jupiter_rate_limiter_jupiterratelimiter_acquire",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".release()",
@@ -3889,7 +3969,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L270",
       "id": "jupiter_rate_limiter_jupiterratelimiter_release",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".recordSuccess()",
@@ -3897,7 +3977,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L278",
       "id": "jupiter_rate_limiter_jupiterratelimiter_recordsuccess",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".recordFailure()",
@@ -3905,7 +3985,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L283",
       "id": "jupiter_rate_limiter_jupiterratelimiter_recordfailure",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".executeWithRetry()",
@@ -3913,7 +3993,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L304",
       "id": "jupiter_rate_limiter_jupiterratelimiter_executewithretry",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".getStatus()",
@@ -3921,7 +4001,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L370",
       "id": "jupiter_rate_limiter_jupiterratelimiter_getstatus",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".getAllStatus()",
@@ -3929,7 +4009,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L398",
       "id": "jupiter_rate_limiter_jupiterratelimiter_getallstatus",
-      "community": 5
+      "community": 16
     },
     {
       "label": ".sleep()",
@@ -3937,7 +4017,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L410",
       "id": "jupiter_rate_limiter_jupiterratelimiter_sleep",
-      "community": 5
+      "community": 16
     },
     {
       "label": "withJupiterRateLimit()",
@@ -3945,7 +4025,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L425",
       "id": "jupiter_rate_limiter_withjupiterratelimit",
-      "community": 5
+      "community": 16
     },
     {
       "label": "getAgentPriority()",
@@ -3953,7 +4033,7 @@
       "source_file": "apps/api/src/services/jupiter-rate-limiter.ts",
       "source_location": "L434",
       "id": "jupiter_rate_limiter_getagentpriority",
-      "community": 5
+      "community": 16
     },
     {
       "label": "signal-cache.ts",
@@ -4025,7 +4105,7 @@
       "source_file": "apps/api/src/services/bayesian-backtest.ts",
       "source_location": "L1",
       "id": "bayesian_backtest",
-      "community": 2
+      "community": 24
     },
     {
       "label": "runBayesianBacktest()",
@@ -4033,7 +4113,7 @@
       "source_file": "apps/api/src/services/bayesian-backtest.ts",
       "source_location": "L29",
       "id": "bayesian_backtest_runbayesianbacktest",
-      "community": 2
+      "community": 24
     },
     {
       "label": "runAllAgentBacktests()",
@@ -4041,7 +4121,7 @@
       "source_file": "apps/api/src/services/bayesian-backtest.ts",
       "source_location": "L111",
       "id": "bayesian_backtest_runallagentbacktests",
-      "community": 2
+      "community": 24
     },
     {
       "label": "realtime-price-monitor.ts",
@@ -4049,7 +4129,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L1",
       "id": "realtime_price_monitor",
-      "community": 9
+      "community": 10
     },
     {
       "label": "RealTimePriceMonitor",
@@ -4057,7 +4137,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L68",
       "id": "realtime_price_monitor_realtimepricemonitor",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".constructor()",
@@ -4065,7 +4145,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L76",
       "id": "realtime_price_monitor_realtimepricemonitor_constructor",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".start()",
@@ -4073,7 +4153,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L82",
       "id": "realtime_price_monitor_realtimepricemonitor_start",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".stop()",
@@ -4081,7 +4161,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L97",
       "id": "realtime_price_monitor_realtimepricemonitor_stop",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".registerPosition()",
@@ -4089,7 +4169,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L111",
       "id": "realtime_price_monitor_realtimepricemonitor_registerposition",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".unregisterPosition()",
@@ -4097,7 +4177,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L128",
       "id": "realtime_price_monitor_realtimepricemonitor_unregisterposition",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".getMonitoredPositions()",
@@ -4105,7 +4185,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L135",
       "id": "realtime_price_monitor_realtimepricemonitor_getmonitoredpositions",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".getCachedPrice()",
@@ -4113,7 +4193,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L141",
       "id": "realtime_price_monitor_realtimepricemonitor_getcachedprice",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".startPollingLoop()",
@@ -4121,7 +4201,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L157",
       "id": "realtime_price_monitor_realtimepricemonitor_startpollingloop",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".pollAllPositions()",
@@ -4129,7 +4209,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L177",
       "id": "realtime_price_monitor_realtimepricemonitor_pollallpositions",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".fetchPrice()",
@@ -4137,7 +4217,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L231",
       "id": "realtime_price_monitor_realtimepricemonitor_fetchprice",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".checkPriceSpike()",
@@ -4145,7 +4225,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L255",
       "id": "realtime_price_monitor_realtimepricemonitor_checkpricespike",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".checkStopLossForPosition()",
@@ -4153,7 +4233,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L284",
       "id": "realtime_price_monitor_realtimepricemonitor_checkstoplossforposition",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".executeStopLoss()",
@@ -4161,7 +4241,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L315",
       "id": "realtime_price_monitor_realtimepricemonitor_executestoploss",
-      "community": 9
+      "community": 10
     },
     {
       "label": ".getStatus()",
@@ -4169,7 +4249,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L361",
       "id": "realtime_price_monitor_realtimepricemonitor_getstatus",
-      "community": 9
+      "community": 10
     },
     {
       "label": "registerOpenPositionsFromDB()",
@@ -4177,7 +4257,7 @@
       "source_file": "apps/api/src/services/realtime-price-monitor.ts",
       "source_location": "L386",
       "id": "realtime_price_monitor_registeropenpositionsfromdb",
-      "community": 9
+      "community": 10
     },
     {
       "label": "price-monitor.ts",
@@ -4185,7 +4265,7 @@
       "source_file": "apps/api/src/services/price-monitor.ts",
       "source_location": "L1",
       "id": "price_monitor",
-      "community": 10
+      "community": 6
     },
     {
       "label": "priceCacheKey()",
@@ -4193,7 +4273,7 @@
       "source_file": "apps/api/src/services/price-monitor.ts",
       "source_location": "L39",
       "id": "price_monitor_pricecachekey",
-      "community": 10
+      "community": 6
     },
     {
       "label": "monitorKey()",
@@ -4201,7 +4281,7 @@
       "source_file": "apps/api/src/services/price-monitor.ts",
       "source_location": "L43",
       "id": "price_monitor_monitorkey",
-      "community": 10
+      "community": 6
     },
     {
       "label": "updatePriceCache()",
@@ -4209,7 +4289,7 @@
       "source_file": "apps/api/src/services/price-monitor.ts",
       "source_location": "L49",
       "id": "price_monitor_updatepricecache",
-      "community": 10
+      "community": 6
     },
     {
       "label": "getCachedPrice()",
@@ -4217,7 +4297,7 @@
       "source_file": "apps/api/src/services/price-monitor.ts",
       "source_location": "L59",
       "id": "price_monitor_getcachedprice",
-      "community": 10
+      "community": 6
     },
     {
       "label": "registerPositionForMonitoring()",
@@ -4225,7 +4305,7 @@
       "source_file": "apps/api/src/services/price-monitor.ts",
       "source_location": "L71",
       "id": "price_monitor_registerpositionformonitoring",
-      "community": 10
+      "community": 6
     },
     {
       "label": "unregisterPositionFromMonitoring()",
@@ -4233,7 +4313,7 @@
       "source_file": "apps/api/src/services/price-monitor.ts",
       "source_location": "L83",
       "id": "price_monitor_unregisterpositionfrommonitoring",
-      "community": 10
+      "community": 6
     },
     {
       "label": "checkMonitoredPositions()",
@@ -4241,7 +4321,7 @@
       "source_file": "apps/api/src/services/price-monitor.ts",
       "source_location": "L101",
       "id": "price_monitor_checkmonitoredpositions",
-      "community": 10
+      "community": 6
     },
     {
       "label": "pollPriceUpdates()",
@@ -4249,7 +4329,7 @@
       "source_file": "apps/api/src/services/price-monitor.ts",
       "source_location": "L200",
       "id": "price_monitor_pollpriceupdates",
-      "community": 10
+      "community": 6
     },
     {
       "label": "startBackgroundPriceMonitor()",
@@ -4257,7 +4337,7 @@
       "source_file": "apps/api/src/services/price-monitor.ts",
       "source_location": "L238",
       "id": "price_monitor_startbackgroundpricemonitor",
-      "community": 10
+      "community": 6
     },
     {
       "label": "stopBackgroundPriceMonitor()",
@@ -4265,7 +4345,7 @@
       "source_file": "apps/api/src/services/price-monitor.ts",
       "source_location": "L262",
       "id": "price_monitor_stopbackgroundpricemonitor",
-      "community": 10
+      "community": 6
     },
     {
       "label": "evolution-service.ts",
@@ -4273,7 +4353,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L1",
       "id": "evolution_service",
-      "community": 16
+      "community": 18
     },
     {
       "label": "promptCacheKey()",
@@ -4281,7 +4361,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L41",
       "id": "evolution_service_promptcachekey",
-      "community": 16
+      "community": 18
     },
     {
       "label": "getActivePrompt()",
@@ -4289,7 +4369,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L47",
       "id": "evolution_service_getactiveprompt",
-      "community": 16
+      "community": 18
     },
     {
       "label": "getActivePrompts()",
@@ -4297,7 +4377,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L82",
       "id": "evolution_service_getactiveprompts",
-      "community": 16
+      "community": 18
     },
     {
       "label": "clearPromptCache()",
@@ -4305,7 +4385,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L96",
       "id": "evolution_service_clearpromptcache",
-      "community": 16
+      "community": 18
     },
     {
       "label": "recordPromptLinks()",
@@ -4313,7 +4393,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L102",
       "id": "evolution_service_recordpromptlinks",
-      "community": 16
+      "community": 18
     },
     {
       "label": "shouldEvolve()",
@@ -4321,7 +4401,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L133",
       "id": "evolution_service_shouldevolve",
-      "community": 16
+      "community": 18
     },
     {
       "label": "collectEvolutionData()",
@@ -4329,7 +4409,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L187",
       "id": "evolution_service_collectevolutiondata",
-      "community": 16
+      "community": 18
     },
     {
       "label": "generateEvolution()",
@@ -4337,7 +4417,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L279",
       "id": "evolution_service_generateevolution",
-      "community": 16
+      "community": 18
     },
     {
       "label": "createPromptVersion()",
@@ -4345,7 +4425,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L341",
       "id": "evolution_service_createpromptversion",
-      "community": 16
+      "community": 18
     },
     {
       "label": "promotePromptVersion()",
@@ -4353,7 +4433,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L386",
       "id": "evolution_service_promotepromptversion",
-      "community": 16
+      "community": 18
     },
     {
       "label": "rollbackPromptVersion()",
@@ -4361,7 +4441,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L428",
       "id": "evolution_service_rollbackpromptversion",
-      "community": 16
+      "community": 18
     },
     {
       "label": "evolveStep()",
@@ -4369,7 +4449,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L442",
       "id": "evolution_service_evolvestep",
-      "community": 16
+      "community": 18
     },
     {
       "label": "runEvolutionCycle()",
@@ -4377,7 +4457,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L538",
       "id": "evolution_service_runevolutioncycle",
-      "community": 16
+      "community": 18
     },
     {
       "label": "listPromptVersions()",
@@ -4385,7 +4465,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L585",
       "id": "evolution_service_listpromptversions",
-      "community": 16
+      "community": 18
     },
     {
       "label": "getEvolutionHistory()",
@@ -4393,7 +4473,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L613",
       "id": "evolution_service_getevolutionhistory",
-      "community": 16
+      "community": 18
     },
     {
       "label": "getPromptPerformance()",
@@ -4401,7 +4481,7 @@
       "source_file": "apps/api/src/services/evolution-service.ts",
       "source_location": "L625",
       "id": "evolution_service_getpromptperformance",
-      "community": 16
+      "community": 18
     },
     {
       "label": "correlation-matrix.ts",
@@ -4449,7 +4529,7 @@
       "source_file": "apps/api/src/services/trade-service.ts",
       "source_location": "L1",
       "id": "trade_service",
-      "community": 7
+      "community": 6
     },
     {
       "label": "withRetry()",
@@ -4457,7 +4537,7 @@
       "source_file": "apps/api/src/services/trade-service.ts",
       "source_location": "L21",
       "id": "trade_service_withretry",
-      "community": 7
+      "community": 6
     },
     {
       "label": "listTrades()",
@@ -4465,7 +4545,7 @@
       "source_file": "apps/api/src/services/trade-service.ts",
       "source_location": "L44",
       "id": "trade_service_listtrades",
-      "community": 7
+      "community": 6
     },
     {
       "label": "getTrade()",
@@ -4473,7 +4553,7 @@
       "source_file": "apps/api/src/services/trade-service.ts",
       "source_location": "L64",
       "id": "trade_service_gettrade",
-      "community": 7
+      "community": 6
     },
     {
       "label": "listPositions()",
@@ -4481,7 +4561,7 @@
       "source_file": "apps/api/src/services/trade-service.ts",
       "source_location": "L78",
       "id": "trade_service_listpositions",
-      "community": 7
+      "community": 6
     },
     {
       "label": "getActivePositions()",
@@ -4489,7 +4569,7 @@
       "source_file": "apps/api/src/services/trade-service.ts",
       "source_location": "L101",
       "id": "trade_service_getactivepositions",
-      "community": 7
+      "community": 6
     },
     {
       "label": "executeBuyOrder()",
@@ -4497,7 +4577,7 @@
       "source_file": "apps/api/src/services/trade-service.ts",
       "source_location": "L116",
       "id": "trade_service_executebuyorder",
-      "community": 7
+      "community": 6
     },
     {
       "label": "closePosition()",
@@ -4505,7 +4585,7 @@
       "source_file": "apps/api/src/services/trade-service.ts",
       "source_location": "L263",
       "id": "trade_service_closeposition",
-      "community": 7
+      "community": 6
     },
     {
       "label": "checkStopLosses()",
@@ -4513,7 +4593,7 @@
       "source_file": "apps/api/src/services/trade-service.ts",
       "source_location": "L388",
       "id": "trade_service_checkstoplosses",
-      "community": 7
+      "community": 6
     },
     {
       "label": "calculatePnl()",
@@ -4521,7 +4601,7 @@
       "source_file": "apps/api/src/services/trade-service.ts",
       "source_location": "L479",
       "id": "trade_service_calculatepnl",
-      "community": 7
+      "community": 6
     },
     {
       "label": "syncPositionsFromJupiter()",
@@ -4529,7 +4609,7 @@
       "source_file": "apps/api/src/services/trade-service.ts",
       "source_location": "L497",
       "id": "trade_service_syncpositionsfromjupiter",
-      "community": 7
+      "community": 6
     },
     {
       "label": "queue-service.ts",
@@ -4537,7 +4617,7 @@
       "source_file": "apps/api/src/services/queue-service.ts",
       "source_location": "L1",
       "id": "queue_service",
-      "community": 4
+      "community": 3
     },
     {
       "label": "setTradeProcessor()",
@@ -4545,7 +4625,7 @@
       "source_file": "apps/api/src/services/queue-service.ts",
       "source_location": "L38",
       "id": "queue_service_settradeprocessor",
-      "community": 4
+      "community": 3
     },
     {
       "label": "startWorker()",
@@ -4553,7 +4633,7 @@
       "source_file": "apps/api/src/services/queue-service.ts",
       "source_location": "L46",
       "id": "queue_service_startworker",
-      "community": 4
+      "community": 3
     },
     {
       "label": "stopWorker()",
@@ -4561,7 +4641,7 @@
       "source_file": "apps/api/src/services/queue-service.ts",
       "source_location": "L79",
       "id": "queue_service_stopworker",
-      "community": 4
+      "community": 3
     },
     {
       "label": "enqueueAgentTick()",
@@ -4569,7 +4649,7 @@
       "source_file": "apps/api/src/services/queue-service.ts",
       "source_location": "L88",
       "id": "queue_service_enqueueagenttick",
-      "community": 4
+      "community": 3
     },
     {
       "label": "enqueueStopLossCheck()",
@@ -4577,7 +4657,7 @@
       "source_file": "apps/api/src/services/queue-service.ts",
       "source_location": "L98",
       "id": "queue_service_enqueuestoplosscheck",
-      "community": 4
+      "community": 3
     },
     {
       "label": "enqueuePositionSync()",
@@ -4585,7 +4665,7 @@
       "source_file": "apps/api/src/services/queue-service.ts",
       "source_location": "L108",
       "id": "queue_service_enqueuepositionsync",
-      "community": 4
+      "community": 3
     },
     {
       "label": "enqueueMarketSync()",
@@ -4593,7 +4673,7 @@
       "source_file": "apps/api/src/services/queue-service.ts",
       "source_location": "L118",
       "id": "queue_service_enqueuemarketsync",
-      "community": 4
+      "community": 3
     },
     {
       "label": "scheduleRecurringJobs()",
@@ -4601,7 +4681,7 @@
       "source_file": "apps/api/src/services/queue-service.ts",
       "source_location": "L128",
       "id": "queue_service_schedulerecurringjobs",
-      "community": 4
+      "community": 3
     },
     {
       "label": "adversarial-review.ts",
@@ -4641,7 +4721,7 @@
       "source_file": "apps/api/src/services/alert-service.ts",
       "source_location": "L1",
       "id": "alert_service",
-      "community": 24
+      "community": 25
     },
     {
       "label": "getAlertKey()",
@@ -4649,7 +4729,7 @@
       "source_file": "apps/api/src/services/alert-service.ts",
       "source_location": "L15",
       "id": "alert_service_getalertkey",
-      "community": 24
+      "community": 25
     },
     {
       "label": "isAlertCooldown()",
@@ -4657,7 +4737,7 @@
       "source_file": "apps/api/src/services/alert-service.ts",
       "source_location": "L19",
       "id": "alert_service_isalertcooldown",
-      "community": 24
+      "community": 25
     },
     {
       "label": "recordAlert()",
@@ -4665,7 +4745,7 @@
       "source_file": "apps/api/src/services/alert-service.ts",
       "source_location": "L25",
       "id": "alert_service_recordalert",
-      "community": 24
+      "community": 25
     },
     {
       "label": "sendWebhookAlert()",
@@ -4673,7 +4753,7 @@
       "source_file": "apps/api/src/services/alert-service.ts",
       "source_location": "L29",
       "id": "alert_service_sendwebhookalert",
-      "community": 24
+      "community": 25
     },
     {
       "label": "sendAlert()",
@@ -4681,7 +4761,7 @@
       "source_file": "apps/api/src/services/alert-service.ts",
       "source_location": "L77",
       "id": "alert_service_sendalert",
-      "community": 24
+      "community": 25
     },
     {
       "label": "jupiter-metrics.ts",
@@ -4689,7 +4769,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L1",
       "id": "jupiter_metrics",
-      "community": 5
+      "community": 13
     },
     {
       "label": "JupiterMetricsTracker",
@@ -4697,7 +4777,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L81",
       "id": "jupiter_metrics_jupitermetricstracker",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".constructor()",
@@ -4705,7 +4785,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L87",
       "id": "jupiter_metrics_jupitermetricstracker_constructor",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".recordApiCall()",
@@ -4713,7 +4793,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L134",
       "id": "jupiter_metrics_jupitermetricstracker_recordapicall",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".recordApiError()",
@@ -4721,7 +4801,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L147",
       "id": "jupiter_metrics_jupitermetricstracker_recordapierror",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".recordCacheHit()",
@@ -4729,7 +4809,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L156",
       "id": "jupiter_metrics_jupitermetricstracker_recordcachehit",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".recordCacheMiss()",
@@ -4737,7 +4817,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L166",
       "id": "jupiter_metrics_jupitermetricstracker_recordcachemiss",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".recordStaleServe()",
@@ -4745,7 +4825,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L176",
       "id": "jupiter_metrics_jupitermetricstracker_recordstaleserve",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".updateCacheHitRate()",
@@ -4753,7 +4833,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L180",
       "id": "jupiter_metrics_jupitermetricstracker_updatecachehitrate",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".recordFetchTime()",
@@ -4761,7 +4841,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L192",
       "id": "jupiter_metrics_jupitermetricstracker_recordfetchtime",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".updatePerformanceMetrics()",
@@ -4769,7 +4849,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L203",
       "id": "jupiter_metrics_jupitermetricstracker_updateperformancemetrics",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".recordLLMCacheHit()",
@@ -4777,7 +4857,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L220",
       "id": "jupiter_metrics_jupitermetricstracker_recordllmcachehit",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".recordLLMCacheMiss()",
@@ -4785,7 +4865,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L225",
       "id": "jupiter_metrics_jupitermetricstracker_recordllmcachemiss",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".updateLLMCacheHitRate()",
@@ -4793,7 +4873,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L230",
       "id": "jupiter_metrics_jupitermetricstracker_updatellmcachehitrate",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".recordAgentTick()",
@@ -4801,7 +4881,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L239",
       "id": "jupiter_metrics_jupitermetricstracker_recordagenttick",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".recordAgentDecision()",
@@ -4809,7 +4889,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L243",
       "id": "jupiter_metrics_jupitermetricstracker_recordagentdecision",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".recordAgentTrade()",
@@ -4817,7 +4897,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L247",
       "id": "jupiter_metrics_jupitermetricstracker_recordagenttrade",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".getMetrics()",
@@ -4825,7 +4905,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L253",
       "id": "jupiter_metrics_jupitermetricstracker_getmetrics",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".getSummary()",
@@ -4833,7 +4913,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L268",
       "id": "jupiter_metrics_jupitermetricstracker_getsummary",
-      "community": 5
+      "community": 13
     },
     {
       "label": ".resetCounters()",
@@ -4841,7 +4921,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L282",
       "id": "jupiter_metrics_jupitermetricstracker_resetcounters",
-      "community": 5
+      "community": 13
     },
     {
       "label": "getJupiterMetrics()",
@@ -4849,7 +4929,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L303",
       "id": "jupiter_metrics_getjupitermetrics",
-      "community": 5
+      "community": 13
     },
     {
       "label": "logJupiterSummary()",
@@ -4857,7 +4937,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L307",
       "id": "jupiter_metrics_logjupitersummary",
-      "community": 5
+      "community": 13
     },
     {
       "label": "startMetricsLogging()",
@@ -4865,7 +4945,7 @@
       "source_file": "apps/api/src/services/jupiter-metrics.ts",
       "source_location": "L314",
       "id": "jupiter_metrics_startmetricslogging",
-      "community": 5
+      "community": 13
     },
     {
       "label": "scenario-analysis.ts",
@@ -4905,7 +4985,7 @@
       "source_file": "apps/api/src/services/market-service.ts",
       "source_location": "L1",
       "id": "market_service",
-      "community": 10
+      "community": 19
     },
     {
       "label": "listMarkets()",
@@ -4913,7 +4993,7 @@
       "source_file": "apps/api/src/services/market-service.ts",
       "source_location": "L23",
       "id": "market_service_listmarkets",
-      "community": 10
+      "community": 19
     },
     {
       "label": "getMarket()",
@@ -4921,7 +5001,7 @@
       "source_file": "apps/api/src/services/market-service.ts",
       "source_location": "L74",
       "id": "market_service_getmarket",
-      "community": 10
+      "community": 19
     },
     {
       "label": "getTrendingMarkets()",
@@ -4929,39 +5009,39 @@
       "source_file": "apps/api/src/services/market-service.ts",
       "source_location": "L116",
       "id": "market_service_gettrendingmarkets",
-      "community": 10
+      "community": 19
     },
     {
       "label": "searchMarkets()",
       "file_type": "code",
       "source_file": "apps/api/src/services/market-service.ts",
-      "source_location": "L158",
+      "source_location": "L181",
       "id": "market_service_searchmarkets",
-      "community": 10
+      "community": 19
     },
     {
       "label": "syncMarketsFromJupiter()",
       "file_type": "code",
       "source_file": "apps/api/src/services/market-service.ts",
-      "source_location": "L179",
+      "source_location": "L202",
       "id": "market_service_syncmarketsfromjupiter",
-      "community": 10
+      "community": 19
     },
     {
       "label": "mapJupiterMarketToDb()",
       "file_type": "code",
       "source_file": "apps/api/src/services/market-service.ts",
-      "source_location": "L232",
+      "source_location": "L255",
       "id": "market_service_mapjupitermarkettodb",
-      "community": 10
+      "community": 19
     },
     {
       "label": "eventsToMarkets()",
       "file_type": "code",
       "source_file": "apps/api/src/services/market-service.ts",
-      "source_location": "L273",
+      "source_location": "L296",
       "id": "market_service_eventstomarkets",
-      "community": 10
+      "community": 19
     },
     {
       "label": "mock-jupiter.ts",
@@ -5185,7 +5265,7 @@
       "source_file": "apps/api/src/services/outcome-feedback.ts",
       "source_location": "L1",
       "id": "outcome_feedback",
-      "community": 8
+      "community": 1
     },
     {
       "label": "recordAgentPrediction()",
@@ -5193,7 +5273,7 @@
       "source_file": "apps/api/src/services/outcome-feedback.ts",
       "source_location": "L33",
       "id": "outcome_feedback_recordagentprediction",
-      "community": 8
+      "community": 1
     },
     {
       "label": "processMarketResolution()",
@@ -5201,7 +5281,7 @@
       "source_file": "apps/api/src/services/outcome-feedback.ts",
       "source_location": "L77",
       "id": "outcome_feedback_processmarketresolution",
-      "community": 8
+      "community": 1
     },
     {
       "label": "checkMarketResolutions()",
@@ -5209,7 +5289,7 @@
       "source_file": "apps/api/src/services/outcome-feedback.ts",
       "source_location": "L223",
       "id": "outcome_feedback_checkmarketresolutions",
-      "community": 8
+      "community": 1
     },
     {
       "label": "extractSignalSources()",
@@ -5217,7 +5297,7 @@
       "source_file": "apps/api/src/services/outcome-feedback.ts",
       "source_location": "L239",
       "id": "outcome_feedback_extractsignalsources",
-      "community": 8
+      "community": 1
     },
     {
       "label": "jupiter-cache-manager.ts",
@@ -5713,7 +5793,7 @@
       "source_file": "apps/mobile/src/lib/ws.ts",
       "source_location": "L1",
       "id": "ws",
-      "community": 22
+      "community": 23
     },
     {
       "label": "getWsUrl()",
@@ -5721,7 +5801,7 @@
       "source_file": "apps/mobile/src/lib/ws.ts",
       "source_location": "L13",
       "id": "ws_getwsurl",
-      "community": 22
+      "community": 23
     },
     {
       "label": "WSClient",
@@ -5729,7 +5809,7 @@
       "source_file": "apps/mobile/src/lib/ws.ts",
       "source_location": "L34",
       "id": "ws_wsclient",
-      "community": 22
+      "community": 23
     },
     {
       "label": ".connect()",
@@ -5737,7 +5817,7 @@
       "source_file": "apps/mobile/src/lib/ws.ts",
       "source_location": "L46",
       "id": "ws_wsclient_connect",
-      "community": 22
+      "community": 23
     },
     {
       "label": ".disconnect()",
@@ -5745,7 +5825,7 @@
       "source_file": "apps/mobile/src/lib/ws.ts",
       "source_location": "L116",
       "id": "ws_wsclient_disconnect",
-      "community": 22
+      "community": 23
     },
     {
       "label": ".subscribe()",
@@ -5753,7 +5833,7 @@
       "source_file": "apps/mobile/src/lib/ws.ts",
       "source_location": "L132",
       "id": "ws_wsclient_subscribe",
-      "community": 22
+      "community": 23
     },
     {
       "label": ".unsubscribe()",
@@ -5761,7 +5841,7 @@
       "source_file": "apps/mobile/src/lib/ws.ts",
       "source_location": "L139",
       "id": "ws_wsclient_unsubscribe",
-      "community": 22
+      "community": 23
     },
     {
       "label": ".addListener()",
@@ -5769,7 +5849,7 @@
       "source_file": "apps/mobile/src/lib/ws.ts",
       "source_location": "L146",
       "id": "ws_wsclient_addlistener",
-      "community": 22
+      "community": 23
     },
     {
       "label": ".isConnected()",
@@ -5777,7 +5857,7 @@
       "source_file": "apps/mobile/src/lib/ws.ts",
       "source_location": "L151",
       "id": "ws_wsclient_isconnected",
-      "community": 22
+      "community": 23
     },
     {
       "label": ".send()",
@@ -5785,7 +5865,7 @@
       "source_file": "apps/mobile/src/lib/ws.ts",
       "source_location": "L155",
       "id": "ws_wsclient_send",
-      "community": 22
+      "community": 23
     },
     {
       "label": ".scheduleReconnect()",
@@ -5793,7 +5873,7 @@
       "source_file": "apps/mobile/src/lib/ws.ts",
       "source_location": "L161",
       "id": "ws_wsclient_schedulereconnect",
-      "community": 22
+      "community": 23
     },
     {
       "label": "authStore.ts",
@@ -5817,7 +5897,7 @@
       "source_file": "apps/mobile/src/hooks/useLiveFeed.ts",
       "source_location": "L1",
       "id": "uselivefeed",
-      "community": 22
+      "community": 0
     },
     {
       "label": "useLiveFeed()",
@@ -5825,7 +5905,7 @@
       "source_file": "apps/mobile/src/hooks/useLiveFeed.ts",
       "source_location": "L24",
       "id": "uselivefeed_uselivefeed",
-      "community": 22
+      "community": 0
     },
     {
       "label": "useSolBalance.ts",
@@ -6109,7 +6189,7 @@
       "relation": "imports_from",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L15",
+      "source_location": "L16",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "types",
@@ -9709,7 +9789,7 @@
       "relation": "imports_from",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L14",
+      "source_location": "L16",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "job_client",
@@ -10480,6 +10560,18 @@
       "source_location": "L3",
       "weight": 1.0,
       "_src": "execution_engine",
+      "_tgt": "balance",
+      "source": "execution_engine",
+      "target": "balance",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/agents/execution-engine.ts",
+      "source_location": "L4",
+      "weight": 1.0,
+      "_src": "execution_engine",
       "_tgt": "trade_service",
       "source": "execution_engine",
       "target": "trade_service",
@@ -10489,7 +10581,7 @@
       "relation": "imports_from",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L8",
+      "source_location": "L9",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "market_service",
@@ -10501,7 +10593,7 @@
       "relation": "imports_from",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L9",
+      "source_location": "L10",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "feed",
@@ -10513,7 +10605,7 @@
       "relation": "imports_from",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L10",
+      "source_location": "L11",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "strategy_engine",
@@ -10525,7 +10617,7 @@
       "relation": "imports_from",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L11",
+      "source_location": "L12",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "risk_plugin",
@@ -10537,7 +10629,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L27",
+      "source_location": "L28",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "execution_engine_getsolprice",
@@ -10549,7 +10641,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L31",
+      "source_location": "L32",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "execution_engine_refreshsolprice",
@@ -10561,7 +10653,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L49",
+      "source_location": "L50",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "execution_engine_validatedecision",
@@ -10573,7 +10665,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L76",
+      "source_location": "L77",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "execution_engine_scanmarkets",
@@ -10585,7 +10677,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L135",
+      "source_location": "L136",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "execution_engine_executebuy",
@@ -10597,7 +10689,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L235",
+      "source_location": "L236",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "execution_engine_executesell",
@@ -10609,7 +10701,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L281",
+      "source_location": "L282",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "execution_engine_monitorpositions",
@@ -10621,7 +10713,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L309",
+      "source_location": "L310",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "execution_engine_buildportfoliosnapshot",
@@ -10633,7 +10725,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L367",
+      "source_location": "L368",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "execution_engine_publishanalysisevent",
@@ -10645,7 +10737,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L388",
+      "source_location": "L389",
       "weight": 1.0,
       "_src": "execution_engine",
       "_tgt": "execution_engine_publishreasoningevent",
@@ -10693,7 +10785,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L350",
+      "source_location": "L351",
       "weight": 1.0,
       "_src": "execution_engine_buildportfoliosnapshot",
       "_tgt": "execution_engine_getsolprice",
@@ -10705,7 +10797,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/execution-engine.ts",
-      "source_location": "L314",
+      "source_location": "L315",
       "weight": 1.0,
       "_src": "execution_engine_buildportfoliosnapshot",
       "_tgt": "execution_engine_refreshsolprice",
@@ -12385,7 +12477,31 @@
       "relation": "imports_from",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L16",
+      "source_location": "L14",
+      "weight": 1.0,
+      "_src": "supervisor",
+      "_tgt": "balance",
+      "source": "supervisor",
+      "target": "balance",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/agents/supervisor.ts",
+      "source_location": "L15",
+      "weight": 1.0,
+      "_src": "supervisor",
+      "_tgt": "privy_policies",
+      "source": "supervisor",
+      "target": "privy_policies",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/agents/supervisor.ts",
+      "source_location": "L18",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "price_monitor",
@@ -12397,7 +12513,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L43",
+      "source_location": "L45",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_initializesupervisor",
@@ -12409,7 +12525,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L53",
+      "source_location": "L55",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_hireagent",
@@ -12421,7 +12537,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L144",
+      "source_location": "L151",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_fundjob",
@@ -12433,7 +12549,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L179",
+      "source_location": "L186",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_resumejob",
@@ -12445,7 +12561,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L267",
+      "source_location": "L274",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_startagentloop",
@@ -12457,7 +12573,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L344",
+      "source_location": "L358",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_stopagentloop",
@@ -12469,7 +12585,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L362",
+      "source_location": "L376",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_pauseagentloop",
@@ -12481,7 +12597,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L379",
+      "source_location": "L393",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_resumeagentloop",
@@ -12493,7 +12609,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L428",
+      "source_location": "L442",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_canceljob",
@@ -12505,7 +12621,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L452",
+      "source_location": "L466",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_approvejob",
@@ -12517,7 +12633,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L476",
+      "source_location": "L490",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_getagentstatus",
@@ -12529,7 +12645,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L493",
+      "source_location": "L507",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_listactiveagents",
@@ -12541,7 +12657,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L499",
+      "source_location": "L513",
       "weight": 1.0,
       "_src": "supervisor",
       "_tgt": "supervisor_resumeactiveagents",
@@ -12577,7 +12693,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L245",
+      "source_location": "L252",
       "weight": 1.0,
       "_src": "supervisor_resumejob",
       "_tgt": "supervisor_startagentloop",
@@ -12589,7 +12705,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L527",
+      "source_location": "L541",
       "weight": 1.0,
       "_src": "supervisor_resumeactiveagents",
       "_tgt": "supervisor_startagentloop",
@@ -12601,7 +12717,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L437",
+      "source_location": "L451",
       "weight": 1.0,
       "_src": "supervisor_canceljob",
       "_tgt": "supervisor_stopagentloop",
@@ -12613,7 +12729,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/agents/supervisor.ts",
-      "source_location": "L461",
+      "source_location": "L475",
       "weight": 1.0,
       "_src": "supervisor_approvejob",
       "_tgt": "supervisor_stopagentloop",
@@ -14377,7 +14493,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L57",
+      "source_location": "L62",
       "weight": 1.0,
       "_src": "pipeline",
       "_tgt": "pipeline_releasellmslot",
@@ -14389,7 +14505,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L72",
+      "source_location": "L77",
       "weight": 1.0,
       "_src": "pipeline",
       "_tgt": "pipeline_isretryableerror",
@@ -14401,7 +14517,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L77",
+      "source_location": "L97",
       "weight": 1.0,
       "_src": "pipeline",
       "_tgt": "pipeline_withretry",
@@ -14413,7 +14529,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L95",
+      "source_location": "L118",
       "weight": 1.0,
       "_src": "pipeline",
       "_tgt": "pipeline_quickanalysis",
@@ -14425,7 +14541,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L166",
+      "source_location": "L189",
       "weight": 1.0,
       "_src": "pipeline",
       "_tgt": "pipeline_extractjsonfromtext",
@@ -14437,7 +14553,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L220",
+      "source_location": "L243",
       "weight": 1.0,
       "_src": "pipeline",
       "_tgt": "pipeline_repairjson",
@@ -14449,7 +14565,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L251",
+      "source_location": "L274",
       "weight": 1.0,
       "_src": "pipeline",
       "_tgt": "pipeline_parsejsonwithrepair",
@@ -14461,7 +14577,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L279",
+      "source_location": "L302",
       "weight": 1.0,
       "_src": "pipeline",
       "_tgt": "pipeline_normalizedecisionfields",
@@ -14473,7 +14589,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L368",
+      "source_location": "L391",
       "weight": 1.0,
       "_src": "pipeline",
       "_tgt": "pipeline_quickdecision",
@@ -14521,7 +14637,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L122",
+      "source_location": "L145",
       "weight": 1.0,
       "_src": "pipeline_quickanalysis",
       "_tgt": "pipeline_tosdktools",
@@ -14545,7 +14661,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L58",
+      "source_location": "L63",
       "weight": 1.0,
       "_src": "pipeline_releasellmslot",
       "_tgt": "pipeline_getagentlimiter",
@@ -14557,7 +14673,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L118",
+      "source_location": "L141",
       "weight": 1.0,
       "_src": "pipeline_quickanalysis",
       "_tgt": "pipeline_acquirellmslot",
@@ -14569,7 +14685,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L378",
+      "source_location": "L401",
       "weight": 1.0,
       "_src": "pipeline_quickdecision",
       "_tgt": "pipeline_acquirellmslot",
@@ -14581,7 +14697,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L156",
+      "source_location": "L179",
       "weight": 1.0,
       "_src": "pipeline_quickanalysis",
       "_tgt": "pipeline_releasellmslot",
@@ -14593,7 +14709,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L522",
+      "source_location": "L545",
       "weight": 1.0,
       "_src": "pipeline_quickdecision",
       "_tgt": "pipeline_releasellmslot",
@@ -14605,7 +14721,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L84",
+      "source_location": "L104",
       "weight": 1.0,
       "_src": "pipeline_withretry",
       "_tgt": "pipeline_isretryableerror",
@@ -14617,7 +14733,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L125",
+      "source_location": "L148",
       "weight": 1.0,
       "_src": "pipeline_quickanalysis",
       "_tgt": "pipeline_withretry",
@@ -14629,7 +14745,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L393",
+      "source_location": "L416",
       "weight": 1.0,
       "_src": "pipeline_quickdecision",
       "_tgt": "pipeline_withretry",
@@ -14641,7 +14757,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L259",
+      "source_location": "L282",
       "weight": 1.0,
       "_src": "pipeline_parsejsonwithrepair",
       "_tgt": "pipeline_extractjsonfromtext",
@@ -14653,7 +14769,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L434",
+      "source_location": "L457",
       "weight": 1.0,
       "_src": "pipeline_quickdecision",
       "_tgt": "pipeline_extractjsonfromtext",
@@ -14665,7 +14781,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L256",
+      "source_location": "L279",
       "weight": 1.0,
       "_src": "pipeline_parsejsonwithrepair",
       "_tgt": "pipeline_repairjson",
@@ -14677,7 +14793,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L440",
+      "source_location": "L463",
       "weight": 1.0,
       "_src": "pipeline_quickdecision",
       "_tgt": "pipeline_parsejsonwithrepair",
@@ -14689,7 +14805,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/ai/pipeline.ts",
-      "source_location": "L409",
+      "source_location": "L432",
       "weight": 1.0,
       "_src": "pipeline_quickdecision",
       "_tgt": "pipeline_normalizedecisionfields",
@@ -15504,25 +15620,13 @@
     {
       "relation": "imports_from",
       "confidence": "EXTRACTED",
-      "source_file": "apps/api/src/routers/agent.ts",
-      "source_location": "L12",
+      "source_file": "apps/api/src/utils/balance.ts",
+      "source_location": "L2",
       "weight": 1.0,
-      "_src": "agent",
+      "_src": "balance",
       "_tgt": "privy",
       "source": "privy",
-      "target": "agent",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "imports_from",
-      "confidence": "EXTRACTED",
-      "source_file": "apps/api/src/routers/job.ts",
-      "source_location": "L6",
-      "weight": 1.0,
-      "_src": "job",
-      "_tgt": "privy",
-      "source": "privy",
-      "target": "job",
+      "target": "balance",
       "confidence_score": 1.0
     },
     {
@@ -15559,6 +15663,198 @@
       "_tgt": "privy",
       "source": "privy",
       "target": "layout",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L31",
+      "weight": 1.0,
+      "_src": "privy_policies",
+      "_tgt": "privy_policies_createpolicy",
+      "source": "privy_policies",
+      "target": "privy_policies_createpolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L42",
+      "weight": 1.0,
+      "_src": "privy_policies",
+      "_tgt": "privy_policies_createdevelopmentpolicy",
+      "source": "privy_policies",
+      "target": "privy_policies_createdevelopmentpolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L78",
+      "weight": 1.0,
+      "_src": "privy_policies",
+      "_tgt": "privy_policies_createtractionpolicy",
+      "source": "privy_policies",
+      "target": "privy_policies_createtractionpolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L143",
+      "weight": 1.0,
+      "_src": "privy_policies",
+      "_tgt": "privy_policies_createproductionpolicy",
+      "source": "privy_policies",
+      "target": "privy_policies_createproductionpolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L221",
+      "weight": 1.0,
+      "_src": "privy_policies",
+      "_tgt": "privy_policies_createagentpolicy",
+      "source": "privy_policies",
+      "target": "privy_policies_createagentpolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L232",
+      "weight": 1.0,
+      "_src": "privy_policies",
+      "_tgt": "privy_policies_deletepolicy",
+      "source": "privy_policies",
+      "target": "privy_policies_deletepolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L237",
+      "weight": 1.0,
+      "_src": "privy_policies",
+      "_tgt": "privy_policies_getpolicy",
+      "source": "privy_policies",
+      "target": "privy_policies_getpolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L72",
+      "weight": 1.0,
+      "_src": "privy_policies_createdevelopmentpolicy",
+      "_tgt": "privy_policies_createpolicy",
+      "source": "privy_policies_createpolicy",
+      "target": "privy_policies_createdevelopmentpolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L137",
+      "weight": 1.0,
+      "_src": "privy_policies_createtractionpolicy",
+      "_tgt": "privy_policies_createpolicy",
+      "source": "privy_policies_createpolicy",
+      "target": "privy_policies_createtractionpolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L215",
+      "weight": 1.0,
+      "_src": "privy_policies_createproductionpolicy",
+      "_tgt": "privy_policies_createpolicy",
+      "source": "privy_policies_createpolicy",
+      "target": "privy_policies_createproductionpolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L224",
+      "weight": 1.0,
+      "_src": "privy_policies_createagentpolicy",
+      "_tgt": "privy_policies_createdevelopmentpolicy",
+      "source": "privy_policies_createdevelopmentpolicy",
+      "target": "privy_policies_createagentpolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L226",
+      "weight": 1.0,
+      "_src": "privy_policies_createagentpolicy",
+      "_tgt": "privy_policies_createtractionpolicy",
+      "source": "privy_policies_createtractionpolicy",
+      "target": "privy_policies_createagentpolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/privy-policies.ts",
+      "source_location": "L228",
+      "weight": 1.0,
+      "_src": "privy_policies_createagentpolicy",
+      "_tgt": "privy_policies_createproductionpolicy",
+      "source": "privy_policies_createproductionpolicy",
+      "target": "privy_policies_createagentpolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/utils/balance.ts",
+      "source_location": "L4",
+      "weight": 1.0,
+      "_src": "balance",
+      "_tgt": "balance_geteffectivebalance",
+      "source": "balance",
+      "target": "balance_geteffectivebalance",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/routers/agent.ts",
+      "source_location": "L12",
+      "weight": 1.0,
+      "_src": "agent",
+      "_tgt": "balance",
+      "source": "balance",
+      "target": "agent",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "apps/api/src/routers/job.ts",
+      "source_location": "L6",
+      "weight": 1.0,
+      "_src": "job",
+      "_tgt": "balance",
+      "source": "balance",
+      "target": "job",
       "confidence_score": 1.0
     },
     {
@@ -15757,7 +16053,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/routers/job.ts",
-      "source_location": "L9",
+      "source_location": "L8",
       "weight": 1.0,
       "_src": "job",
       "_tgt": "job_enrichjobwithagent",
@@ -20545,7 +20841,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/services/market-service.ts",
-      "source_location": "L158",
+      "source_location": "L181",
       "weight": 1.0,
       "_src": "market_service",
       "_tgt": "market_service_searchmarkets",
@@ -20557,7 +20853,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/services/market-service.ts",
-      "source_location": "L179",
+      "source_location": "L202",
       "weight": 1.0,
       "_src": "market_service",
       "_tgt": "market_service_syncmarketsfromjupiter",
@@ -20569,7 +20865,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/services/market-service.ts",
-      "source_location": "L232",
+      "source_location": "L255",
       "weight": 1.0,
       "_src": "market_service",
       "_tgt": "market_service_mapjupitermarkettodb",
@@ -20581,7 +20877,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/services/market-service.ts",
-      "source_location": "L273",
+      "source_location": "L296",
       "weight": 1.0,
       "_src": "market_service",
       "_tgt": "market_service_eventstomarkets",
@@ -20605,7 +20901,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/services/market-service.ts",
-      "source_location": "L137",
+      "source_location": "L149",
       "weight": 1.0,
       "_src": "market_service_gettrendingmarkets",
       "_tgt": "market_service_eventstomarkets",
@@ -20617,7 +20913,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/services/market-service.ts",
-      "source_location": "L164",
+      "source_location": "L187",
       "weight": 1.0,
       "_src": "market_service_searchmarkets",
       "_tgt": "market_service_eventstomarkets",
@@ -20629,7 +20925,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/services/market-service.ts",
-      "source_location": "L196",
+      "source_location": "L219",
       "weight": 1.0,
       "_src": "market_service_syncmarketsfromjupiter",
       "_tgt": "market_service_mapjupitermarkettodb",
@@ -20641,7 +20937,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "apps/api/src/services/market-service.ts",
-      "source_location": "L282",
+      "source_location": "L305",
       "weight": 1.0,
       "_src": "market_service_eventstomarkets",
       "_tgt": "market_service_mapjupitermarkettodb",
