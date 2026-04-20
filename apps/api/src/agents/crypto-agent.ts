@@ -11,7 +11,7 @@ import {
   validateDecision,
 } from "./execution-engine";
 import { redis } from "../utils/redis";
-import { REDIS_KEYS, AGENT_LIMITS, EXECUTE_TRADES } from "@agent-arena/shared";
+import { REDIS_KEYS, AGENT_LIMITS, EXECUTE_TRADES, USE_ENHANCED_PIPELINE } from "@agent-arena/shared";
 import { getActivePositions } from "../services/trade-service";
 import { getSharedSignals } from "../services/signal-cache";
 import { getActivePrompts, recordPromptLinks } from "../services/evolution-service";
@@ -45,6 +45,7 @@ import { getAllCalibratedWeights, decayConfidence, getConfidenceAdjustment, reco
 import { recordAgentPrediction as recordOutcomePrediction } from "../services/outcome-feedback";
 import { runScenarioAnalysis, quickScenarioGate } from "../services/scenario-analysis";
 import { db, schema } from "../db";
+import { runEnhancedPipeline } from "./enhanced-pipeline";
 
 const AGENT_NAME = "Crypto Agent";
 const AGENT_ID = "crypto-agent";
@@ -319,7 +320,12 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
   if (fsm.getState() === "SCANNING") {
     await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} scanning crypto prediction markets (BTC, ETH, SOL, ETFs, regulations)...`, { pipeline_stage: "scanning_start" });
 
-    await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching trending markets from Jupiter Predict...`, { pipeline_stage: "fetching_markets" });
+    // Enhanced pipeline: use MarketEventBus for deduped fetching + market ranking
+    if (USE_ENHANCED_PIPELINE) {
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus (enhanced pipeline)...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
+    } else {
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching trending markets from Jupiter Predict...`, { pipeline_stage: "fetching_markets" });
+    }
     const markets = await scanMarkets("crypto");
     
     if (markets.length === 0) {
@@ -341,6 +347,47 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
   }
 
   if (fsm.getState() === "ANALYZING") {
+    // ===== ENHANCED PIPELINE (v2): research + per-market analysis + Bayesian synthesis =====
+    if (USE_ENHANCED_PIPELINE) {
+      const pipelineResult = await runEnhancedPipeline(ctx, fsm, {
+        agentId: AGENT_ID,
+        agentName: AGENT_NAME,
+        category: "crypto",
+        models: config.models,
+        decisionSystemPrompt: config.pipeline[1].systemPrompt,
+      }, saveState);
+
+      if (pipelineResult.decision && pipelineResult.action === "analyzed") {
+        // We have a decision with edge found — proceed to execution
+        const marketsRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`);
+        const markets: MarketContext[] = marketsRaw ? JSON.parse(marketsRaw) : [];
+        const { positions: dbPositions } = await getActivePositions(ctx.jobId);
+        const positions: AgentPosition[] = dbPositions.map((p) => ({
+          marketId: p.marketId, side: p.side, amount: Number(p.amount),
+          entryPrice: Number(p.entryPrice), currentPrice: Number(p.currentPrice ?? p.entryPrice),
+          pnl: Number(p.pnl ?? 0),
+        }));
+        const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
+        const decision = pipelineResult.decision;
+
+        if (decision.action === "buy" && decision.marketId) {
+          const buyResult = await executeBuy(
+            decision, AGENT_ID, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "crypto"
+          );
+          if (buyResult.success) {
+            fsm.transition("order_placed");
+            await saveState();
+            return { state: fsm.getState() as any, action: "executed", detail: `Bought on "${decision.marketQuestion}"`, decision, tokensUsed: pipelineResult.tokensUsed };
+          }
+        }
+
+        return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, decision: pipelineResult.decision, tokensUsed: pipelineResult.tokensUsed };
+      }
+
+      return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, tokensUsed: pipelineResult.tokensUsed };
+    }
+
+    // ===== LEGACY PIPELINE (v1): original analysis flow =====
     await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} fetching live crypto signals...`, { pipeline_stage: "signal_fetch_start" });
 
     await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} querying CoinGecko for price data...`, { pipeline_stage: "fetching_coingecko" });
@@ -554,12 +601,12 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
     const preEdgeMarketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
     const preEdge = calculateEdge(finalAggregatedSignal.probability, preEdgeMarketPrice, finalAggregatedSignal.confidence);
 
-    // ===== FAST-PATH: Skip adversarial + consensus for high-conviction trades =====
+    // ===== FAST-PATH: Skip consensus for high-conviction trades (adversarial still runs) =====
     const FAST_PATH_EDGE_THRESHOLD = 0.15;
     const useFastPath = preEdge.netEdge > FAST_PATH_EDGE_THRESHOLD && decision.confidence >= 0.85;
 
     if (useFastPath) {
-      await publishFeedStep(ctx.agentId, "edge_detected", `${AGENT_NAME} ⚡ FAST-PATH: Edge ${(preEdge.netEdge * 100).toFixed(1)}% + confidence ${(decision.confidence * 100).toFixed(0)}% — skipping adversarial + consensus`, { 
+      await publishFeedStep(ctx.agentId, "edge_detected", `${AGENT_NAME} ⚡ FAST-PATH: Edge ${(preEdge.netEdge * 100).toFixed(1)}% + confidence ${(decision.confidence * 100).toFixed(0)}% — skipping consensus (adversarial still runs)`, { 
         pipeline_stage: "fast_path",
         edge: preEdge.netEdge,
         confidence: decision.confidence,
@@ -632,8 +679,8 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
       });
     }
 
-    // Feature 3: Adversarial Self-Review (devil's advocate) — skip on fast-path
-    if (decision.marketId && !useFastPath) {
+    // Feature 3: Adversarial Self-Review (devil's advocate) — always runs, even on fast-path
+    if (decision.marketId) {
       await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🔍 Running adversarial review...`, { pipeline_stage: "adversarial_review" });
       const review = await runAdversarialReview(decision, markets, positions, portfolio.totalBalance, ctx.agentId, AGENT_NAME);
 

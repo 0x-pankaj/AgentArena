@@ -7,6 +7,7 @@ import {
   checkStopLosses,
 } from "../services/trade-service";
 import { getMarket, getTrendingMarkets } from "../services/market-service";
+import { getMarketsForAgent } from "../services/market-event-bus";
 import { publishFeedEvent, buildFeedEvent } from "../feed";
 import type { LLMDecision, MarketContext, AgentPosition } from "./strategy-engine";
 import type { PortfolioSnapshot } from "../plugins/risk-plugin";
@@ -14,6 +15,13 @@ import { EXECUTE_TRADES, IS_SIMULATED, TEST_WALLET_BALANCE_USDC, TEST_WALLET_BAL
 import { db, schema } from "../db";
 import { eq, and, gte, sql } from "drizzle-orm";
 import type { TradeDecision } from "../ai/types";
+import { rankMarkets, type RankedMarket } from "../services/market-ranking";
+import { orchestrateMarketResearch, type ResearchPhaseResult } from "../services/market-research";
+import { analyzeMarketsBatch, type PerMarketAnalysisResult } from "../services/per-market-analysis";
+import { runImprovedBayesianSynthesis, selectBestMarket, type BayesianResult, type MarketSelection } from "../services/improved-bayesian";
+import type { SharedSignals } from "../services/signal-cache";
+import type { PerMarketResearchData } from "../services/market-research";
+import type { PerMarketAnalysis } from "../services/per-market-analysis";
 
 const AGENT_LIMITS = {
   MIN_MARKET_VOLUME: 10000,
@@ -72,14 +80,13 @@ export function validateDecision(
   return { valid: true };
 }
 
-// --- Scan markets from Jupiter Predict ---
+// --- Legacy scan markets (kept for backward compat) ---
 
 export async function scanMarkets(
   category: string = "general",
   minVolume: number = AGENT_LIMITS.MIN_MARKET_VOLUME
 ): Promise<MarketContext[]> {
   try {
-    // Map agent categories to Jupiter categories
     const categoryMap: Record<string, string[]> = {
       politics: ["politics", "economics"],
       sports: ["sports"],
@@ -129,6 +136,281 @@ export async function scanMarkets(
     console.error("Market scan failed:", err);
     return [];
   }
+}
+
+// ============================================================
+// NEW: Full pipeline scan + rank + research
+// Uses MarketEventBus for deduped Jupiter calls,
+// then ranks markets, then pre-researches top candidates.
+// ============================================================
+
+export interface ScannedAndResearchedResult {
+  markets: MarketContext[];
+  ranked: { deep: RankedMarket[]; brief: RankedMarket[] };
+  research: ResearchPhaseResult;
+  bayesianResults: BayesianResult[];
+  bestMarkets: MarketSelection[];
+  analysisResults: PerMarketAnalysisResult[];
+  totalDurationMs: number;
+}
+
+// Variant that skips LLM analysis — only fetch + rank + research.
+// Used by the enhanced pipeline which does its own batch analysis.
+export interface ScannedAndRankedResult {
+  markets: MarketContext[];
+  ranked: { deep: RankedMarket[]; brief: RankedMarket[] };
+  research: ResearchPhaseResult;
+  totalDurationMs: number;
+}
+
+export async function scanMarketsWithResearch(
+  category: string,
+  agentId: string,
+  agentName: string,
+  modelConfig: import("../ai/types").ModelConfig,
+  signals: SharedSignals,
+  positions: AgentPosition[],
+  balance: number,
+  signalAgeMinutes: number = 0,
+  calibratedWeights: Record<string, number> = {}
+): Promise<ScannedAndResearchedResult> {
+  const totalStart = Date.now();
+
+  // Step 1: Fetch markets via MarketEventBus (deduped + cached)
+  console.log(`[ScanWithResearch] ${agentName}: Fetching markets for ${category}...`);
+  let markets: MarketContext[];
+
+  try {
+    const eventsByCategory = await getMarketsForAgent(category);
+    const allMarkets: MarketContext[] = [];
+
+    for (const [, events] of Object.entries(eventsByCategory)) {
+      for (const event of events) {
+        if (!event.markets) continue;
+        for (const market of event.markets) {
+          const volume = Number((market.pricing as any)?.volume ?? 0) || Number((market as any).volume ?? 0);
+          const minVol = category === "sports" ? 5000 : AGENT_LIMITS.MIN_MARKET_VOLUME;
+          if (volume < minVol) continue;
+
+          const daysUntilClose = market.closeTime
+            ? (new Date(typeof market.closeTime === "number" ? market.closeTime * 1000 : market.closeTime).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+            : Infinity;
+          if (daysUntilClose > AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION) continue;
+
+          const question = market.metadata?.rulesPrimary?.slice(0, 200) ?? market.metadata?.title ?? event.metadata?.title ?? "Unknown market";
+          const closesAt = market.closeTime
+            ? new Date(typeof market.closeTime === "number" ? market.closeTime * 1000 : market.closeTime).toISOString()
+            : null;
+
+          const pricingObj = market.pricing as any;
+          const buyYesPrice = pricingObj?.buyYesPriceUsd ? Number(pricingObj.buyYesPriceUsd) / 1e6 : null;
+          const buyNoPrice = pricingObj?.buyNoPriceUsd ? Number(pricingObj.buyNoPriceUsd) / 1e6 : null;
+          const outcomes: Array<{ name: string; price: number }> = [];
+          if (buyYesPrice !== null) outcomes.push({ name: "Yes", price: buyYesPrice });
+          if (buyNoPrice !== null) outcomes.push({ name: "No", price: buyNoPrice });
+
+          allMarkets.push({
+            marketId: market.marketId,
+            question,
+            outcomes,
+            volume,
+            liquidity: Number((market as any).liquidity ?? pricingObj?.liquidity ?? 0),
+            closesAt,
+          });
+        }
+      }
+    }
+
+    // Deduplicate
+    const seen = new Set<string>();
+    markets = allMarkets.filter((m) => {
+      if (seen.has(m.marketId)) return false;
+      seen.add(m.marketId);
+      return true;
+    });
+
+    console.log(`[ScanWithResearch] ${agentName}: Found ${markets.length} markets via MarketEventBus`);
+  } catch (err) {
+    console.warn(`[ScanWithResearch] ${agentName}: MarketEventBus fetch failed, falling back to scanMarkets:`, err);
+    markets = await scanMarkets(category);
+  }
+
+  if (markets.length === 0) {
+    console.warn(`[ScanWithResearch] ${agentName}: No qualifying markets found`);
+    return {
+      markets: [],
+      ranked: { deep: [], brief: [] },
+      research: {
+        deep: [],
+        brief: [],
+        researchData: new Map(),
+        totalSearches: 0,
+        cacheHits: 0,
+        durationMs: 0,
+      },
+      bayesianResults: [],
+      bestMarkets: [],
+      analysisResults: [],
+      totalDurationMs: Date.now() - totalStart,
+    };
+  }
+
+  // Step 2: Rank markets (deterministic, no LLM)
+  const ranked = rankMarkets(markets, 7, 10);
+  console.log(`[ScanWithResearch] ${agentName}: Ranked ${markets.length} markets — ${ranked.deep.length} deep, ${ranked.brief.length} brief`);
+  console.log(`[ScanWithResearch] ${agentName}: Deep markets: ${ranked.deep.map((m) => `"${m.question.slice(0, 40)}" (score=${m.score.toFixed(3)}${m.isNewMarket ? " NEW" : ""})`).join(", ")}`);
+
+  // Step 3: Pre-research (deterministic, cached)
+  const research = await orchestrateMarketResearch(markets, category, agentId);
+
+  // Step 4: Per-market deep analysis (LLM calls, parallel, batched)
+  const analysisResults = await analyzeMarketsBatch(
+    ranked.deep,
+    research.researchData,
+    signals,
+    positions,
+    balance,
+    modelConfig,
+    agentId,
+    agentName,
+    category
+  );
+
+  // Step 5: Bayesian synthesis
+  const analysesMap = new Map<string, PerMarketAnalysis>();
+  for (const result of analysisResults) {
+    analysesMap.set(result.marketId, result.analysis);
+  }
+
+  const bayesianResults = runImprovedBayesianSynthesis(
+    ranked.deep,
+    analysesMap,
+    signals,
+    research.researchData,
+    calibratedWeights,
+    signalAgeMinutes,
+    category
+  );
+
+  // Step 6: Select best markets
+  const bestMarkets = selectBestMarket(
+    bayesianResults,
+    analysesMap,
+    positions,
+    balance
+  );
+
+  const totalDurationMs = Date.now() - totalStart;
+  console.log(
+    `[ScanWithResearch] ${agentName}: Complete in ${totalDurationMs}ms — ${markets.length} markets, ${analysisResults.length} analyzed, ${bestMarkets.length} candidates with edge`
+  );
+
+  return {
+    markets,
+    ranked,
+    research,
+    bayesianResults,
+    bestMarkets,
+    analysisResults,
+    totalDurationMs,
+  };
+}
+
+// ============================================================
+// Lightweight variant: fetch + rank + research only (no LLM).
+// The enhanced pipeline calls this and then does its own batch
+// analysis + Bayesian synthesis + decision.
+// ============================================================
+
+export async function scanAndRankMarkets(
+  category: string,
+  agentId: string,
+  agentName: string
+): Promise<ScannedAndRankedResult> {
+  const totalStart = Date.now();
+
+  console.log(`[ScanAndRank] ${agentName}: Fetching markets for ${category}...`);
+  let markets: MarketContext[];
+
+  try {
+    const eventsByCategory = await getMarketsForAgent(category);
+    const allMarkets: MarketContext[] = [];
+
+    for (const [, events] of Object.entries(eventsByCategory)) {
+      for (const event of events) {
+        if (!event.markets) continue;
+        for (const market of event.markets) {
+          const volume = Number((market.pricing as any)?.volume ?? 0) || Number((market as any).volume ?? 0);
+          const minVol = category === "sports" ? 5000 : AGENT_LIMITS.MIN_MARKET_VOLUME;
+          if (volume < minVol) continue;
+
+          const daysUntilClose = market.closeTime
+            ? (new Date(typeof market.closeTime === "number" ? market.closeTime * 1000 : market.closeTime).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+            : Infinity;
+          if (daysUntilClose > AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION) continue;
+
+          const question = market.metadata?.rulesPrimary?.slice(0, 200) ?? market.metadata?.title ?? event.metadata?.title ?? "Unknown market";
+          const closesAt = market.closeTime
+            ? new Date(typeof market.closeTime === "number" ? market.closeTime * 1000 : market.closeTime).toISOString()
+            : null;
+
+          const pricingObj = market.pricing as any;
+          const buyYesPrice = pricingObj?.buyYesPriceUsd ? Number(pricingObj.buyYesPriceUsd) / 1e6 : null;
+          const buyNoPrice = pricingObj?.buyNoPriceUsd ? Number(pricingObj.buyNoPriceUsd) / 1e6 : null;
+          const outcomes: Array<{ name: string; price: number }> = [];
+          if (buyYesPrice !== null) outcomes.push({ name: "Yes", price: buyYesPrice });
+          if (buyNoPrice !== null) outcomes.push({ name: "No", price: buyNoPrice });
+
+          allMarkets.push({
+            marketId: market.marketId,
+            question,
+            outcomes,
+            volume,
+            liquidity: Number((market as any).liquidity ?? pricingObj?.liquidity ?? 0),
+            closesAt,
+          });
+        }
+      }
+    }
+
+    const seen = new Set<string>();
+    markets = allMarkets.filter((m) => {
+      if (seen.has(m.marketId)) return false;
+      seen.add(m.marketId);
+      return true;
+    });
+
+    console.log(`[ScanAndRank] ${agentName}: Found ${markets.length} markets via MarketEventBus`);
+  } catch (err) {
+    console.warn(`[ScanAndRank] ${agentName}: MarketEventBus fetch failed, falling back to scanMarkets:`, err);
+    markets = await scanMarkets(category);
+  }
+
+  if (markets.length === 0) {
+    return {
+      markets: [],
+      ranked: { deep: [], brief: [] },
+      research: { deep: [], brief: [], researchData: new Map(), totalSearches: 0, cacheHits: 0, durationMs: 0 },
+      totalDurationMs: Date.now() - totalStart,
+    };
+  }
+
+  const ranked = rankMarkets(markets, 7, 10);
+  console.log(`[ScanAndRank] ${agentName}: Ranked ${markets.length} markets — ${ranked.deep.length} deep, ${ranked.brief.length} brief`);
+
+  const research = await orchestrateMarketResearch(markets, category, agentId);
+
+  const totalDurationMs = Date.now() - totalStart;
+  console.log(
+    `[ScanAndRank] ${agentName}: Complete in ${totalDurationMs}ms — ${markets.length} markets ranked, ${research.totalSearches} search results`
+  );
+
+  return {
+    markets,
+    ranked,
+    research,
+    totalDurationMs,
+  };
 }
 
 // --- Execute a buy order based on LLM decision ---

@@ -179,15 +179,25 @@ export async function processMarketResolution(
     agentsScored++;
   }
 
-  // Also look for pending decisions in Redis and score those
-  const decisionKeys = await redis.keys(`${REDIS_KEYS.AGENT_STATS_PREFIX}decision:*:${resolution.marketId}`);
+  // Also look for pending decisions in Redis and score those (use SCAN instead of KEYS for production safety)
+  const decisionKeys: string[] = [];
+  let cursor = "0";
+  do {
+    const [nextCursor, keys] = await redis.scan(cursor, "MATCH", `${REDIS_KEYS.AGENT_STATS_PREFIX}decision:*:${resolution.marketId}`, "COUNT", "100");
+    cursor = nextCursor;
+    decisionKeys.push(...keys);
+  } while (cursor !== "0");
+
   for (const key of decisionKeys) {
     const raw = await redis.get(key);
     if (!raw) continue;
 
     try {
       const data = JSON.parse(raw);
-      const agentId = key.split(":")[2];
+      // Key format: agent_stats:decision:{agentId}:{marketId} or agent_stats:decision:{agentId}
+      // Extract agentId from the key parts between "decision:" and the marketId/end
+      const keyParts = key.split(":");
+      const agentId = keyParts.length >= 3 ? keyParts.slice(2, -1).join(":") || keyParts[2] : keyParts[2];
 
       const [agent] = await db
         .select({ category: schema.agents.category })

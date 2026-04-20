@@ -95,10 +95,27 @@ class MarketEventBus {
   ): Promise<{ events: JupiterEvent[]; eventCount: number }> {
     // Check if there's already an in-flight fetch for this category
     const inFlight = this.isFetching.get(category);
-    if (inFlight && !options?.forceRefresh) {
-      console.log(`[MarketEventBus] Waiting for in-flight fetch for ${category}...`);
-      const result = await inFlight;
-      return result;
+    if (inFlight) {
+      // Even for forceRefresh, wait for the existing fetch to complete first
+      // to avoid duplicating API calls. Then decide if we need to re-fetch.
+      console.log(`[MarketEventBus] Waiting for in-flight fetch for ${category}${options?.forceRefresh ? " (forceRefresh pending)" : ""}...`);
+      try {
+        const result = await inFlight;
+        // If forceRefresh was requested, check if the cached data is fresh enough
+        if (options?.forceRefresh) {
+          const lastFetch = this.lastFetchTime.get(category) ?? 0;
+          const age = Date.now() - lastFetch;
+          // If the in-flight fetch completed recently (within 10s), use it
+          if (age < 10_000) {
+            return result;
+          }
+          // Otherwise fall through to start a new fetch below
+        } else {
+          return result;
+        }
+      } catch {
+        // In-flight fetch failed — proceed to start a new one
+      }
     }
 
     // Check if we fetched recently (debounce)
@@ -149,7 +166,7 @@ class MarketEventBus {
           eventCount: result.events.length,
           fetchDurationMs: result.metadata.fetchDurationMs,
           isStale: result.metadata.isStale,
-          cacheAge: Date.now() - result.metadata.stalenessTime,
+          cacheAge: Date.now() - new Date(result.metadata.fetchedAt).getTime(),
         },
       });
 

@@ -50,6 +50,9 @@ export const TEST_WALLET_BALANCE_SOL = Number(process.env.TEST_WALLET_BALANCE_SO
 // Emergency kill switch: if "true", all agent loops pause immediately
 export const EMERGENCY_STOP = process.env.EMERGENCY_STOP === "true";
 
+// Feature flag: use enhanced pipeline (per-market research + Bayesian synthesis)
+export const USE_ENHANCED_PIPELINE = process.env.USE_ENHANCED_PIPELINE === "true";
+
 export const AGENT_LIMITS = {
   MAX_PORTFOLIO_PERCENT_PER_MARKET: 0.1,
   MAX_CATEGORY_EXPOSURE: 0.25,

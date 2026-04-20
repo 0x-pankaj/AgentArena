@@ -4,11 +4,12 @@
 //    before execution. Overturns bad trades.
 // ============================================================
 
-import { quickAnalysis } from "../ai/pipeline";
+import { quickDecision } from "../ai/pipeline";
 import type { ModelConfig, TradeDecision } from "../ai/types";
 import { MODELS } from "../ai/models";
 import { publishFeedEvent, buildFeedEvent } from "../feed";
 import type { MarketContext, AgentPosition } from "../agents/strategy-engine";
+import { z } from "zod";
 
 export interface AdversarialReviewResult {
   overturn: boolean;
@@ -16,6 +17,13 @@ export interface AdversarialReviewResult {
   reason: string;
   risks: string[];
 }
+
+const AdversarialReviewSchema = z.object({
+  overturn: z.boolean(),
+  risk_adjusted_confidence: z.number().min(0).max(1),
+  reason: z.string(),
+  risks: z.array(z.string()),
+});
 
 const ADVERSARIAL_SYSTEM_PROMPT = `You are a risk auditor reviewing a prediction market trade decision. Your job is to find reasons NOT to take this trade.
 
@@ -31,10 +39,10 @@ Challenge every assumption. Look for:
 
 Be ruthless but fair. If the decision is genuinely sound, acknowledge it.
 
-OUTPUT FORMAT (must be valid JSON):
+You MUST respond with valid JSON matching this exact schema:
 {
   "overturn": true/false,
-  "risk_adjusted_confidence": 0.XX (your honest assessment of actual probability, 0-1),
+  "risk_adjusted_confidence": 0.XX (your honest assessment, 0-1),
   "reason": "one-sentence summary",
   "risks": ["risk 1", "risk 2", ...]
 }`;
@@ -81,37 +89,21 @@ ${positionInfo}
 Should this trade be overturned? Consider all risks above.`;
 
   try {
-    const result = await quickAnalysis({
+    const result = await quickDecision({
       modelConfig: modelConfig ?? MODELS.qwen,
       systemPrompt: ADVERSARIAL_SYSTEM_PROMPT,
       userMessage,
+      schema: AdversarialReviewSchema,
       tools: [],
       agentId,
     });
 
-    const jsonText = extractJsonFromText(result.text);
-
-    let parsed: any;
-    try {
-      parsed = JSON.parse(jsonText);
-    } catch {
-      try {
-        const repaired = repairAdversarialJson(jsonText);
-        parsed = JSON.parse(repaired);
-      } catch {
-        return {
-          overturn: false,
-          riskAdjustedConfidence: decision.confidence,
-          reason: "Adversarial review failed to parse — allowing trade",
-          risks: ["review_parse_failed"],
-        };
-      }
-    }
+    const parsed = result.decision;
 
     const overturn =
-      typeof parsed.overturn === "string"
-        ? parsed.overturn.toLowerCase() === "true"
-        : !!parsed.overturn;
+      typeof parsed.overturn === "boolean"
+        ? parsed.overturn
+        : false;
 
     const riskAdjustedConfidence =
       typeof parsed.risk_adjusted_confidence === "number"
@@ -149,60 +141,12 @@ Should this trade be overturned? Consider all risks above.`;
     };
   } catch (err) {
     console.error("[Adversarial Review] Error:", err);
+    // On failure, default to allowing the trade but with reduced confidence
     return {
       overturn: false,
-      riskAdjustedConfidence: decision.confidence,
+      riskAdjustedConfidence: decision.confidence * 0.85,
       reason: `Adversarial review error: ${err instanceof Error ? err.message : "unknown"}`,
       risks: ["review_error"],
     };
   }
-}
-
-function repairAdversarialJson(raw: string): string {
-  let s = raw;
-  s = s.replace(/\/\/.*$/gm, "");
-  s = s.replace(/\/\*[\s\S]*?\*\//g, "");
-  s = s.replace(/,\s*([}\]])/g, "$1");
-  s = s.replace(/:\s*'([^']*)'/g, ': "$1"');
-  s = s.replace(/\bTrue\b/g, "true");
-  s = s.replace(/\bFalse\b/g, "false");
-  s = s.replace(/\bNone\b/g, "null");
-  s = s.replace(/\bNaN\b/g, "null");
-  s = s.replace(/\bInfinity\b/g, "null");
-  s = s.replace(/(?<=[{,]\s*)([a-zA-Z_]\w*)\s*:/g, '"$1":');
-  return s;
-}
-
-function extractJsonFromText(text: string): string {
-  if (!text || !text.trim()) return "";
-  const codeBlockPatterns = [
-    /```(?:json)?\s*\n?([\s\S]*?)\n?```/,
-    /```\s*\n?([\s\S]*?)\n?```/,
-  ];
-  for (const pattern of codeBlockPatterns) {
-    const match = text.match(pattern);
-    if (match?.[1]) {
-      const candidate = match[1].trim();
-      if (candidate.startsWith("{")) return candidate;
-    }
-  }
-  const firstBrace = text.indexOf("{");
-  if (firstBrace !== -1) {
-    let depth = 0;
-    let inStr = false;
-    let escape = false;
-    for (let i = firstBrace; i < text.length; i++) {
-      const ch = text[i];
-      if (escape) { escape = false; continue; }
-      if (ch === "\\") { if (inStr) escape = true; continue; }
-      if (ch === '"') { inStr = !inStr; continue; }
-      if (inStr) continue;
-      if (ch === "{") depth++;
-      if (ch === "}") depth--;
-      if (depth === 0) return text.slice(firstBrace, i + 1);
-    }
-  }
-  const greedyMatch = text.match(/\{[\s\S]*\}/);
-  if (greedyMatch) return greedyMatch[0];
-  return text.trim();
 }

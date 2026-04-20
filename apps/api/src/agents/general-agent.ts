@@ -11,7 +11,7 @@ import {
   validateDecision,
 } from "./execution-engine";
 import { redis } from "../utils/redis";
-import { REDIS_KEYS, AGENT_LIMITS, AGENT_PROFILES, EXECUTE_TRADES } from "@agent-arena/shared";
+import { REDIS_KEYS, AGENT_LIMITS, AGENT_PROFILES, EXECUTE_TRADES, USE_ENHANCED_PIPELINE } from "@agent-arena/shared";
 import { getActivePositions } from "../services/trade-service";
 import { getSharedSignals, type SharedSignals } from "../services/signal-cache";
 import { getActivePrompts, recordPromptLinks } from "../services/evolution-service";
@@ -43,6 +43,7 @@ import { getAllCalibratedWeights, decayConfidence, getConfidenceAdjustment } fro
 import { recordAgentPrediction } from "../services/outcome-feedback";
 import { runScenarioAnalysis, quickScenarioGate } from "../services/scenario-analysis";
 import { db, schema } from "../db";
+import { runEnhancedPipeline } from "./enhanced-pipeline";
 
 const FAST_PATH_EDGE_THRESHOLD = 0.15;
 const FAST_PATH_CONFIDENCE_THRESHOLD = 0.85;
@@ -398,7 +399,11 @@ export async function runGeneralAgentTick(
   if (fsm.getState() === "SCANNING") {
     await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} scanning all market categories (politics, crypto, sports, economics)...`, { pipeline_stage: "scanning_start" });
 
-    await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching trending markets from Jupiter Predict...`, { pipeline_stage: "fetching_markets" });
+    if (USE_ENHANCED_PIPELINE) {
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus (enhanced pipeline)...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
+    } else {
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching trending markets from Jupiter Predict...`, { pipeline_stage: "fetching_markets" });
+    }
     const markets = await scanMarkets("general");
 
     if (markets.length === 0) {
@@ -423,6 +428,46 @@ export async function runGeneralAgentTick(
 
   // --- ANALYZING (2-stage pipeline) ---
   if (fsm.getState() === "ANALYZING") {
+    // ===== ENHANCED PIPELINE (v2) =====
+    if (USE_ENHANCED_PIPELINE) {
+      const pipelineResult = await runEnhancedPipeline(ctx, fsm, {
+        agentId: AGENT_ID,
+        agentName: AGENT_NAME,
+        category: "general",
+        models: config.models,
+        decisionSystemPrompt: config.pipeline[1].systemPrompt,
+      }, saveState);
+
+      if (pipelineResult.decision && pipelineResult.action === "analyzed") {
+        const marketsRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`);
+        const markets: MarketContext[] = marketsRaw ? JSON.parse(marketsRaw) : [];
+        const { positions: dbPositions } = await getActivePositions(ctx.jobId);
+        const positions: AgentPosition[] = dbPositions.map((p) => ({
+          marketId: p.marketId, side: p.side, amount: Number(p.amount),
+          entryPrice: Number(p.entryPrice), currentPrice: Number(p.currentPrice ?? p.entryPrice),
+          pnl: Number(p.pnl ?? 0),
+        }));
+        const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
+        const decision = pipelineResult.decision;
+
+        if (decision.action === "buy" && decision.marketId) {
+          const buyResult = await executeBuy(
+            decision, AGENT_ID, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "general"
+          );
+          if (buyResult.success) {
+            fsm.transition("order_placed");
+            await saveState();
+            return { state: fsm.getState() as any, action: "executed" as any, detail: `Bought on "${decision.marketQuestion}"`, decision, tokensUsed: pipelineResult.tokensUsed };
+          }
+        }
+
+        return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, decision: pipelineResult.decision, tokensUsed: pipelineResult.tokensUsed };
+      }
+
+      return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, tokensUsed: pipelineResult.tokensUsed };
+    }
+
+    // ===== LEGACY PIPELINE (v1) =====
     // Fetch signals from shared cache
     await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} fetching live signals from all sources...`, { pipeline_stage: "signal_fetch_start" });
 
