@@ -33,6 +33,7 @@ export function runScenarioAnalysis(params: {
   platformFee: number;
   positions: AgentPosition[];
   balance: number;
+  confidence?: number; // LLM confidence: high confidence = lower uncertainty
 }): ScenarioAnalysisResult {
   const {
     estimatedProbability,
@@ -42,11 +43,12 @@ export function runScenarioAnalysis(params: {
     platformFee = 0.02,
     positions,
     balance,
+    confidence = estimatedProbability,
   } = params;
 
   // Generate three scenarios
-  const confidence = estimatedProbability;
-  const uncertainty = 0.1; // ±10% probability uncertainty
+  // Confidence-calibrated uncertainty: high confidence (0.9) -> ±5%, low confidence (0.6) -> ±20%
+  const uncertainty = Math.max(0.05, Math.min(0.2, 1 - confidence));
 
   const scenarios: ScenarioResult[] = [];
 

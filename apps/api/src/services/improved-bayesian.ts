@@ -35,35 +35,34 @@ export interface BayesianResult {
   isNewMarket: boolean;
 }
 
-// --- Core Bayesian update ---
+// --- Core Bayesian update (Log-Odds form) ---
+// Correctly weights evidence without double-counting uncertainty.
+// Weight scales the log-likelihood ratio directly.
 
 function bayesianUpdate(
   prior: number,
   evidence: BayesianEvidence[]
 ): number {
-  let pYes = Math.max(0.001, Math.min(0.999, prior));
-  let pNo = 1 - pYes;
+  // Start with prior in log-odds space
+  const priorClamped = Math.max(0.001, Math.min(0.999, prior));
+  let logOdds = Math.log(priorClamped / (1 - priorClamped));
 
   for (const e of evidence) {
-    // Weighted evidence: weight scales how far likelihoods pull from neutral (0.5).
-    // Higher weight = evidence has more influence on posterior.
-    // weight=1.0 is baseline, weight=3.0 makes evidence ~3x more impactful.
+    // Clamp likelihoods to avoid division by zero
+    const lYes = Math.max(0.001, Math.min(0.999, e.likelihoodYes));
+    const lNo = Math.max(0.001, Math.min(0.999, e.likelihoodNo));
+
+    // Log-likelihood ratio for this evidence
+    const llr = Math.log(lYes / lNo);
+
+    // Weight directly scales the LLR (higher weight = more influence)
     const w = Math.max(0.1, Math.min(e.weight ?? 1.0, 5.0));
-    const scaleFactor = Math.min(w / 2.0, 1.0);
-    const weightedLikelihoodYes = 0.5 + (e.likelihoodYes - 0.5) * scaleFactor;
-    const weightedLikelihoodNo = 0.5 + (e.likelihoodNo - 0.5) * scaleFactor;
-
-    const pEvidence = weightedLikelihoodYes * pYes + weightedLikelihoodNo * pNo;
-    if (!isFinite(pEvidence) || pEvidence < 1e-10) continue;
-
-    pYes = (weightedLikelihoodYes * pYes) / pEvidence;
-    if (!isFinite(pYes)) continue;
-
-    pYes = Math.max(0.001, Math.min(0.999, pYes));
-    pNo = 1 - pYes;
+    logOdds += llr * w;
   }
 
-  return pYes;
+  // Convert back to probability
+  const posterior = 1 / (1 + Math.exp(-logOdds));
+  return Math.max(0.001, Math.min(0.999, posterior));
 }
 
 // --- Convert LLM analysis to Bayesian evidence ---
@@ -301,6 +300,39 @@ export function runImprovedBayesianSynthesis(
       const webWeight = calibratedWeights["web_sentiment"] ?? 1.5;
       const decayedWebWeight = decayWeight(webWeight, signalAgeMinutes);
       evidence.push(webSentimentToEvidence(research.searchResults, decayedWebWeight));
+    }
+
+    // 3b. Volume-weighted Twitter sentiment as evidence
+    if (research && research.weightedTwitterScore !== 0) {
+      const twitterWeight = calibratedWeights["twitter_sentiment"] ?? 1.0;
+      const decayedTwitterWeight = decayWeight(twitterWeight, signalAgeMinutes);
+      const score = research.weightedTwitterScore; // -1 to +1
+      const magnitude = Math.min(Math.abs(score) * 0.2, 0.2);
+      const direction = score > 0 ? 1 : -1;
+      evidence.push({
+        name: "twitter_sentiment",
+        likelihoodYes: 0.5 + direction * magnitude,
+        likelihoodNo: 0.5 - direction * magnitude,
+        weight: decayedTwitterWeight,
+        source: `twitter (weighted score: ${score.toFixed(2)}, ${research.twitterSentiment.length} tweets)`,
+      });
+    }
+
+    // 3c. Order flow as evidence (if available)
+    if (research?.microstructure) {
+      const m = research.microstructure;
+      const flowWeight = calibratedWeights["order_flow"] ?? 1.5;
+      if (Math.abs(m.orderFlowImbalance) > 0.2) {
+        const direction = m.orderFlowImbalance > 0 ? 1 : -1;
+        const magnitude = Math.min(Math.abs(m.orderFlowImbalance) * 0.15, 0.2);
+        evidence.push({
+          name: "order_flow",
+          likelihoodYes: 0.5 + direction * magnitude,
+          likelihoodNo: 0.5 - direction * magnitude,
+          weight: flowWeight,
+          source: `orderbook (imbalance: ${(m.orderFlowImbalance * 100).toFixed(0)}%, smartMoney: ${(m.smartMoneySignal * 100).toFixed(0)}%)`,
+        });
+      }
     }
 
     // 4. New market skepticism: compress posterior toward 0.5 (uncertainty)

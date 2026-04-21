@@ -177,11 +177,12 @@ export async function shouldEvolve(agentType: string): Promise<boolean> {
 
 interface EvolutionData {
   currentPrompt: string;
-  wins: Array<{ reasoning: string; pnl: number; marketQuestion: string }>;
-  losses: Array<{ reasoning: string; pnl: number; marketQuestion: string }>;
+  wins: Array<{ reasoning: string; pnl: number; marketQuestion: string; weight?: number }>;
+  losses: Array<{ reasoning: string; pnl: number; marketQuestion: string; weight?: number }>;
   totalTrades: number;
   winRate: number;
   avgPnl: number;
+  regretScore: number;
 }
 
 async function collectEvolutionData(
@@ -247,31 +248,54 @@ async function collectEvolutionData(
 
   if (trades.length < 5) return null;
 
-  const wins = trades
+  // Regret minimization: weight recent losses higher (exponential decay)
+  // Recent losses (last 10 trades) are 2x more important than older losses
+  const now = Date.now();
+  const REGRET_HALF_LIFE_TRADES = 15; // trades
+
+  const weightedTrades = trades.map((t, idx) => {
+    const tradesAgo = trades.length - idx;
+    const regretWeight = Math.pow(2, -tradesAgo / REGRET_HALF_LIFE_TRADES);
+    return { ...t, regretWeight };
+  });
+
+  const wins = weightedTrades
     .filter((t) => t.outcome === "win")
     .slice(0, 20)
     .map((t) => ({
       reasoning: t.reasoning ?? "No reasoning recorded",
       pnl: Number(t.profitLoss ?? 0),
       marketQuestion: t.marketQuestion,
+      weight: t.regretWeight,
     }));
 
-  const losses = trades
+  const losses = weightedTrades
     .filter((t) => t.outcome === "loss")
     .slice(0, 20)
     .map((t) => ({
       reasoning: t.reasoning ?? "No reasoning recorded",
       pnl: Number(t.profitLoss ?? 0),
       marketQuestion: t.marketQuestion,
+      weight: t.regretWeight,
     }));
 
   const totalTrades = trades.length;
   const winningTrades = wins.length;
   const winRate = totalTrades > 0 ? winningTrades / totalTrades : 0;
-  const totalPnl = trades.reduce((sum, t) => sum + Number(t.profitLoss ?? 0), 0);
-  const avgPnl = totalTrades > 0 ? totalPnl / totalTrades : 0;
 
-  return { currentPrompt, wins, losses, totalTrades, winRate, avgPnl };
+  // Regret-weighted PnL (recent losses hurt more)
+  const totalPnl = weightedTrades.reduce((sum, t) => sum + Number(t.profitLoss ?? 0) * t.regretWeight, 0);
+  const totalWeight = weightedTrades.reduce((sum, t) => sum + t.regretWeight, 0);
+  const avgPnl = totalWeight > 0 ? totalPnl / totalWeight : 0;
+
+  // Regret score: how much better could we have done?
+  // Sum of (maxPossible - actual) weighted by recency
+  const maxPossiblePnL = weightedTrades
+    .filter((t) => t.outcome === "loss")
+    .reduce((sum, t) => sum + Math.abs(Number(t.profitLoss ?? 0)) * t.regretWeight, 0);
+  const regretScore = maxPossiblePnL;
+
+  return { currentPrompt, wins, losses, totalTrades, winRate, avgPnl, regretScore };
 }
 
 // --- Generate evolution via LLM ---
@@ -288,10 +312,13 @@ async function generateEvolution(
     )
     .join("\n\n");
 
-  const lossesText = data.losses
+  // Sort losses by weight (regret) — highest regret first
+  const sortedLosses = [...data.losses].sort((a, b) => (b.weight ?? 1) - (a.weight ?? 1));
+
+  const lossesText = sortedLosses
     .map(
       (l, i) =>
-        `LOSS ${i + 1}: "${l.marketQuestion}" | PnL: $${l.pnl.toFixed(2)} | Reasoning: ${l.reasoning.slice(0, 300)}`
+        `LOSS ${i + 1} (regret weight: ${((l.weight ?? 1) * 100).toFixed(0)}%): "${l.marketQuestion}" | PnL: $${l.pnl.toFixed(2)} | Reasoning: ${l.reasoning.slice(0, 300)}`
     )
     .join("\n\n");
 
@@ -304,15 +331,17 @@ ${data.currentPrompt}
 - Total trades analyzed: ${data.totalTrades}
 - Win rate: ${(data.winRate * 100).toFixed(1)}%
 - Average PnL per trade: $${data.avgPnl.toFixed(2)}
+- Regret score: $${data.regretScore.toFixed(2)} (weighted recent losses — higher = more urgent to fix)
 
 ## Winning Trades (last ${data.wins.length})
 ${winsText || "No winning trades available."}
 
-## Losing Trades (last ${data.losses.length})
+## Losing Trades (sorted by regret — most costly recent losses first)
 ${lossesText || "No losing trades available."}
 
 ## Task
-Analyze the losing trades to identify patterns in what the agent consistently got wrong. 
+Analyze the losing trades to identify patterns in what the agent consistently got wrong.
+PAY EXTRA ATTENTION to high-regret-weight losses (recent, large losses) — these indicate current blind spots.
 Then improve the system prompt to address these weaknesses while preserving what works in winning trades.
 
 Return the improved prompt, a changelog describing what changed, and your confidence in the improvement.`;

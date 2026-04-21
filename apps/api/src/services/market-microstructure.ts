@@ -14,6 +14,8 @@ export interface MarketMicrostructure {
   midPrice: number;
   bidVolume: number;
   askVolume: number;
+  orderFlowImbalance: number; // +1 = all buying, -1 = all selling, 0 = balanced
+  smartMoneySignal: number; // derived from order flow + spread compression
 }
 
 export interface MicrostructureCheckResult {
@@ -29,8 +31,8 @@ export async function analyzeMarketMicrostructure(
   proposedAmount: number
 ): Promise<MarketMicrostructure | null> {
   try {
-    const orderbook = await jupiterPredict.getOrderbook(marketId);
-    if (!orderbook || !orderbook.bids || !orderbook.asks) {
+    const orderbook = await jupiterPredict.getOrderbook(marketId).catch(() => null);
+    if (!orderbook || !Array.isArray(orderbook.bids) || !Array.isArray(orderbook.asks)) {
       return null;
     }
 
@@ -69,6 +71,19 @@ export async function analyzeMarketMicrostructure(
     // Price impact estimate: how much would proposedAmount move the price
     const priceImpact = estimatePriceImpact(asks, proposedAmount, midPrice);
 
+    // Order flow imbalance: (bidVolume - askVolume) / (bidVolume + askVolume)
+    // Positive = more buying pressure, Negative = more selling pressure
+    const totalVolume = bidVolume + askVolume;
+    const orderFlowImbalance = totalVolume > 0
+      ? (bidVolume - askVolume) / totalVolume
+      : 0;
+
+    // Smart money signal: combines order flow with spread behavior
+    // If bids are heavy AND spread is tight = institutional buying
+    // If asks are heavy AND spread is widening = distribution
+    const spreadQuality = 1 - Math.min(bidAskSpread * 10, 1); // tight spread = high quality
+    const smartMoneySignal = orderFlowImbalance * spreadQuality;
+
     return {
       bidAskSpread: Math.round(bidAskSpread * 10000) / 10000,
       depthAt5Pct,
@@ -77,6 +92,8 @@ export async function analyzeMarketMicrostructure(
       midPrice: Math.round(midPrice * 10000) / 10000,
       bidVolume: Math.round(bidVolume * 100) / 100,
       askVolume: Math.round(askVolume * 100) / 100,
+      orderFlowImbalance: Math.round(orderFlowImbalance * 10000) / 10000,
+      smartMoneySignal: Math.round(smartMoneySignal * 10000) / 10000,
     };
   } catch (err) {
     console.error("[Microstructure] Error analyzing market:", err);
@@ -127,9 +144,19 @@ export async function checkMicrostructure(
     };
   }
 
+  // Check 4: Extreme order flow imbalance (potential manipulation or informed trading)
+  if (Math.abs(micro.orderFlowImbalance) > 0.85) {
+    const side = micro.orderFlowImbalance > 0 ? "buying" : "selling";
+    return {
+      allowed: false,
+      reason: `Extreme ${side} pressure detected (imbalance: ${(micro.orderFlowImbalance * 100).toFixed(0)}%) — possible manipulation or front-running`,
+      microstructure: micro,
+    };
+  }
+
   return {
     allowed: true,
-    reason: `Market microstructure OK (spread: ${(micro.bidAskSpread * 100).toFixed(2)}%, impact: ${(micro.priceImpactEstimate * 100).toFixed(2)}%, liquidity: ${(micro.liquidityScore * 100).toFixed(0)}%)`,
+    reason: `Market microstructure OK (spread: ${(micro.bidAskSpread * 100).toFixed(2)}%, impact: ${(micro.priceImpactEstimate * 100).toFixed(2)}%, liquidity: ${(micro.liquidityScore * 100).toFixed(0)}%, flow: ${(micro.orderFlowImbalance * 100).toFixed(0)}%)`,
     microstructure: micro,
   };
 }

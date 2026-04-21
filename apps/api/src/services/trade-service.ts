@@ -123,6 +123,7 @@ export async function executeBuyOrder(params: {
   isYes: boolean;
   amount: number;
   entryPrice: number;
+  estimatedProbability?: number; // true probability estimate from analysis (for Kelly sizing)
   confidence: number;
   reasoning: string;
   category: string;
@@ -149,11 +150,13 @@ export async function executeBuyOrder(params: {
     return { success: false, error: riskResult.reason };
   }
 
-  // 2. Calculate position size
+  // 2. Calculate position size (True Kelly Criterion)
   const positionSize = calculatePositionSize(
-    params.confidence,
+    params.estimatedProbability ?? params.confidence, // use true probability estimate if available
+    params.entryPrice,
     params.portfolio.totalBalance,
-    0 // currentPrice unknown until orderbook
+    params.isYes,
+    params.confidence
   );
   const finalAmount = Math.min(params.amount, positionSize);
 

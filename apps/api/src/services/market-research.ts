@@ -37,7 +37,10 @@ export interface PerMarketResearchData {
     likes: number;
     retweets: number;
     createdAt: string;
+    impressions?: number;
+    weight?: number;
   }>;
+  weightedTwitterScore: number; // -1 to +1, volume-weighted sentiment
   microstructure: MarketMicrostructure | null;
   research: MarketResearch;
   rankedMarket: RankedMarket;
@@ -168,9 +171,11 @@ export function buildResearchContextForLLM(
     }
   }
 
-  // Twitter sentiment
+  // Twitter sentiment (volume-weighted)
   if (researchData?.twitterSentiment && researchData.twitterSentiment.length > 0) {
-    parts.push(`| Twitter sentiment (${researchData.twitterSentiment.length} tweets):`);
+    const score = researchData.weightedTwitterScore;
+    const sentimentLabel = score > 0.3 ? "Bullish" : score < -0.3 ? "Bearish" : "Neutral";
+    parts.push(`| Twitter sentiment (${researchData.twitterSentiment.length} tweets, weighted): ${sentimentLabel} (score: ${score.toFixed(2)})`);
     for (const t of researchData.twitterSentiment.slice(0, 3)) {
       parts.push(`  - "${t.text.slice(0, 100)}" (❤${t.likes} 🔄${t.retweets})`);
     }
@@ -254,12 +259,37 @@ export async function orchestrateMarketResearch(
   const twitterAndMicroTasks = deep.map((m) => async () => {
     const research = researchMap.get(m.marketId);
 
-    // Twitter search
+    // Twitter search with volume-weighted sentiment
     let twitterSentiment: PerMarketResearchData["twitterSentiment"] = [];
+    let weightedTwitterScore = 0;
     try {
       const searchQuery = extractSearchQuery(m.question);
-      const tweetResults = await searchTweetsSafe(searchQuery, 5);
-      twitterSentiment = tweetResults;
+      const tweetResults = await searchTweetsSafe(searchQuery, 10); // fetch more for weighting
+
+      // Volume-weighted sentiment: high-impression tweets count more
+      const weighted = tweetResults.map((t) => {
+        const impressions = (t.likes ?? 0) * 2 + (t.retweets ?? 0) * 5 + 1; // retweets = more valuable
+        return { ...t, impressions, weight: Math.log10(impressions + 1) };
+      }).sort((a, b) => b.weight - a.weight);
+
+      twitterSentiment = weighted.slice(0, 5); // top 5 by weight for display
+
+      // Compute aggregate weighted sentiment score
+      const totalWeight = weighted.reduce((sum, t) => sum + t.weight, 0);
+      if (totalWeight > 0) {
+        const positiveWords = ["up", "rise", "bull", "moon", "breakout", "pump", "win", "yes", "likely", "confident"];
+        const negativeWords = ["down", "fall", "bear", "dump", "crash", "lose", "no", "unlikely", "doubt"];
+
+        let weightedScore = 0;
+        for (const t of weighted) {
+          const text = t.text.toLowerCase();
+          let score = 0;
+          for (const w of positiveWords) if (text.includes(w)) score += 1;
+          for (const w of negativeWords) if (text.includes(w)) score -= 1;
+          weightedScore += score * t.weight;
+        }
+        weightedTwitterScore = weightedScore / totalWeight; // -1 to +1
+      }
     } catch (err) {
       console.warn(`[MarketResearch] Twitter search failed for ${m.marketId}:`, err);
     }
@@ -277,6 +307,7 @@ export async function orchestrateMarketResearch(
       question: m.question,
       searchResults: research?.searchResults ?? [],
       twitterSentiment,
+      weightedTwitterScore,
       microstructure,
       research: research ?? {
         marketId: m.marketId,

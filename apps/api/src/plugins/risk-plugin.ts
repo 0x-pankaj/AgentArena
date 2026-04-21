@@ -244,17 +244,66 @@ export function runPreTradeChecks(
   return { allowed: true };
 }
 
-// --- Position sizing ---
+// --- Position sizing (True Kelly Criterion) ---
+// Kelly fraction = edge / odds
+// Where edge = estimatedProbability - marketPrice
+//       odds = payout ratio (for binary markets: 1/price for YES, 1/(1-price) for NO)
+// We use quarter-Kelly for safety (reduces variance while keeping positive EV)
 
 export function calculatePositionSize(
+  estimatedProbability: number,
+  marketPrice: number,
+  totalBalance: number,
+  isYes: boolean,
+  confidence: number // used as a scaling factor: higher confidence = closer to full Kelly
+): number {
+  const edge = Math.abs(estimatedProbability - marketPrice);
+
+  // If no edge or negative edge, don't bet
+  if (edge <= 0) return 0;
+
+  // Odds for binary prediction market
+  // YES bet pays (1 - price) / price per dollar bet
+  // NO bet pays price / (1 - price) per dollar bet
+  const odds = isYes
+    ? (1 - marketPrice) / marketPrice
+    : marketPrice / (1 - marketPrice);
+
+  // Full Kelly fraction
+  const p = estimatedProbability;
+  const q = 1 - p;
+  const b = odds;
+
+  // Kelly = (bp - q) / b = (p * (1-price)/price - (1-p)) / ((1-price)/price)
+  // Simplified for binary markets:
+  const kellyFraction = isYes
+    ? (p - marketPrice) / (1 - marketPrice)
+    : (marketPrice - p) / marketPrice;
+
+  // Quarter-Kelly for safety (reduces variance by 75% while keeping most of the growth)
+  const safetyFraction = 0.25;
+
+  // Scale by confidence: high confidence bets closer to quarter-Kelly, low confidence scales down
+  // At confidence=0.5, scale=0. At confidence=1.0, scale=1.0
+  const confidenceScale = Math.max(0, (confidence - 0.5) * 2);
+
+  const betFraction = Math.max(0, kellyFraction * safetyFraction * confidenceScale);
+
+  const maxBet = totalBalance * AGENT_LIMITS.MAX_PORTFOLIO_PERCENT_PER_MARKET;
+  const positionSize = totalBalance * betFraction;
+
+  return Math.min(positionSize, maxBet);
+}
+
+// --- Backward-compatible wrapper (deprecated, use calculatePositionSize with full params) ---
+
+export function calculatePositionSizeLegacy(
   confidence: number,
   totalBalance: number,
   currentPrice: number
 ): number {
-  // Kelly-inspired sizing: bet more with higher confidence, capped by limits
-  const kellyFraction = Math.max(0, (confidence - 0.5) * 2); // 0 at 50%, 1 at 100%
+  const kellyFraction = Math.max(0, (confidence - 0.5) * 2);
   const maxBet = totalBalance * AGENT_LIMITS.MAX_PORTFOLIO_PERCENT_PER_MARKET;
-  const kellySize = totalBalance * kellyFraction * 0.25; // quarter-Kelly for safety
-
+  const kellySize = totalBalance * kellyFraction * 0.25;
   return Math.min(kellySize, maxBet);
 }

@@ -5,7 +5,7 @@
 // ============================================================
 
 import { db, schema } from "../db";
-import { eq, and, isNotNull, sql } from "drizzle-orm";
+import { eq, and, isNotNull, sql, desc } from "drizzle-orm";
 import { redis } from "../utils/redis";
 import { REDIS_KEYS } from "@agent-arena/shared";
 import {
@@ -214,6 +214,41 @@ export async function processMarketResolution(
     }
 
     await redis.del(key);
+  }
+
+  // 3. Update dynamic correlation matrix from resolved markets
+  try {
+    const { updateCorrelationsFromResolutions, extractCorrelationCategory } = await import("./correlation-learner");
+    const { updateLearnedCorrelationCache } = await import("./correlation-matrix");
+
+    const allResolved = await db
+      .select({
+        marketId: schema.positions.marketId,
+        question: schema.positions.marketQuestion,
+        outcome: schema.positions.pnl,
+        resolvedAt: schema.positions.closedAt,
+      })
+      .from(schema.positions)
+      .where(eq(schema.positions.status, "settled"))
+      .orderBy(desc(schema.positions.closedAt))
+      .limit(50);
+
+    const resolutions = allResolved.map((r) => ({
+      marketId: r.marketId,
+      question: r.question ?? "",
+      outcome: Number(r.outcome ?? 0) > 0,
+      resolvedAt: r.resolvedAt ?? new Date(),
+    }));
+
+    const updatedPairs = await updateCorrelationsFromResolutions(resolutions);
+
+    // Refresh in-memory cache for sync correlation checks
+    const learnedCorrelations = await (await import("./correlation-learner")).getAllLearnedCorrelations();
+    updateLearnedCorrelationCache(learnedCorrelations);
+
+    console.log(`[OutcomeFeedback] Updated ${updatedPairs} correlation pairs from resolved markets`);
+  } catch (err) {
+    console.warn("[OutcomeFeedback] Correlation update failed:", err);
   }
 
   if (agentsScored > 0) {

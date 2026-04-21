@@ -79,11 +79,47 @@ function classifyMarket(question: string): string {
   return "unknown";
 }
 
-// --- Get correlation between two market categories ---
+// --- Learned correlation cache (refreshed periodically) ---
+
+let learnedCorrelationCache: Record<string, number> = {};
+let correlationCacheTimestamp = 0;
+const CORRELATION_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+export function updateLearnedCorrelationCache(
+  correlations: Array<{ market1Category: string; market2Category: string; correlation: number; confidence: number }>
+): void {
+  for (const c of correlations) {
+    const key = [c.market1Category, c.market2Category].sort().join(":");
+    learnedCorrelationCache[key] = c.correlation;
+  }
+  correlationCacheTimestamp = Date.now();
+}
+
+export function getCachedLearnedCorrelation(cat1: string, cat2: string): number | undefined {
+  if (Date.now() - correlationCacheTimestamp > CORRELATION_CACHE_TTL_MS) {
+    return undefined; // Cache expired
+  }
+  const key = [cat1, cat2].sort().join(":");
+  return learnedCorrelationCache[key];
+}
+
+// --- Get correlation between two market categories (hybrid: learned + static) ---
 
 export function getCorrelation(cat1: string, cat2: string): number {
   if (cat1 === cat2) return 1.0;
 
+  // Check learned correlations first (if fresh)
+  const learned = getCachedLearnedCorrelation(cat1, cat2);
+  if (learned !== undefined) {
+    // Blend learned with static (70% learned, 30% static) for robustness
+    const staticCorr = getStaticCorrelation(cat1, cat2);
+    return learned * 0.7 + staticCorr * 0.3;
+  }
+
+  return getStaticCorrelation(cat1, cat2);
+}
+
+function getStaticCorrelation(cat1: string, cat2: string): number {
   // Look up in both directions
   const forward = DEFAULT_CORRELATIONS[cat1]?.[cat2];
   if (forward !== undefined) return forward;

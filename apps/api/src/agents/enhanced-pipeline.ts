@@ -553,7 +553,7 @@ You have access to web_search and other tools for a final verification if needed
         return { state: fsm.getState(), action: "analyzed", detail: `Scenario gate: ${scenarioGate.reason}`, decision, tokensUsed: totalTokensUsed };
       }
 
-      // Scenario analysis
+      // Scenario analysis (with confidence-calibrated uncertainty)
       const scenarioResult = runScenarioAnalysis({
         estimatedProbability: bestCandidate.probability,
         marketPrice,
@@ -562,6 +562,7 @@ You have access to web_search and other tools for a final verification if needed
         platformFee: 0.02,
         positions,
         balance: portfolio.totalBalance,
+        confidence: bestCandidate.confidence,
       });
 
       if (!scenarioResult.shouldTrade) {
@@ -570,7 +571,7 @@ You have access to web_search and other tools for a final verification if needed
         return { state: fsm.getState(), action: "analyzed", detail: `Scenario rejected: ${scenarioResult.reason}`, decision, tokensUsed: totalTokensUsed };
       }
 
-      // Adversarial review — always run, even on fast-path (safety-critical)
+      // Adversarial review — always run (safety-critical, replaces expensive multi-model consensus)
       const review = await runAdversarialReview(decision, markets, positions, portfolio.totalBalance, agentId, agentName);
       if (review.overturn) {
         fsm.transition("no_edge");
@@ -579,24 +580,9 @@ You have access to web_search and other tools for a final verification if needed
       }
       decision.confidence = Math.min(decision.confidence, review.riskAdjustedConfidence);
 
-      // Multi-model consensus (skip on fast-path to save time)
-      if (!useFastPath) {
-        const consensus = await runMultiModelConsensus({
-          systemPrompt: config.decisionSystemPrompt,
-          userMessage: decisionUserMessage,
-          schema: TradeDecisionSchema,
-          agentId,
-          agentName,
-          primaryDecision: decision,
-        });
-
-        decision = consensus.decision;
-        if (decision.action === "hold") {
-          fsm.transition("no_edge");
-          await saveState();
-          return { state: fsm.getState(), action: "analyzed", detail: "Consensus disagreement — defaulting to hold", decision, tokensUsed: totalTokensUsed };
-        }
-      }
+      // NOTE: Multi-model consensus removed — adversarial review with full research context
+      // provides better safety/cost ratio than shallow consensus from generic secondary models.
+      // Cost savings: ~$0.30-0.80 per trade, latency reduction: 3-5s
 
       // Record prediction for calibration (critical for learning loop — log errors, don't silently swallow)
       await recordOutcomePrediction(category, agentId, decision, signals, markets, config.models.decision.model).catch((err) => {

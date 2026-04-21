@@ -145,12 +145,16 @@ export async function scoreResolvedMarket(
         s.brierScore = (s.brierScore * n + brier) / (n + 1);
         s.sampleSize = n + 1;
 
-        // Adjust weight: lower Brier = higher weight
-        // Weight = 1 - adjustedBrier, clamped to [0.1, 2.0]
-        // Good signals (brier ~0) get weight ~1.0-2.0, bad (brier ~0.5) get ~0.1-0.5
+        // Adjust weight: lower Brier = higher weight (inverse-variance weighting)
+        // Weight = 1 / (brier + 0.05) so that:
+        //   - Perfect signal (brier=0) -> weight=20.0 (capped at 5.0)
+        //   - Good signal (brier=0.1) -> weight=6.7
+        //   - Decent signal (brier=0.2) -> weight=4.0
+        //   - Weak signal (brier=0.4) -> weight=2.2
+        //   - Random signal (brier=0.5) -> weight=1.8
         const adjustedBrier = Math.max(s.brierScore, 0.01);
-        const rawWeight = 1 - adjustedBrier;
-        s.weight = Math.max(0.1, Math.min(2.0, rawWeight * 2));
+        const rawWeight = 1 / (adjustedBrier + 0.05);
+        s.weight = Math.max(0.1, Math.min(5.0, rawWeight));
       }
     }
 
