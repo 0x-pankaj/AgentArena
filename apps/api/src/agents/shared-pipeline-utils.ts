@@ -101,27 +101,71 @@ export function kellyPositionSize(
 // --- Probability extraction from LLM text ---
 
 export function extractProbabilityFromText(text: string): number {
-  const pctMatch = text.match(/(\d{1,3})\s*%/);
-  if (pctMatch) {
-    const val = parseInt(pctMatch[1], 10);
-    if (val >= 0 && val <= 100) return val / 100;
+  if (!text || typeof text !== "string") {
+    console.warn("[Agent] Could not extract probability from text, defaulting to 0.5");
+    return 0.5;
   }
-  const probMatch = text.match(/probability\s*(?:of|:)?\s*(\d+\.?\d*)/i);
+
+  // Strategy 1: explicit "probability" keyword with number
+  const probMatch = text.match(/probability\s*(?:of|:|=)?\s*(\d+\.?\d*)/i);
   if (probMatch) {
     const val = parseFloat(probMatch[1]);
     if (val >= 0 && val <= 1) return val;
     if (val > 1 && val <= 100) return val / 100;
   }
-  const decimalMatch = text.match(/\b(0\.\d{1,3})\b/);
+
+  // Strategy 2: percentage with % sign
+  const pctMatch = text.match(/(\d{1,3}(?:\.\d+)?)\s*%/);
+  if (pctMatch) {
+    const val = parseFloat(pctMatch[1]);
+    if (val >= 0 && val <= 100) return val / 100;
+  }
+
+  // Strategy 3: "X percent" spelled out
+  const spelledPctMatch = text.match(/(\d{1,3}(?:\.\d+)?)\s*percent/i);
+  if (spelledPctMatch) {
+    const val = parseFloat(spelledPctMatch[1]);
+    if (val >= 0 && val <= 100) return val / 100;
+  }
+
+  // Strategy 4: decimal between 0 and 1 (e.g., 0.75)
+  const decimalMatch = text.match(/\b(0\.\d{1,4})\b/);
   if (decimalMatch) {
     const val = parseFloat(decimalMatch[1]);
     if (val >= 0 && val <= 1) return val;
   }
+
+  // Strategy 5: "X out of 10" or "X/10"
   const outOfMatch = text.match(/(\d{1,2})\s*(?:out of|\/)\s*10/i);
   if (outOfMatch) {
     const val = parseInt(outOfMatch[1], 10);
     if (val >= 0 && val <= 10) return val / 10;
   }
+
+  // Strategy 6: "p = 0.XX" or "P(Yes) = 0.XX"
+  const pEqualsMatch = text.match(/[pP]\s*\(?\w*\)?\s*=\s*(\d+\.?\d*)/);
+  if (pEqualsMatch) {
+    const val = parseFloat(pEqualsMatch[1]);
+    if (val >= 0 && val <= 1) return val;
+    if (val > 1 && val <= 100) return val / 100;
+  }
+
+  // Strategy 7: "estimated at 70%" / "estimate: 70%"
+  const estimateMatch = text.match(/estimat(?:e|ed)\s*(?:at|:)?\s*(\d{1,3}(?:\.\d+)?)\s*%?/i);
+  if (estimateMatch) {
+    const val = parseFloat(estimateMatch[1]);
+    if (val >= 0 && val <= 1) return val;
+    if (val > 1 && val <= 100) return val / 100;
+  }
+
+  // Strategy 8: "chance: 70%" / "likelihood: 70%"
+  const chanceMatch = text.match(/(?:chance|likelihood|odds)\s*(?:of|:|=)?\s*(\d{1,3}(?:\.\d+)?)\s*%?/i);
+  if (chanceMatch) {
+    const val = parseFloat(chanceMatch[1]);
+    if (val >= 0 && val <= 1) return val;
+    if (val > 1 && val <= 100) return val / 100;
+  }
+
   console.warn("[Agent] Could not extract probability from text, defaulting to 0.5");
   return 0.5;
 }

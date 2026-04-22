@@ -14,6 +14,7 @@ interface WsClient {
 
 const clients = new Map<string, WsClient>();
 const subscribedChannels = new Set<string>();
+const clientPongs = new Map<string, number>();
 let wss: WebSocketServer | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -79,8 +80,13 @@ export function startWebSocketServer(port: number = 3002): WebSocketServer {
       }
     });
 
+    ws.on("pong", () => {
+      clientPongs.set(clientId, Date.now());
+    });
+
     ws.on("close", () => {
       clients.delete(clientId);
+      clientPongs.delete(clientId);
       pruneUnusedRedisSubscriptions();
       console.log(
         `[WS] Client disconnected: ${clientId} (total: ${clients.size})`
@@ -89,19 +95,30 @@ export function startWebSocketServer(port: number = 3002): WebSocketServer {
 
     ws.on("error", () => {
       clients.delete(clientId);
+      clientPongs.delete(clientId);
     });
   });
 
   // Subscribe to Redis channels
   subscribeToRedis();
 
-  // Heartbeat to detect dead connections
+  // Heartbeat to detect dead connections (kill if no pong in 60s)
   heartbeatInterval = setInterval(() => {
+    const now = Date.now();
     for (const [clientId, client] of clients) {
       if (client.ws.readyState === WebSocket.OPEN) {
+        const lastPong = clientPongs.get(clientId) ?? now;
+        if (now - lastPong > 60_000) {
+          console.log(`[WS] Client ${clientId} timed out (no pong)`);
+          client.ws.terminate();
+          clients.delete(clientId);
+          clientPongs.delete(clientId);
+          continue;
+        }
         client.ws.ping();
       } else {
         clients.delete(clientId);
+        clientPongs.delete(clientId);
       }
     }
     pruneUnusedRedisSubscriptions();
@@ -251,6 +268,7 @@ export async function stopWebSocketServer(): Promise<void> {
       client.ws.close();
     }
     clients.clear();
+    clientPongs.clear();
 
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => resolve(), 5000);

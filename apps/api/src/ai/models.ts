@@ -74,8 +74,6 @@ export function resolveModel(config: ModelConfig): LanguageModel {
   return provider(config.model);
 }
 
-import { LLM_MODEL, LLM_BASE_URL } from "@agent-arena/shared";
-
 export const MODELS = {
   minimax: {
     model: "minimax/minimax-m2.5",
@@ -92,12 +90,12 @@ export const MODELS = {
   } satisfies ModelConfig,
 
   kimi: {
-    model: LLM_MODEL,
-    provider: "openai" as const,
-    baseURL: LLM_BASE_URL,
-    apiKeyEnv: "KIMI_API_KEY",
+    // Kimi K2.6 via OpenRouter (uses existing OPENROUTER_API_KEY credit)
+    // If OpenRouter changes the model slug, override via AGENT_MODEL_DECISION env
+    model: process.env.OPENROUTER_KIMI_MODEL ?? "moonshotai/kimi-k2.6",
+    provider: "openrouter" as const,
     temperature: 0.3,
-    maxTokens: 2000,
+    maxTokens: 4000,
   } satisfies ModelConfig,
 
   gpt4o: {
@@ -146,36 +144,37 @@ export const MODELS = {
     maxTokens: 4000,
   } satisfies ModelConfig,
 
-  // Decision model (balanced, structured output)
+  // Decision model (high-end, best structured output capability)
+  // Routed through OpenRouter so you don't need a separate Moonshot API key
   decision: {
-    model: "qwen/qwen3.6-plus",
+    model: process.env.OPENROUTER_KIMI_MODEL ?? "moonshotai/kimi-k2.6",
     provider: "openrouter" as const,
     temperature: 0.2,
-    maxTokens: 1500,
+    maxTokens: 4000,
   } satisfies ModelConfig,
 } as const;
 
 export const DEFAULT_POLITICS_AGENT_MODELS: AgentModels = {
   analysis: MODELS.qwen,
-  decision: MODELS.qwen,
+  decision: MODELS.kimi,
   search: MODELS.qwen,
 };
 
 export const DEFAULT_SPORTS_AGENT_MODELS: AgentModels = {
   analysis: MODELS.qwen,
-  decision: MODELS.qwen,
+  decision: MODELS.kimi,
   search: MODELS.qwen,
 };
 
 export const DEFAULT_CRYPTO_AGENT_MODELS: AgentModels = {
   analysis: MODELS.qwen,
-  decision: MODELS.qwen,
+  decision: MODELS.kimi,
   search: MODELS.qwen,
 };
 
 export const DEFAULT_GENERAL_AGENT_MODELS: AgentModels = {
   analysis: MODELS.qwen,
-  decision: MODELS.qwen,
+  decision: MODELS.kimi,
   search: MODELS.qwen,
 };
 

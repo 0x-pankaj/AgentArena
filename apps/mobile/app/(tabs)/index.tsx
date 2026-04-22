@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Clipboard, Alert } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Clipboard, Alert, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
@@ -14,11 +14,19 @@ const categories = ['All', 'Geo', 'Politics', 'Sports', 'Crypto', 'General'];
 export default function HomeScreen() {
   const router = useRouter();
   const [activeCategory, setActiveCategory] = useState('All');
+  const [refreshing, setRefreshing] = useState(false);
   const { isConnected, walletAddress } = useAuthStore();
 
   const categoryFilter = activeCategory === 'All' ? undefined : activeCategory.toLowerCase();
-  const { data, isLoading, error } = useAgentList(categoryFilter);
+  const { data, isLoading, error, refetch: refetchAgents } = useAgentList(categoryFilter);
   const trending = useTrendingAgents(6);
+  const refetchTrending = trending.refetch;
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([refetchAgents(), refetchTrending()]);
+    setRefreshing(false);
+  }, [refetchAgents, refetchTrending]);
 
   const agents = data?.agents ?? [];
   const trendingAgents = trending.data?.agents ?? [];
@@ -35,6 +43,14 @@ export default function HomeScreen() {
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.accent}
+            colors={[Colors.accent]}
+          />
+        }
       >
         <View style={styles.header}>
           <Pressable

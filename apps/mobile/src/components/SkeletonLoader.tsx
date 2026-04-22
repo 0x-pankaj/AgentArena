@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated } from 'react-native';
+import { View, StyleSheet, Animated, DimensionValue } from 'react-native';
 import { Colors, BorderRadius, Spacing } from '../../constants/Colors';
 
 interface SkeletonLoaderProps {
@@ -7,6 +7,7 @@ interface SkeletonLoaderProps {
   height?: number;
   borderRadius?: number;
   style?: any;
+  shimmer?: boolean;
 }
 
 export function SkeletonLoader({
@@ -14,11 +15,18 @@ export function SkeletonLoader({
   height = 16,
   borderRadius = BorderRadius.sm,
   style,
+  shimmer = true,
 }: SkeletonLoaderProps) {
   const opacity = useRef(new Animated.Value(0.3)).current;
+  const translateX = useRef(new Animated.Value(-200)).current;
+
+  const numericWidth = typeof width === 'number' ? width : 200;
 
   useEffect(() => {
-    const animation = Animated.loop(
+    const animations: Animated.CompositeAnimation[] = [];
+
+    // Base pulse animation
+    const pulseAnim = Animated.loop(
       Animated.sequence([
         Animated.timing(opacity, {
           toValue: 0.7,
@@ -32,23 +40,52 @@ export function SkeletonLoader({
         }),
       ])
     );
-    animation.start();
-    return () => animation.stop();
-  }, [opacity]);
+    pulseAnim.start();
+    animations.push(pulseAnim);
+
+    // Shimmer sweep animation
+    if (shimmer) {
+      const shimmerAnim = Animated.loop(
+        Animated.timing(translateX, {
+          toValue: numericWidth * 2,
+          duration: 1500,
+          useNativeDriver: true,
+        })
+      );
+      shimmerAnim.start();
+      animations.push(shimmerAnim);
+    }
+
+    return () => {
+      animations.forEach((a) => a.stop());
+    };
+  }, [opacity, translateX, numericWidth, shimmer]);
 
   return (
     <Animated.View
       style={[
         {
-          width: width as any,
+          width: width as DimensionValue,
           height,
           borderRadius,
           backgroundColor: Colors.border,
           opacity,
+          overflow: 'hidden',
         },
         style,
       ]}
-    />
+    >
+      {shimmer && (
+        <Animated.View
+          style={{
+            width: '40%',
+            height: '100%',
+            backgroundColor: 'rgba(255,255,255,0.06)',
+            transform: [{ translateX: translateX }],
+          }}
+        />
+      )}
+    </Animated.View>
   );
 }
 

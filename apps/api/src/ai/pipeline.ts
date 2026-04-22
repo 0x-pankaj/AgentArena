@@ -405,13 +405,17 @@ export async function quickDecision<T>(params: {
     // Qwen requires the word "json" in the prompt when using response_format json_object
     const systemWithJsonHint = systemPrompt.toLowerCase().includes("json")
       ? systemPrompt
-      : `${systemPrompt}\n\nReturn your response as valid JSON matching the required schema.`;
+      : `${systemPrompt}\n\nReturn your response as valid JSON matching the required schema. Only output the JSON object — no markdown code blocks, no conversational text.`;
 
     let decision: T;
     let tokensUsed = 0;
     let toolCalls = 0;
 
     // ---- Attempt 1: generateObject (structured output) ----
+    // Use mode: "tool" for maximum compatibility across providers.
+    // JSON mode (mode: "json") fails on many OpenRouter models (Qwen, Minimax, etc.)
+    // because they don't all support native response_format: { type: "json_object" }.
+    // Tool mode uses function calling, which is supported by virtually all modern models.
     try {
       const result: any = await withRetry(
         () => (generateObject as any)({
@@ -419,8 +423,9 @@ export async function quickDecision<T>(params: {
           system: systemWithJsonHint,
           prompt: userMessage,
           schema,
-          mode: "json",
+          mode: "tool",
           temperature: modelConfig.temperature ?? 0.3,
+          maxTokens: modelConfig.maxTokens ?? 2000,
           maxRetries: 0,
           abortSignal: AbortSignal.timeout(60_000),
         }),

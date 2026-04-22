@@ -110,6 +110,8 @@ class WSClient {
     this.ws.onerror = (error: any) => {
       console.error('[WS] Error:', error?.message ?? 'WebSocket error');
       this.isConnecting = false;
+      // Force close so onclose fires and triggers reconnect
+      this.ws?.close();
     };
   }
 
