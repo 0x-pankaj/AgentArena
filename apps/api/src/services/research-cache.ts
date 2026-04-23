@@ -175,10 +175,7 @@ export async function researchMarkets(
         }
       }
 
-      // Small delay between batches to respect rate limits
-      if (i + BATCH_SIZE < missMarkets.length) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
+
     }
   }
 

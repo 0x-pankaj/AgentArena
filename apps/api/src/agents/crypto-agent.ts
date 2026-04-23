@@ -11,7 +11,7 @@ import {
   validateDecision,
 } from "./execution-engine";
 import { redis } from "../utils/redis";
-import { REDIS_KEYS, AGENT_LIMITS, EXECUTE_TRADES, USE_ENHANCED_PIPELINE } from "@agent-arena/shared";
+import { REDIS_KEYS, AGENT_LIMITS, EXECUTE_TRADES } from "@agent-arena/shared";
 import { getActivePositions } from "../services/trade-service";
 import { getSharedSignals } from "../services/signal-cache";
 import { getActivePrompts, recordPromptLinks } from "../services/evolution-service";
@@ -37,7 +37,7 @@ import type { GeoSignals } from "./strategy-engine";
 import { getCryptoSignals, getGlobalMarket } from "../data-sources/coingecko";
 import { getDeFiSignals, getSolanaTVL } from "../data-sources/defillama";
 import { runAdversarialReview } from "../services/adversarial-review";
-import { runMultiModelConsensus } from "../services/multi-model-consensus";
+
 import { checkMicrostructure } from "../services/market-microstructure";
 import { checkCrossMarketCorrelation } from "../services/correlation-matrix";
 import { checkMonitoredPositions, pollPriceUpdates, registerPositionForMonitoring, unregisterPositionFromMonitoring } from "../services/price-monitor";
@@ -321,11 +321,7 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
     await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} scanning crypto prediction markets (BTC, ETH, SOL, ETFs, regulations)...`, { pipeline_stage: "scanning_start" });
 
     // Enhanced pipeline: use MarketEventBus for deduped fetching + market ranking
-    if (USE_ENHANCED_PIPELINE) {
-      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus (enhanced pipeline)...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
-    } else {
-      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching trending markets from Jupiter Predict...`, { pipeline_stage: "fetching_markets" });
-    }
+    await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
     const markets = await scanMarkets("crypto");
     
     if (markets.length === 0) {
@@ -347,431 +343,42 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
   }
 
   if (fsm.getState() === "ANALYZING") {
-    // ===== ENHANCED PIPELINE (v2): research + per-market analysis + Bayesian synthesis =====
-    if (USE_ENHANCED_PIPELINE) {
-      const pipelineResult = await runEnhancedPipeline(ctx, fsm, {
-        agentId: AGENT_ID,
-        agentName: AGENT_NAME,
-        category: "crypto",
-        models: config.models,
-        decisionSystemPrompt: config.pipeline[1].systemPrompt,
-      }, saveState);
+    const pipelineResult = await runEnhancedPipeline(ctx, fsm, {
+      agentId: AGENT_ID,
+      agentName: AGENT_NAME,
+      category: "crypto",
+      models: config.models,
+      decisionSystemPrompt: config.pipeline[1].systemPrompt,
+    }, saveState);
 
-      if (pipelineResult.decision && pipelineResult.action === "analyzed") {
-        // We have a decision with edge found — proceed to execution
-        const marketsRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`);
-        const markets: MarketContext[] = marketsRaw ? JSON.parse(marketsRaw) : [];
-        const { positions: dbPositions } = await getActivePositions(ctx.jobId);
-        const positions: AgentPosition[] = dbPositions.map((p) => ({
-          marketId: p.marketId, side: p.side, amount: Number(p.amount),
-          entryPrice: Number(p.entryPrice), currentPrice: Number(p.currentPrice ?? p.entryPrice),
-          pnl: Number(p.pnl ?? 0),
-        }));
-        const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
-        const decision = pipelineResult.decision;
+    if (pipelineResult.decision && pipelineResult.action === "analyzed") {
+      // We have a decision with edge found — proceed to execution
+      const marketsRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`);
+      const markets: MarketContext[] = marketsRaw ? JSON.parse(marketsRaw) : [];
+      const { positions: dbPositions } = await getActivePositions(ctx.jobId);
+      const positions: AgentPosition[] = dbPositions.map((p) => ({
+        marketId: p.marketId, side: p.side, amount: Number(p.amount),
+        entryPrice: Number(p.entryPrice), currentPrice: Number(p.currentPrice ?? p.entryPrice),
+        pnl: Number(p.pnl ?? 0),
+      }));
+      const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
+      const decision = pipelineResult.decision;
 
-        if (decision.action === "buy" && decision.marketId) {
-          const buyResult = await executeBuy(
-            decision, AGENT_ID, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "crypto"
-          );
-          if (buyResult.success) {
-            fsm.transition("order_placed");
-            await saveState();
-            return { state: fsm.getState() as any, action: "executed", detail: `Bought on "${decision.marketQuestion}"`, decision, tokensUsed: pipelineResult.tokensUsed };
-          }
+      if (decision.action === "buy" && decision.marketId) {
+        const buyResult = await executeBuy(
+          decision, AGENT_ID, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "crypto"
+        );
+        if (buyResult.success) {
+          fsm.transition("order_placed");
+          await saveState();
+          return { state: fsm.getState() as any, action: "executed", detail: `Bought on "${decision.marketQuestion}"`, decision, tokensUsed: pipelineResult.tokensUsed };
         }
-
-        return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, decision: pipelineResult.decision, tokensUsed: pipelineResult.tokensUsed };
       }
 
-      return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, tokensUsed: pipelineResult.tokensUsed };
+      return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, decision: pipelineResult.decision, tokensUsed: pipelineResult.tokensUsed };
     }
 
-    // ===== LEGACY PIPELINE (v1): original analysis flow =====
-    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} fetching live crypto signals...`, { pipeline_stage: "signal_fetch_start" });
-
-    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} querying CoinGecko for price data...`, { pipeline_stage: "fetching_coingecko" });
-    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} querying DeFiLlama for TVL data...`, { pipeline_stage: "fetching_defillama" });
-    
-    const signals = await getSharedSignals("crypto");
-
-    const [cryptoSignals, defiSignals] = await Promise.allSettled([
-      getCryptoSignals(),
-      getDeFiSignals(),
-    ]);
-
-    const cryptoData = cryptoSignals.status === "fulfilled" ? cryptoSignals.value : {};
-    const defiData = defiSignals.status === "fulfilled" ? defiSignals.value : { protocols: {}, solana: null };
-
-    const signalCount = Object.keys(signals.gdelt).length + Object.keys(signals.acled).length +
-      Object.keys(signals.fred).length + Object.keys(cryptoData).length;
-
-    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} received ${signalCount} signal streams:`, { 
-      signals_count: signalCount, 
-      pipeline_stage: "signals_ready",
-      signal_sources: {
-        gdelt: Object.keys(signals.gdelt).length,
-        acled: Object.keys(signals.acled).length,
-        fred: Object.keys(signals.fred).length,
-        crypto_prices: Object.keys(cryptoData).length,
-        defi_protocols: Object.keys(defiData.protocols || {}).length,
-      }
-    });
-
-    const marketsRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`);
-    const markets: MarketContext[] = marketsRaw ? JSON.parse(marketsRaw) : [];
-
-    const { positions: dbPositions } = await getActivePositions(ctx.jobId);
-    const positions: AgentPosition[] = dbPositions.map((p) => ({
-      marketId: p.marketId, side: p.side, amount: Number(p.amount),
-      entryPrice: Number(p.entryPrice), currentPrice: Number(p.currentPrice ?? p.entryPrice),
-      pnl: Number(p.pnl ?? 0),
-    }));
-
-    if (positions.length > 0) {
-      await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} monitoring ${positions.length} open positions...`, { 
-        pipeline_stage: "position_check",
-        positions: positions.map(p => ({ marketId: p.marketId, side: p.side, amount: p.amount, pnl: p.pnl }))
-      });
-    }
-
-    const lastAnalysisRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`);
-    const lastAnalysisTime = lastAnalysisRaw ? Number(lastAnalysisRaw) : null;
-    
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} checking signal thresholds...`, { pipeline_stage: "threshold_check_start" });
-    const thresholdCheck = checkThresholds(signals, lastAnalysisTime, markets, positions, "crypto");
-
-    if (!thresholdCheck.triggered) {
-      fsm.transition("no_edge");
-      await saveState();
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME}: No signal thresholds triggered — market is calm, skipping deep analysis`, { pipeline_stage: "threshold_check", reasons: [] });
-      return { state: fsm.getState(), action: "analyzed", detail: "No thresholds triggered, skipping LLM" };
-    }
-
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⚡ ${thresholdCheck.reasons.length} signal triggers detected:`, { 
-      pipeline_stage: "thresholds_triggered", 
-      signals_count: signalCount,
-      trigger_reasons: thresholdCheck.reasons
-    }, "significant");
-
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} building portfolio snapshot...`, { pipeline_stage: "portfolio_snapshot" });
-    const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
-    
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} portfolio: $${portfolio.totalBalance.toFixed(2)} USDC | ${positions.length} open positions | Daily PnL: $${portfolio.dailyPnl.toFixed(2)}`, { 
-      pipeline_stage: "portfolio_ready",
-      balance: portfolio.totalBalance,
-      positions: positions.length,
-      daily_pnl: portfolio.dailyPnl
-    });
-
-    // STAGE 1+2: Combined Research + Analysis (single LLM call — saves ~90s)
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🔍 Stage 1/2: Combined research + Bayesian analysis on ${markets.length} markets...`, { pipeline_stage: "research_analysis_start" });
-
-    const researchAnalysisPrompt = buildPerMarketResearchContext(signals, cryptoData, defiData, markets, positions, portfolio.totalBalance, thresholdCheck.reasons);
-
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for combined research+analysis (model: ${config.models.analysis.model})...`, { pipeline_stage: "llm_research_analysis_call" });
-    const primaryMarket = markets[0];
-    const primaryYesPrice = primaryMarket?.outcomes.find(o => o.name.toLowerCase() === "yes")?.price ?? 0;
-    const primaryNoPrice = primaryMarket?.outcomes.find(o => o.name.toLowerCase() === "no")?.price ?? 0;
-    const researchAnalysis = await quickAnalysis({
-      modelConfig: config.models.analysis,
-      systemPrompt: config.pipeline[0].systemPrompt,
-      userMessage: researchAnalysisPrompt,
-      tools: config.pipeline[0].toolNames,
-      marketContext: primaryMarket ? { marketId: primaryMarket.marketId, yesPrice: primaryYesPrice, noPrice: primaryNoPrice } : undefined,
-    });
-
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ✅ Stage 1/2: Research + analysis complete`, { 
-      pipeline_stage: "research_analysis_complete", 
-      tokens_used: researchAnalysis.tokensUsed,
-      tool_calls: researchAnalysis.toolCalls,
-      reasoning_snippet: researchAnalysis.text.slice(0, 300)
-    }, "significant");
-
-    // Bayesian estimation with signal-strength-scaled likelihoods
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} running scaled Bayesian probability estimation on ${Math.min(markets.length, 5)} markets...`, { pipeline_stage: "bayesian_estimation" });
-    const bayesianResults = runScaledBayesianEstimation(markets.slice(0, 5), signals, cryptoData, researchAnalysis.text);
-
-    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} Bayesian estimates:`, {
-      pipeline_stage: "bayesian_results",
-      estimates: bayesianResults.map(b => ({ marketId: b.marketId, probability: (b.probability * 100).toFixed(1) + "%" }))
-    });
-
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} aggregating all signals (LLM + per-market crypto + GDELT + macro + Bayesian + temporal)...`, { pipeline_stage: "signal_aggregation" });
-
-    const signalAgeMinutes = signals.fetchedAt
-      ? (Date.now() - new Date(signals.fetchedAt).getTime()) / 60000
-      : 0;
-
-    const calibratedWeights = await getAllCalibratedWeights("crypto");
-
-    const defaultWeights: Record<string, number> = {
-      llm_analysis: 3.0, crypto_momentum: 2.0, gdelt_sentiment: 1.0, macro_signal: 1.5,
-    };
-    const decayedSignals = [
-      { name: "llm_analysis", value: extractProbabilityFromText(researchAnalysis.text), confidence: decayConfidence(0.7, signalAgeMinutes, "market"), weight: calibratedWeights["llm_analysis"] ?? defaultWeights["llm_analysis"] ?? 3.0 },
-      { name: "crypto_momentum", value: cryptoToProbability(cryptoData), confidence: decayConfidence(0.6, signalAgeMinutes, "coingecko"), weight: calibratedWeights["crypto_momentum"] ?? defaultWeights["crypto_momentum"] ?? 2.0 },
-      { name: "gdelt_sentiment", value: gdeltToProbability(signals.gdelt), confidence: decayConfidence(0.5, signalAgeMinutes, "gdelt"), weight: calibratedWeights["gdelt_sentiment"] ?? defaultWeights["gdelt_sentiment"] ?? 1.0 },
-      { name: "macro_signal", value: macroToProbability(signals.fred), confidence: decayConfidence(0.5, signalAgeMinutes, "fred"), weight: calibratedWeights["macro_signal"] ?? defaultWeights["macro_signal"] ?? 1.5 },
-      ...bayesianResults.map((b) => ({
-        name: `bayesian_${b.marketId}`,
-        value: b.probability,
-        confidence: decayConfidence(0.7, signalAgeMinutes, "market"),
-        weight: calibratedWeights[`bayesian_${b.marketId}`] ?? 2.0,
-      })),
-    ];
-    const finalAggregatedSignal = aggregateSignals(decayedSignals);
-
-    // Temporal awareness: penalize near-resolution and far-resolution markets
-    const temporalAdj = computeTemporalAdjustment(markets);
-
-    await publishFeedStep(ctx.agentId, "signal_update", `${AGENT_NAME} ✅ Stage 1/2: Signal aggregation complete (calibrated + decayed + temporal)`, { 
-      pipeline_stage: "analysis_complete", 
-      aggregated_probability: (finalAggregatedSignal.probability * 100).toFixed(1) + "%",
-      aggregated_confidence: (finalAggregatedSignal.confidence * 100).toFixed(1) + "%",
-      calibration_info: Object.keys(calibratedWeights).length > 0 ? `${Object.keys(calibratedWeights).length} calibrated weights` : "using defaults",
-      signals_combined: finalAggregatedSignal.nSignals,
-      signal_age_minutes: signalAgeMinutes.toFixed(1),
-      temporal_adjustments: temporalAdj,
-      reasoning_snippet: researchAnalysis.text.slice(0, 300)
-    }, "significant");
-
-    // STAGE 2: Decision (renumbered from 3)
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🎯 Stage 2/2: Making trade decision with edge detection...`, { pipeline_stage: "decision_start" });
-
-    let decision!: TradeDecision;
-    let decisionTokens = 0;
-    try {
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} calling LLM for final decision (model: ${config.models.decision.model})...`, { pipeline_stage: "llm_decision_call" });
-      const result = await quickDecision<TradeDecision>({
-        modelConfig: config.models.decision,
-        systemPrompt: config.pipeline[1].systemPrompt,
-        userMessage: buildPerMarketDecisionContext(researchAnalysis.text, finalAggregatedSignal, markets, positions, portfolio.totalBalance, temporalAdj),
-        schema: TradeDecisionSchema,
-        tools: config.pipeline[1].toolNames,
-      });
-      decision = result.decision;
-      decisionTokens = result.tokensUsed;
-
-      // Feature 9: Adjust LLM confidence based on calibration data
-      const llmConfidenceAdj = await getConfidenceAdjustment("crypto", config.models.decision.model, decision.confidence);
-      if (llmConfidenceAdj !== 1.0) {
-        const originalConf = decision.confidence;
-        decision.confidence = Math.max(0, Math.min(1, decision.confidence * llmConfidenceAdj));
-        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} confidence calibrated: ${(originalConf * 100).toFixed(0)}% → ${(decision.confidence * 100).toFixed(0)}% (adj: ${(llmConfidenceAdj * 100).toFixed(0)}%)`, {
-          pipeline_stage: "confidence_calibration", original: originalConf, adjusted: decision.confidence, calibration_factor: llmConfidenceAdj,
-        });
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Unknown error";
-      fsm.transition("no_edge");
-      await saveState();
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ❌ Decision stage failed: ${errorMsg}`, { pipeline_stage: "decision_error" }, "critical");
-      return { state: fsm.getState(), action: "analyzed", detail: `Decision stage error: ${errorMsg}`, decision: decision ?? undefined, tokensUsed: researchAnalysis.tokensUsed };
-    }
-
-    const totalTokens = researchAnalysis.tokensUsed + decisionTokens;
-
-    // Validate LLM decision against known markets
-    await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} validating decision against known markets...`, { pipeline_stage: "decision_validation" });
-    const validation = validateDecision(decision, markets);
-    if (!validation.valid) {
-      fsm.transition("no_edge");
-      await saveState();
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ❌ Decision rejected — ${validation.error}`, { pipeline_stage: "validation_failed" }, "critical");
-      return { state: fsm.getState(), action: "analyzed", detail: `Decision rejected: ${validation.error}`, decision, tokensUsed: totalTokens };
-    }
-
-    // Skip further checks for hold decisions
-    const action: string = decision.action;
-    if (action === "hold" || decision.confidence < config.minConfidence) {
-      await redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`, String(Date.now()));
-      fsm.transition("no_edge");
-      await saveState();
-      await publishReasoningEvent(ctx.agentId, ctx.jobId, decision, AGENT_NAME);
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 📋 Decision: HOLD — confidence ${(decision.confidence * 100).toFixed(0)}%${decision.confidence < config.minConfidence ? ` below ${(config.minConfidence * 100).toFixed(0)}% threshold` : ""}`, { 
-        pipeline_stage: "hold", 
-        confidence: decision.confidence,
-        reasoning: decision.reasoning
-      });
-      return { state: fsm.getState(), action: "analyzed", detail: `Decision: hold (confidence: ${(decision.confidence * 100).toFixed(0)}%)`, decision, tokensUsed: totalTokens };
-    }
-
-    // Compute edge for fast-path determination
-    const preEdgeMarketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
-    const preEdge = calculateEdge(finalAggregatedSignal.probability, preEdgeMarketPrice, finalAggregatedSignal.confidence);
-
-    // ===== FAST-PATH: Skip consensus for high-conviction trades (adversarial still runs) =====
-    const FAST_PATH_EDGE_THRESHOLD = 0.15;
-    const useFastPath = preEdge.netEdge > FAST_PATH_EDGE_THRESHOLD && decision.confidence >= 0.85;
-
-    if (useFastPath) {
-      await publishFeedStep(ctx.agentId, "edge_detected", `${AGENT_NAME} ⚡ FAST-PATH: Edge ${(preEdge.netEdge * 100).toFixed(1)}% + confidence ${(decision.confidence * 100).toFixed(0)}% — skipping consensus (adversarial still runs)`, { 
-        pipeline_stage: "fast_path",
-        edge: preEdge.netEdge,
-        confidence: decision.confidence,
-      }, "significant");
-    }
-
-    // ===== POST-DECISION PIPELINE (Features 3, 5, 6, 7, 10) =====
-
-    // Feature 10: Scenario Tree Analysis (quick gate check)
-    if (decision.marketId) {
-      const marketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId, "yes") : getMarketPrice(markets, decision.marketId, "no");
-      const scenarioGate = quickScenarioGate(
-        finalAggregatedSignal.probability,
-        marketPrice,
-        decision.amount ?? 0,
-        !!decision.isYes,
-        portfolio.totalBalance,
-        positions
-      );
-
-      if (!scenarioGate.pass) {
-        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⛔ Scenario gate: ${scenarioGate.reason}`, { pipeline_stage: "scenario_gate_failed" }, "critical");
-        fsm.transition("no_edge");
-        await saveState();
-        return { state: fsm.getState(), action: "analyzed", detail: `Scenario gate blocked: ${scenarioGate.reason}`, decision, tokensUsed: totalTokens };
-      }
-
-      // Full scenario analysis
-      const scenarioResult = runScenarioAnalysis({
-        estimatedProbability: finalAggregatedSignal.probability,
-        marketPrice,
-        amount: decision.amount ?? 0,
-        isYes: !!decision.isYes,
-        platformFee: 0.02,
-        positions,
-        balance: portfolio.totalBalance,
-      });
-
-      // Persist scenario analysis
-      try {
-        await db.insert(schema.scenarioResults).values({
-          agentId: ctx.agentId,
-          jobId: ctx.jobId,
-          marketId: decision.marketId ?? "",
-          action: decision.action,
-          estimatedProbability: String(finalAggregatedSignal.probability),
-          totalExpectedValue: String(scenarioResult.totalExpectedValue),
-          riskRewardRatio: String(scenarioResult.riskRewardRatio),
-          shouldTrade: scenarioResult.shouldTrade,
-          reason: scenarioResult.reason,
-          scenarios: scenarioResult.scenarios,
-        }).onConflictDoNothing().catch(() => {});
-      } catch {}
-
-      if (!scenarioResult.shouldTrade) {
-        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ⛔ Scenario analysis rejected: ${scenarioResult.reason}`, { 
-          pipeline_stage: "scenario_rejected",
-          expected_value: scenarioResult.totalExpectedValue.toFixed(2),
-          risk_reward: scenarioResult.riskRewardRatio.toFixed(2),
-        }, "critical");
-        fsm.transition("no_edge");
-        await saveState();
-        return { state: fsm.getState(), action: "analyzed", detail: `Scenario rejected: ${scenarioResult.reason}`, decision, tokensUsed: totalTokens };
-      }
-
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ✅ Scenario analysis passed: EV=$${scenarioResult.totalExpectedValue.toFixed(2)}, R/R=${scenarioResult.riskRewardRatio.toFixed(2)}:1`, { 
-        pipeline_stage: "scenario_passed",
-        expected_value: scenarioResult.totalExpectedValue.toFixed(2),
-        risk_reward: scenarioResult.riskRewardRatio.toFixed(2),
-      });
-    }
-
-    // Feature 3: Adversarial Self-Review (devil's advocate) — always runs, even on fast-path
-    if (decision.marketId) {
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🔍 Running adversarial review...`, { pipeline_stage: "adversarial_review" });
-      const review = await runAdversarialReview(decision, markets, positions, portfolio.totalBalance, ctx.agentId, AGENT_NAME);
-
-      try {
-        await db.insert(schema.adversarialReviews).values({
-          agentId: ctx.agentId,
-          marketId: decision.marketId ?? "",
-          action: decision.action,
-          overturned: review.overturn,
-          originalConfidence: String(decision.confidence),
-          riskAdjustedConfidence: String(review.riskAdjustedConfidence),
-          reason: review.reason,
-          risks: review.risks,
-        }).onConflictDoNothing().catch(() => {});
-      } catch {}
-
-      if (review.overturn) {
-        fsm.transition("no_edge");
-        await saveState();
-        return { state: fsm.getState(), action: "analyzed", detail: `Adversarial review overturned: ${review.reason}`, decision, tokensUsed: totalTokens };
-      }
-
-      // Adjust confidence based on adversarial review
-      decision.confidence = Math.min(decision.confidence, review.riskAdjustedConfidence);
-    }
-
-    // Feature 5: Multi-Model Consensus — skip on fast-path
-    if (decision.marketId && !useFastPath) {
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} 🤝 Running multi-model consensus...`, { pipeline_stage: "multi_model_consensus" });
-      const consensus = await runMultiModelConsensus({
-        systemPrompt: config.pipeline[1].systemPrompt,
-        userMessage: buildPerMarketDecisionContext(researchAnalysis.text, finalAggregatedSignal, markets, positions, portfolio.totalBalance, temporalAdj),
-        schema: TradeDecisionSchema,
-        agentId: ctx.agentId,
-        agentName: AGENT_NAME,
-        primaryDecision: decision,
-      });
-
-      try {
-        await db.insert(schema.consensusResults).values({
-          agentId: ctx.agentId,
-          marketId: decision.marketId ?? "",
-          consensus: consensus.consensus,
-          modelsAgreed: consensus.modelsAgreed,
-          modelsQueried: consensus.modelsQueried,
-          confidenceAdjustment: String(consensus.confidenceAdjustment),
-          decisionAction: consensus.decision.action,
-          decisionConfidence: String(consensus.decision.confidence),
-          details: consensus.details,
-        }).onConflictDoNothing().catch(() => {});
-      } catch {}
-
-      // Use consensus-adjusted decision
-      decision = consensus.decision;
-
-      if (decision.action === "hold") {
-        fsm.transition("no_edge");
-        await saveState();
-        return { state: fsm.getState(), action: "analyzed", detail: `Consensus disagreement — defaulting to hold`, decision, tokensUsed: totalTokens };
-      }
-    }
-
-    // Feature 4: Record prediction for outcome feedback
-    if (decision.marketId) {
-      await recordOutcomePrediction("crypto", ctx.agentId, decision, signals, markets, config.models.decision.model).catch((err) =>
-        console.error(`[Crypto Agent] Failed to record prediction: ${err.message}`)
-      );
-    }
-
-    // Record analysis timestamp
-    await redis.set(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:last_analysis`, String(Date.now()));
-
-    const finalMarketPrice = decision.isYes ? getMarketPrice(markets, decision.marketId ?? "", "yes") : getMarketPrice(markets, decision.marketId ?? "", "no");
-    const edge = calculateEdge(finalAggregatedSignal.probability, finalMarketPrice, finalAggregatedSignal.confidence);
-
-    await publishFeedStep(ctx.agentId, "edge_detected", `${AGENT_NAME} 🎯 Edge detected: ${edge.direction.toUpperCase()} on "${decision.marketQuestion}"`, { 
-      pipeline_stage: "edge_found", 
-      edge_percent: (edge.netEdge * 100).toFixed(1) + "%",
-      raw_edge: (edge.rawEdge * 100).toFixed(1) + "%",
-      confidence: (decision.confidence * 100).toFixed(0) + "%",
-      market_analyzed: decision.marketQuestion,
-      market_id: decision.marketId,
-      is_yes: decision.isYes
-    }, "significant");
-
-    await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:decision`, 600, JSON.stringify(decision));
-    fsm.transition("edge_found");
-    await saveState();
-    await publishReasoningEvent(ctx.agentId, ctx.jobId, decision, AGENT_NAME);
-
-    return { state: fsm.getState(), action: "analyzed", detail: `Edge found: ${decision.action} ${decision.isYes ? "YES" : "NO"} on "${decision.marketQuestion}" | Edge: ${(edge.netEdge * 100).toFixed(1)}%`, decision, tokensUsed: totalTokens };
+    return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, tokensUsed: pipelineResult.tokensUsed };
   }
 
   if (fsm.getState() === "EXECUTING") {

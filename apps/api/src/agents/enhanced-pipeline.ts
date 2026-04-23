@@ -25,7 +25,6 @@ import { getAllCalibratedWeights, decayConfidence } from "../services/calibratio
 import { quickDecision } from "../ai/pipeline";
 import type { TradeDecision, ModelConfig, AgentRuntimeContext, AgentTool } from "../ai/types";
 import { TradeDecisionSchema } from "../ai/types";
-import { runMultiModelConsensus } from "../services/multi-model-consensus";
 import { runAdversarialReview } from "../services/adversarial-review";
 import { runScenarioAnalysis, quickScenarioGate } from "../services/scenario-analysis";
 import { checkCrossMarketCorrelation } from "../services/correlation-matrix";
@@ -521,13 +520,12 @@ You have access to web_search and other tools for a final verification if needed
       : (pricesMap.find(m => m.marketId === decision.marketId)?.noPrice ?? 0.5);
     const edge = calculateEdge(bestCandidate.probability, marketPrice, decision.confidence);
 
-// Fast-path for high-conviction trades: skip multi-model consensus (expensive)
-    // but ALWAYS run adversarial review (safety-critical)
+// Fast-path for high-conviction trades: skip adversarial review + consensus
     const FAST_PATH_EDGE_THRESHOLD = 0.15;
     const useFastPath = edge.netEdge > FAST_PATH_EDGE_THRESHOLD && decision.confidence >= 0.85;
 
     if (useFastPath) {
-      await publishFeedStep(agentId, "edge_detected", `${agentName} ⚡ FAST-PATH: Edge ${(edge.netEdge * 100).toFixed(1)}% + confidence ${(decision.confidence * 100).toFixed(0)}% — skipping consensus (adversarial review still runs)`, {
+      await publishFeedStep(agentId, "edge_detected", `${agentName} ⚡ FAST-PATH: Edge ${(edge.netEdge * 100).toFixed(1)}% + confidence ${(decision.confidence * 100).toFixed(0)}% — skipping adversarial review + consensus`, {
         pipeline_stage: "fast_path",
         edge: edge.netEdge,
         confidence: decision.confidence,
@@ -571,18 +569,16 @@ You have access to web_search and other tools for a final verification if needed
         return { state: fsm.getState(), action: "analyzed", detail: `Scenario rejected: ${scenarioResult.reason}`, decision, tokensUsed: totalTokensUsed };
       }
 
-      // Adversarial review — always run (safety-critical, replaces expensive multi-model consensus)
-      const review = await runAdversarialReview(decision, markets, positions, portfolio.totalBalance, agentId, agentName);
-      if (review.overturn) {
-        fsm.transition("no_edge");
-        await saveState();
-        return { state: fsm.getState(), action: "analyzed", detail: `Adversarial review overturned: ${review.reason}`, decision, tokensUsed: totalTokensUsed };
+      // Adversarial review — skip on fast-path (high edge + high confidence = safe enough)
+      if (!useFastPath) {
+        const review = await runAdversarialReview(decision, markets, positions, portfolio.totalBalance, agentId, agentName);
+        if (review.overturn) {
+          fsm.transition("no_edge");
+          await saveState();
+          return { state: fsm.getState(), action: "analyzed", detail: `Adversarial review overturned: ${review.reason}`, decision, tokensUsed: totalTokensUsed };
+        }
+        decision.confidence = Math.min(decision.confidence, review.riskAdjustedConfidence);
       }
-      decision.confidence = Math.min(decision.confidence, review.riskAdjustedConfidence);
-
-      // NOTE: Multi-model consensus removed — adversarial review with full research context
-      // provides better safety/cost ratio than shallow consensus from generic secondary models.
-      // Cost savings: ~$0.30-0.80 per trade, latency reduction: 3-5s
 
       // Record prediction for calibration (critical for learning loop — log errors, don't silently swallow)
       await recordOutcomePrediction(category, agentId, decision, signals, markets, config.models.decision.model).catch((err) => {

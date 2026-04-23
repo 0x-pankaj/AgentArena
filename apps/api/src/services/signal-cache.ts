@@ -153,10 +153,15 @@ export async function getSharedSignals(
     case "politics":
       break;
 
-    case "general":
-      signals.sports = await getCachedOrFetch(SPORTS_SIGNALS_KEY, fetchSportsSignals, SIGNAL_CACHE_TTL.sports);
-      signals.crypto = await getCachedOrFetch(CRYPTO_SIGNALS_KEY, fetchCryptoSignals, SIGNAL_CACHE_TTL.crypto);
+    case "general": {
+      const [sports, crypto] = await Promise.all([
+        getCachedOrFetch(SPORTS_SIGNALS_KEY, fetchSportsSignals, SIGNAL_CACHE_TTL.sports),
+        getCachedOrFetch(CRYPTO_SIGNALS_KEY, fetchCryptoSignals, SIGNAL_CACHE_TTL.crypto),
+      ]);
+      signals.sports = sports;
+      signals.crypto = crypto;
       break;
+    }
   }
 
   console.log(

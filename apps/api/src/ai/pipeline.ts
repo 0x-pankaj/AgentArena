@@ -24,6 +24,73 @@ function toSdkTools(tools: Record<string, AgentTool>): Record<string, any> {
   return result;
 }
 
+// ============================================================
+// Tool Pre-fetching — execute slow external API calls in
+// parallel BEFORE the LLM call, then feed results as context.
+// This eliminates sequential tool-call latency inside the LLM
+// loop. Tools that need specific IDs are still passed to the
+// LLM for on-demand lookup.
+// ============================================================
+
+async function prefetchToolData(
+  tools: Record<string, AgentTool>,
+  userMessage: string
+): Promise<{ context: string; remainingTools: Record<string, AgentTool> }> {
+  const prefetchResults: Array<{ name: string; result: unknown; error?: string }> = [];
+  const remainingTools: Record<string, AgentTool> = {};
+
+  // Extract a concise query from the user message for search tools
+  const query = userMessage.slice(0, 200).replace(/\n/g, " ");
+
+  await Promise.all(
+    Object.entries(tools).map(async ([name, tool]) => {
+      try {
+        let params: Record<string, unknown> = {};
+        const schemaShape = tool.parameters as z.ZodObject<any>;
+        const shape = schemaShape.shape || {};
+        const keys = Object.keys(shape);
+
+        if (keys.length === 0) {
+          // No-param tool — safe to prefetch
+          params = {};
+        } else if (keys.includes("query")) {
+          params = { query, maxResults: 10 };
+        } else if (keys.includes("topic")) {
+          params = { topic: query.slice(0, 100), maxResults: 50 };
+        } else if (keys.includes("timespan") && keys.includes("mode")) {
+          params = { query, timespan: "24h", mode: "artlist" };
+        } else {
+          // Tool requires specific IDs (coinId, seriesId, marketId, etc.)
+          // Keep it for the LLM to call on-demand
+          remainingTools[name] = tool;
+          return;
+        }
+
+        const result = await tool.execute(params);
+        prefetchResults.push({ name, result });
+      } catch (err) {
+        prefetchResults.push({
+          name,
+          result: null,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })
+  );
+
+  const context = prefetchResults.length > 0
+    ? `\n\n## PRE-FETCHED EXTERNAL DATA (do not call these tools again):\n\n` +
+      prefetchResults
+        .map(
+          (r) =>
+            `### ${r.name}:\n${r.error ? `Error: ${r.error}` : JSON.stringify(r.result, null, 2).slice(0, 2000)}`
+        )
+        .join("\n\n")
+    : "";
+
+  return { context, remainingTools };
+}
+
 // --- Per-agent token bucket rate limiter for LLM calls ---
 
 const AGENT_LLM_LIMITERS = new Map<string, {
@@ -138,19 +205,29 @@ export async function quickAnalysis(params: {
     }
   }
 
+  // Pre-fetch tool data in parallel to eliminate sequential tool-call latency
+  const agentTools = toAITools(tools);
+  const hasTools = Object.keys(agentTools).length > 0;
+  let enrichedPrompt = userMessage;
+  let sdkTools: Record<string, any> = {};
+
+  if (hasTools) {
+    const { context, remainingTools } = await prefetchToolData(agentTools, userMessage);
+    enrichedPrompt = userMessage + context;
+    sdkTools = toSdkTools(remainingTools);
+  }
+
   await acquireLLMSlot(agentId);
   try {
     const model = resolveModel(modelConfig);
-    const agentTools = toAITools(tools);
-    const sdkTools = toSdkTools(agentTools);
-    const hasTools = Object.keys(sdkTools).length > 0;
+    const hasRemainingTools = Object.keys(sdkTools).length > 0;
 
     const result = await withRetry(
       () => generateText({
         model,
         system: systemPrompt,
-        prompt: userMessage,
-        tools: hasTools ? sdkTools : undefined,
+        prompt: enrichedPrompt,
+        tools: hasRemainingTools ? sdkTools : undefined,
         temperature: modelConfig.temperature ?? 0.3,
         maxRetries: 0,
         abortSignal: AbortSignal.timeout(90_000),

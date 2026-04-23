@@ -402,10 +402,7 @@ export async function analyzeMarketsBatch(
       }
     }
 
-    // Small delay between batches
-    if (i + concurrency < deepMarkets.length) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
+
   }
 
   console.log(
@@ -787,10 +784,7 @@ export async function analyzeMarketsInBatch(
         console.log(`[BatchAnalysis] Cross-market insight: ${parsed.crossMarketInsight}`);
       }
 
-      // Small delay between batches
-      if (i + maxPerBatch < markets.length) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-      }
+
     } catch (err) {
       console.error(`[BatchAnalysis] Error analyzing batch ${i}-${i + batch.length}:`, err);
 
