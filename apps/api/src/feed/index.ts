@@ -7,6 +7,21 @@ import type { FeedEvent } from "@agent-arena/shared";
 const MAX_RECENT_EVENTS = 200;
 const FEED_CHANNEL = "feed:live";
 
+// --- UUID validation helper ---
+function isValidUUID(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+}
+
+// Derive category from hardcoded agent IDs like "politics-agent" → "politics"
+function deriveCategoryFromAgentId(agentId: string): string | undefined {
+  const knownPrefixes = ["politics", "crypto", "sports", "general"];
+  const prefix = agentId.split("-")[0]?.toLowerCase();
+  if (prefix && knownPrefixes.includes(prefix)) {
+    return prefix;
+  }
+  return undefined;
+}
+
 // --- Agent name cache: resolve agentId → actual DB name ---
 const agentNameCache = new Map<string, string>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -18,6 +33,11 @@ async function resolveAgentName(agentId: string, fallbackName: string): Promise<
   const cachedAt = cacheTimestamps.get(agentId);
   if (cached && cachedAt && now - cachedAt < CACHE_TTL) {
     return cached;
+  }
+
+  // Skip DB lookup for hardcoded non-UUID agent IDs (e.g., "politics-agent")
+  if (!isValidUUID(agentId)) {
+    return fallbackName;
   }
 
   try {
@@ -170,14 +190,22 @@ export async function publishFeedEvent(event: FeedEvent): Promise<void> {
 
   // Add to category sorted set (look up agent category)
   try {
-    const [agent] = await db
-      .select({ category: schema.agents.category })
-      .from(schema.agents)
-      .where(eq(schema.agents.id, event.agent_id))
-      .limit(1);
+    let category: string | undefined;
 
-    if (agent?.category) {
-      const categoryKey = `${REDIS_KEYS.FEED_CATEGORY_PREFIX}${agent.category}`;
+    if (isValidUUID(event.agent_id)) {
+      const [agent] = await db
+        .select({ category: schema.agents.category })
+        .from(schema.agents)
+        .where(eq(schema.agents.id, event.agent_id))
+        .limit(1);
+      category = agent?.category;
+    } else {
+      // Hardcoded agent IDs like "politics-agent" — derive category from string
+      category = deriveCategoryFromAgentId(event.agent_id);
+    }
+
+    if (category) {
+      const categoryKey = `${REDIS_KEYS.FEED_CATEGORY_PREFIX}${category}`;
       await redis.zadd(categoryKey, score, serialized);
       await redis.zremrangebyrank(categoryKey, 0, -(MAX_RECENT_EVENTS + 1));
     }
@@ -200,13 +228,21 @@ export async function publishFeedEvent(event: FeedEvent): Promise<void> {
 
   // Publish for per-category channel
   try {
-    const [agent] = await db
-      .select({ category: schema.agents.category })
-      .from(schema.agents)
-      .where(eq(schema.agents.id, event.agent_id))
-      .limit(1);
-    if (agent?.category) {
-      const categoryChannel = `feed:category:${agent.category}`;
+    let category: string | undefined;
+
+    if (isValidUUID(event.agent_id)) {
+      const [agent] = await db
+        .select({ category: schema.agents.category })
+        .from(schema.agents)
+        .where(eq(schema.agents.id, event.agent_id))
+        .limit(1);
+      category = agent?.category;
+    } else {
+      category = deriveCategoryFromAgentId(event.agent_id);
+    }
+
+    if (category) {
+      const categoryChannel = `feed:category:${category}`;
       await redisPub.publish(categoryChannel, serialized);
     }
   } catch {}
@@ -216,7 +252,9 @@ let pendingDbWrites = 0;
 const MAX_PENDING_DB_WRITES = 50;
 
   // Also persist to DB (fire-and-forget with backpressure)
-  if (pendingDbWrites < MAX_PENDING_DB_WRITES) {
+  // Only persist if agent_id is a valid UUID (hardcoded agent IDs like "politics-agent"
+  // are not real DB agents and would violate the UUID foreign key constraint)
+  if (pendingDbWrites < MAX_PENDING_DB_WRITES && isValidUUID(event.agent_id)) {
     pendingDbWrites++;
     db.insert(schema.feedEvents)
       .values({
