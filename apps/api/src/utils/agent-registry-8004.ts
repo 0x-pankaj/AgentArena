@@ -8,6 +8,7 @@ import {
   IPFSClient,
 } from "8004-solana";
 import { SOLANA_RPC_URL, SOLANA_COMMITMENT, IS_DEVNET } from "@agent-arena/shared";
+import { getBackendPayer, ensureBackendPayerBalance } from "./devnet-helpers";
 
 // ═══════════════════════════════════════════════════════════════
 // 8004 Solana Agent Registry Integration
@@ -106,8 +107,8 @@ export async function get8004Collection(): Promise<PublicKey> {
     return DEVNET_BASE_COLLECTION;
   }
   const sdk = createSDK();
-  const config = await fetchRegistryConfig(sdk["connection"] as any, REGISTRY_PROGRAM_ID);
-  return config.collectionMint;
+  const config = await fetchRegistryConfig((sdk as any).connection, REGISTRY_PROGRAM_ID);
+  return (config as any).collection ?? DEVNET_BASE_COLLECTION;
 }
 
 /**
@@ -143,11 +144,38 @@ export async function registerAgentOn8004(
     atomEnabled: params.atomEnabled ?? true,
   });
 
-  const [atomStats] = getAtomStatsPDA(agent.asset);
+  const asset = (agent as any).asset as PublicKey;
+  const [atomStats] = getAtomStatsPDA(asset);
 
   return {
-    agentAsset: agent.asset.toBase58(),
+    agentAsset: asset.toBase58(),
     atomStats: atomStats.toBase58(),
+  };
+}
+
+/**
+ * Register a new agent on 8004 using the backend payer keypair.
+ * Used for auto-registration during agent creation.
+ */
+export async function registerAgentOn8004WithBackendPayer(
+  params: {
+    ownerAddress: string;
+    metadata: AgentMetadata;
+    atomEnabled?: boolean;
+  }
+): Promise<RegisterAgentResult & { txSignature?: string }> {
+  // Ensure backend has SOL for fees
+  await ensureBackendPayerBalance(0.5);
+
+  const payer = getBackendPayer();
+  const result = await registerAgentOn8004({
+    ...params,
+    payerKeypair: payer,
+  });
+
+  return {
+    ...result,
+    txSignature: undefined, // SDK doesn't expose tx sig directly; we can enhance later
   };
 }
 
@@ -184,7 +212,7 @@ export async function buildRegisterAgentTx8004(
     skipSend: true,
   });
 
-  return result.transaction ?? new Transaction();
+  return (result as any).transaction ?? new Transaction();
 }
 
 /**
@@ -218,13 +246,13 @@ export async function fetchAgentAsset(ownerAddress: string): Promise<{
 
     if (agents.length === 0) return null;
 
-    const agent = agents[0];
+    const agent = agents[0] as any;
     const asset = await sdk.loadAgent(agent.asset);
 
     return {
       assetAddress: agent.asset.toBase58(),
       owner: ownerAddress,
-      metadataUri: asset.metadata?.uri ?? "",
+      metadataUri: (asset as any).metadata?.uri ?? "",
       atomEnabled: agent.atomEnabled ?? false,
       createdAt: 0,
     };
@@ -261,8 +289,9 @@ export async function updateAgentMetadata8004(
 
     const metadataUri = await uploadMetadata(agentMeta);
 
-    const result = await sdk.setAgentURI(agents[0].asset, metadataUri, { skipSend: true });
-    return result.transaction?.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64") ?? null;
+    const agent = agents[0] as any;
+    const result = await (sdk as any).setAgentUri(agent.asset, metadataUri, { skipSend: true });
+    return (result as any).transaction?.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64") ?? null;
   } catch {
     return null;
   }
@@ -279,8 +308,9 @@ export async function enableAtomForAgent(ownerAddress: string): Promise<string |
 
     if (agents.length === 0) return null;
 
-    await sdk.enableAtom(agents[0].asset);
-    return agents[0].asset.toBase58();
+    const agent = agents[0] as any;
+    await sdk.enableAtom(agent.asset);
+    return agent.asset.toBase58();
   } catch {
     return null;
   }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Colors, Fonts, BorderRadius, Spacing } from '../../constants/Colors';
+import { AtomBadge } from './AtomBadge';
 
 interface AgentCardProps {
   agent: {
@@ -9,6 +10,9 @@ interface AgentCardProps {
     category: string;
     isActive?: boolean;
     isVerified?: boolean;
+    trustTier?: string;
+    reputationScore?: number;
+    assetAddress?: string;
     runtimeStatus?: {
       state?: string;
       running?: boolean;
@@ -38,6 +42,8 @@ export function AgentCard({ agent, onPress }: AgentCardProps) {
   const activeStates = ['SCANNING', 'ANALYZING', 'EXECUTING', 'MONITORING'];
   const isCurrentlyActive = isActiveAgent && activeStates.includes(runtimeState || '');
 
+  const isRegistered8004 = !!agent.assetAddress;
+
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
@@ -57,10 +63,20 @@ export function AgentCard({ agent, onPress }: AgentCardProps) {
                 <Text style={styles.verifiedBadge}>✓</Text>
               )}
             </View>
-            <View style={[styles.categoryBadge, { backgroundColor: (categoryColor as string) + '22' }]}>
-              <Text style={[styles.categoryText, { color: categoryColor as string }]}>
-                {agent.category.toUpperCase()}
-              </Text>
+            <View style={styles.badgeRow}>
+              <View style={[styles.categoryBadge, { backgroundColor: (categoryColor as string) + '22' }]}>
+                <Text style={[styles.categoryText, { color: categoryColor as string }]}>
+                  {agent.category.toUpperCase()}
+                </Text>
+              </View>
+              {isRegistered8004 && (
+                <AtomBadge tier={agent.trustTier} score={agent.reputationScore} size="sm" />
+              )}
+              {!isRegistered8004 && (
+                <View style={styles.unregisteredBadge}>
+                  <Text style={styles.unregisteredText}>Unregistered</Text>
+                </View>
+              )}
             </View>
           </View>
         </View>
@@ -164,6 +180,12 @@ const styles = StyleSheet.create({
     color: Colors.accent,
     fontWeight: '700',
   },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    flexWrap: 'wrap',
+  },
   categoryBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: Spacing.sm,
@@ -175,6 +197,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+  unregisteredBadge: {
+    backgroundColor: Colors.warning + '15',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
+  },
+  unregisteredText: {
+    fontFamily: Fonts.body,
+    fontSize: 9,
+    fontWeight: '600',
+    color: Colors.warning,
   },
   statusDot: {
     paddingTop: 4,

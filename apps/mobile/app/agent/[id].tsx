@@ -252,6 +252,59 @@ export default function AgentDetailScreen() {
               </View>
             </View>
 
+            {/* ATOM Reputation Card */}
+            {atomRep && (
+              <View style={styles.reputationCard}>
+                <Text style={styles.reputationTitle}>ATOM Reputation</Text>
+                <View style={styles.reputationRow}>
+                  <View style={styles.reputationItem}>
+                    <Text style={styles.reputationValue}>{atomRep.formattedTier}</Text>
+                    <Text style={styles.reputationLabel}>Trust Tier</Text>
+                  </View>
+                  <View style={styles.reputationItem}>
+                    <Text style={styles.reputationValue}>{atomRep.qualityScore.toFixed(1)}</Text>
+                    <Text style={styles.reputationLabel}>Quality Score</Text>
+                  </View>
+                  <View style={styles.reputationItem}>
+                    <Text style={styles.reputationValue}>{atomRep.feedbackCount}</Text>
+                    <Text style={styles.reputationLabel}>Feedbacks</Text>
+                  </View>
+                </View>
+                {atomRep.compositeScore > 0 && (
+                  <View style={styles.compositeScoreBar}>
+                    <View style={[styles.compositeScoreFill, { width: `${Math.min(atomRep.compositeScore, 100)}%` }]} />
+                    <Text style={styles.compositeScoreText}>Reputation Score: {atomRep.compositeScore.toFixed(0)}/100</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* 8004 Registration Status */}
+            {agent.assetAddress ? (
+              <View style={styles.registryCard}>
+                <View style={styles.registryHeader}>
+                  <Text style={styles.registryTitle}>✓ 8004 Registered</Text>
+                  <Text style={styles.registrySubtitle}>Solana Agent Registry</Text>
+                </View>
+                <Text style={styles.registryAddr} numberOfLines={1}>{agent.assetAddress}</Text>
+                {agent.atomEnabled && (
+                  <View style={styles.atomEnabledBadge}>
+                    <Text style={styles.atomEnabledText}>ATOM Enabled</Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              agent.ownerAddress === walletAddress && (
+                <View style={styles.registryCardUnregistered}>
+                  <Text style={styles.registryTitleUnregistered}>Register on 8004</Text>
+                  <Text style={styles.registryDesc}>Mint this agent as an NFT on Solana's 8004 Agent Registry for discoverability and reputation.</Text>
+                  <Pressable style={styles.registryBtn} onPress={() => Alert.alert('Coming Soon', '8004 registration will be available in the next update.')}>
+                    <Text style={styles.registryBtnText}>Register Agent NFT</Text>
+                  </Pressable>
+                </View>
+              )
+            )}
+
             {/* === STEP INDICATOR === */}
             <View style={styles.stepsRow}>
               {['Configure', 'Launch'].map((label, i) => {
@@ -509,6 +562,47 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
   },
   profileBtnText: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '600', color: Colors.accent },
+
+  // Reputation card
+  reputationCard: {
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1,
+    borderColor: Colors.border, padding: Spacing.lg, gap: Spacing.md,
+  },
+  reputationTitle: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
+  reputationRow: { flexDirection: 'row', gap: Spacing.md },
+  reputationItem: { flex: 1, alignItems: 'center', gap: Spacing.xs },
+  reputationValue: { fontFamily: Fonts.mono, fontSize: 18, fontWeight: '700', color: Colors.accent },
+  reputationLabel: { fontFamily: Fonts.body, fontSize: 11, color: Colors.textMuted },
+  compositeScoreBar: { height: 8, backgroundColor: Colors.border, borderRadius: 4, overflow: 'hidden', marginTop: Spacing.xs },
+  compositeScoreFill: { height: '100%', backgroundColor: Colors.accent, borderRadius: 4 },
+  compositeScoreText: { fontFamily: Fonts.mono, fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+
+  // Registry card
+  registryCard: {
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1,
+    borderColor: Colors.success, padding: Spacing.lg, gap: Spacing.sm,
+  },
+  registryHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  registryTitle: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '700', color: Colors.success },
+  registrySubtitle: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted },
+  registryAddr: { fontFamily: Fonts.mono, fontSize: 12, color: Colors.accent },
+  atomEnabledBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
+    backgroundColor: Colors.accent + '22', borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm, paddingVertical: 2,
+  },
+  atomEnabledText: { fontFamily: Fonts.body, fontSize: 10, fontWeight: '700', color: Colors.accent },
+  registryCardUnregistered: {
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1,
+    borderColor: Colors.border, padding: Spacing.lg, gap: Spacing.md, alignItems: 'center',
+  },
+  registryTitleUnregistered: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
+  registryDesc: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, textAlign: 'center' },
+  registryBtn: {
+    backgroundColor: Colors.accent, borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
+  },
+  registryBtnText: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
 
   feedList: { gap: Spacing.md },
   skeletonList: { gap: Spacing.md },

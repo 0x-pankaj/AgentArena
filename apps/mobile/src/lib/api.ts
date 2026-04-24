@@ -183,6 +183,20 @@ export function useTrendingAgents(limit: number = 10) {
 
 // --- User hooks ---
 
+export function useFaucet() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (walletAddress: string) =>
+      fetchFromAPI('user.faucet', {
+        method: 'POST',
+        body: JSON.stringify({ walletAddress }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user'] });
+    },
+  });
+}
+
 export function useUserPortfolio() {
   return useQuery({
     queryKey: ['user', 'portfolio'],

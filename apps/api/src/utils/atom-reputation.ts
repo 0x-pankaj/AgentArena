@@ -4,8 +4,10 @@ import {
   SystemProgram,
   Transaction,
   TransactionInstruction,
+  Keypair,
 } from "@solana/web3.js";
 import { SOLANA_RPC_URL, SOLANA_COMMITMENT } from "@agent-arena/shared";
+import { getBackendPayer, ensureBackendPayerBalance } from "./devnet-helpers";
 
 // ═══════════════════════════════════════════════════════════════
 // ATOM Reputation Engine Integration
@@ -98,10 +100,9 @@ export interface AtomSummary {
 // ── Core Functions ─────────────────────────────────────────────
 
 /**
- * Submit feedback to ATOM reputation engine.
- * Called via CPI from 8004 registry (or directly if registry CPI not set up).
+ * Build ATOM feedback transaction (unsigned, for frontend signing).
  */
-export async function submitAtomFeedback(
+export async function buildAtomFeedbackTx(
   params: FeedbackParams
 ): Promise<{ txBase64: string; statsPDA: string } | null> {
   try {
@@ -109,8 +110,6 @@ export async function submitAtomFeedback(
     const reviewer = new PublicKey(params.reviewerAddress);
     const [atomStats] = getAtomStatsPDA(agentAsset);
 
-    // Build `giveFeedback` instruction
-    // Data: discriminator + value(string) + tag1(u8) + tag2(u8, optional)
     const valueBytes = Buffer.from(params.value, "utf-8");
     const data = Buffer.concat([
       getInstructionDiscriminator("giveFeedback"),
@@ -136,6 +135,53 @@ export async function submitAtomFeedback(
       txBase64: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
       statsPDA: atomStats.toBase58(),
     };
+  } catch (err) {
+    console.error("[ATOM] buildAtomFeedbackTx error:", err);
+    return null;
+  }
+}
+
+/**
+ * Submit feedback to ATOM reputation engine using backend signer.
+ * For hackathon traction: backend acts as reputation oracle.
+ */
+export async function submitAtomFeedback(
+  params: FeedbackParams
+): Promise<{ txSignature: string; statsPDA: string } | null> {
+  try {
+    await ensureBackendPayerBalance(0.1);
+    const payer = getBackendPayer();
+
+    const agentAsset = new PublicKey(params.agentAsset);
+    const [atomStats] = getAtomStatsPDA(agentAsset);
+
+    const valueBytes = Buffer.from(params.value, "utf-8");
+    const data = Buffer.concat([
+      getInstructionDiscriminator("giveFeedback"),
+      (() => { const b = Buffer.alloc(4); b.writeUInt32LE(valueBytes.length); return b; })(),
+      valueBytes,
+      Buffer.from([params.tag1]),
+      Buffer.from([params.tag2 ?? AtomTag.day]),
+    ]);
+
+    const keys = [
+      { pubkey: agentAsset, isSigner: false, isWritable: false },
+      { pubkey: atomStats, isSigner: false, isWritable: true },
+      { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+      { pubkey: REGISTRY_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ];
+
+    const ix = new TransactionInstruction({ keys, programId: ATOM_ENGINE_PROGRAM_ID, data });
+    const { blockhash } = await connection.getLatestBlockhash("confirmed");
+    const tx = new Transaction({ recentBlockhash: blockhash, feePayer: payer.publicKey }).add(ix);
+
+    tx.sign(payer);
+    const txSignature = await connection.sendRawTransaction(tx.serialize({ requireAllSignatures: true }));
+    await connection.confirmTransaction(txSignature, "confirmed");
+
+    console.log(`[ATOM] Feedback submitted: ${txSignature} for agent ${params.agentAsset}`);
+    return { txSignature, statsPDA: atomStats.toBase58() };
   } catch (err) {
     console.error("[ATOM] submitAtomFeedback error:", err);
     return null;

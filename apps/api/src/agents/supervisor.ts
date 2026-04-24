@@ -13,6 +13,9 @@ import { publishFeedEvent, buildFeedEvent } from "../feed";
 import { getEffectiveBalance } from "../utils/balance";
 import { createAgenticWalletForJob, returnUsdcToClient, getWalletBalance } from "../utils/privy-agentic";
 import { submitAtomFeedback, getAtomSummary, computeReputationScore, AtomTag } from "../utils/atom-reputation";
+import { registerAgentOn8004WithBackendPayer } from "../utils/agent-registry-8004";
+import { ensureDevnetBalance, transferSolFromBackend } from "../utils/devnet-helpers";
+import { IS_DEVNET } from "@agent-arena/shared";
 import { startBackgroundPositionMonitor, stopBackgroundPositionMonitor } from "../services/position-monitor";
 import { preFlightPositionSync } from "../services/position-monitor";
 
@@ -77,7 +80,38 @@ export async function hireAgent(params: {
     throw new Error("Agent is not active");
   }
 
-  // 2. Create Agentic Wallet with dynamic job policy
+  // 2. Ensure agent is registered on 8004 (auto-register if needed)
+  if (!agent.assetAddress && IS_DEVNET) {
+    try {
+      const result = await registerAgentOn8004WithBackendPayer({
+        ownerAddress: agent.ownerAddress,
+        metadata: {
+          name: agent.name,
+          description: agent.description ?? "",
+          category: agent.category,
+          capabilities: agent.capabilities ?? [],
+          pricingModel: agent.pricingModel as any,
+        },
+        atomEnabled: true,
+      });
+
+      await db
+        .update(schema.agents)
+        .set({
+          assetAddress: result.agentAsset,
+          atomStatsAddress: result.atomStats,
+          atomEnabled: true,
+        })
+        .where(eq(schema.agents.id, params.agentId));
+
+      agent.assetAddress = result.agentAsset;
+      console.log(`[Supervisor] Auto-registered agent ${agent.id} on 8004: ${result.agentAsset}`);
+    } catch (err: any) {
+      console.warn(`[Supervisor] 8004 auto-registration failed: ${err.message}`);
+    }
+  }
+
+  // 3. Create Agentic Wallet with dynamic job policy
   let walletId: string | null = null;
   let walletAddress: string | null = null;
   let policyId: string | null = null;
@@ -90,7 +124,7 @@ export async function hireAgent(params: {
       dailyCapUsdc: params.dailyCap,
       durationDays: params.durationDays ?? 7,
       denySolTransfers: true,
-      fundSol: IS_PRODUCTION ? 0.05 : 0,
+      fundSol: 0, // we fund separately below for devnet
     });
 
     walletId = agentic.walletId;
@@ -98,6 +132,16 @@ export async function hireAgent(params: {
     policyId = agentic.policyId;
 
     console.log(`[Supervisor] Created Agentic Wallet for job (${agent.name}): ${walletAddress} with policy ${policyId}`);
+
+    // Fund with devnet SOL for transaction fees
+    if (IS_DEVNET && walletAddress) {
+      try {
+        await ensureDevnetBalance(walletAddress, 0.1);
+        console.log(`[Supervisor] Ensured devnet SOL for agent wallet ${walletAddress}`);
+      } catch (err: any) {
+        console.warn(`[Supervisor] Devnet funding failed: ${err.message}`);
+      }
+    }
   } catch (err: any) {
     console.warn(`[Supervisor] Agentic wallet creation failed (continuing without wallet for paper trading): ${err.message}`);
   }
@@ -577,9 +621,9 @@ export async function completeJob(jobId: string): Promise<boolean> {
       });
 
       if (feedback) {
-        console.log(`[Supervisor] Submitted ATOM feedback for agent ${agent.id}: ${pnlPercent.toFixed(2)}%`);
+        console.log(`[Supervisor] Submitted ATOM feedback on-chain for agent ${agent.id}: ${pnlPercent.toFixed(2)}% (tx: ${feedback.txSignature})`);
 
-        // Update agent reputation in DB
+        // Update agent reputation in DB from on-chain state
         const summary = await getAtomSummary(agent.assetAddress);
         if (summary) {
           await db

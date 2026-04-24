@@ -1,7 +1,10 @@
-import { router, protectedProcedure } from "../utils/trpc";
+import { router, protectedProcedure, publicProcedure } from "../utils/trpc";
 import { eq, desc } from "drizzle-orm";
 import { db, schema } from "../db";
 import { getWalletBalance } from "../utils/privy";
+import { requestDevnetAirdrop } from "../utils/devnet-helpers";
+import { IS_DEVNET } from "@agent-arena/shared";
+import { z } from "zod";
 
 export const userRouter = router({
   get: protectedProcedure.query(async ({ ctx }) => {
@@ -22,6 +25,26 @@ export const userRouter = router({
 
     return user;
   }),
+
+  // Devnet faucet — airdrop SOL to user's wallet for 8004 mints/fees
+  faucet: publicProcedure
+    .input(z.object({ walletAddress: z.string().min(32).max(44) }))
+    .mutation(async ({ input }) => {
+      if (!IS_DEVNET) {
+        throw new Error("Faucet only available on devnet");
+      }
+
+      const success = await requestDevnetAirdrop(input.walletAddress, 0.5);
+      if (!success) {
+        throw new Error("Airdrop failed — devnet rate limit may apply. Try again later.");
+      }
+
+      return {
+        success: true,
+        message: "Airdropped 0.5 SOL to your wallet",
+        walletAddress: input.walletAddress,
+      };
+    }),
 
   getPortfolio: protectedProcedure.query(async ({ ctx }) => {
     // Get all jobs for user
