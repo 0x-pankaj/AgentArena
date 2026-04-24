@@ -3,10 +3,7 @@ import {
   Connection,
   PublicKey,
   VersionedTransaction,
-  SystemProgram,
   Transaction,
-  LAMPORTS_PER_SOL,
-  Keypair,
 } from "@solana/web3.js";
 import {
   getAssociatedTokenAddress,
@@ -22,7 +19,25 @@ import {
 
 // ═══════════════════════════════════════════════════════════════
 // Privy Agentic Wallet Integration
-// Upgraded from static policies to dynamic, job-specific policies
+//
+// ARCHITECTURE: Two-Wallet Model (Option A)
+// ──────────────────────────────────────────
+// 1. BACKEND PAYER (single, server-controlled via devnet-helpers.ts)
+//    - Pays for 8004 agent NFT mints
+//    - Pays for ATOM reputation feedback
+//    - Seeds agentic wallets with initial devnet SOL
+//    - Never holds user funds
+//
+// 2. AGENTIC WALLETS (one per job, Privy-controlled)
+//    - Each has its own SOL for tx fees (initially seeded by backend)
+//    - User-funded via deposits (USDC/SOL)
+//    - Privy policies enforce spending limits per job
+//    - Pays for its own trading transactions
+//    - Returns unused funds to client on job end
+//
+// This file ONLY handles: wallet creation, policy management,
+// transaction signing via Privy, balance queries, fund returns.
+// Funding is handled by devnet-helpers.ts (backend payer).
 // ═══════════════════════════════════════════════════════════════
 
 const appId = process.env.PRIVY_APP_ID ?? "";
@@ -132,35 +147,6 @@ export async function getWalletBalance(
   } catch {
     return { usdc: 0, sol: 0 };
   }
-}
-
-export async function fundAgentWallet(
-  agentWalletAddress: string,
-  solAmount: number = 0.1
-): Promise<{ solSig: string }> {
-  const treasuryKeypair = Keypair.fromSecretKey(
-    Uint8Array.from(
-      JSON.parse(await Bun.file(`${process.env.HOME}/.config/solana/id.json`).text())
-    )
-  );
-
-  const solIx = SystemProgram.transfer({
-    fromPubkey: treasuryKeypair.publicKey,
-    toPubkey: new PublicKey(agentWalletAddress),
-    lamports: Math.floor(solAmount * LAMPORTS_PER_SOL),
-  });
-
-  const { blockhash } = await solanaConnection.getLatestBlockhash("confirmed");
-  const tx = new Transaction({
-    recentBlockhash: blockhash,
-    feePayer: treasuryKeypair.publicKey,
-  }).add(solIx);
-
-  tx.sign(treasuryKeypair);
-  const solSig = await solanaConnection.sendRawTransaction(tx.serialize({ requireAllSignatures: true }));
-  await solanaConnection.confirmTransaction(solSig, "confirmed");
-
-  return { solSig };
 }
 
 /**
@@ -357,12 +343,16 @@ export async function revokePolicy(policyId: string): Promise<void> {
 }
 
 /**
- * Create a complete Agentic Wallet for a job:
- * wallet + policy + optional funding.
+ * Create a complete Agentic Wallet for a job: wallet + policy.
+ *
+ * NOTE: This does NOT fund the wallet. Funding is handled separately
+ * by the caller (supervisor.ts) using transferSolFromBackend() from
+ * devnet-helpers.ts. This keeps concerns separated:
+ *   - privy-agentic.ts = wallet + policy only
+ *   - devnet-helpers.ts = backend payer funding
  */
 export async function createAgenticWalletForJob(config: JobPolicyConfig & {
   agentName: string;
-  fundSol?: number;
 }): Promise<{
   walletId: string;
   walletAddress: string;
@@ -373,15 +363,6 @@ export async function createAgenticWalletForJob(config: JobPolicyConfig & {
 
   const wallet = await createAgentWallet(config.agentName, [policyId]);
   console.log(`[PrivyAgentic] Created wallet ${wallet.address} for job ${config.jobId}`);
-
-  if (config.fundSol && config.fundSol > 0) {
-    try {
-      const { solSig } = await fundAgentWallet(wallet.address, config.fundSol);
-      console.log(`[PrivyAgentic] Funded wallet with ${config.fundSol} SOL: ${solSig}`);
-    } catch (err: any) {
-      console.error(`[PrivyAgentic] Failed to fund wallet: ${err.message}`);
-    }
-  }
 
   return {
     walletId: wallet.id,

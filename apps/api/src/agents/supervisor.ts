@@ -14,7 +14,7 @@ import { getEffectiveBalance } from "../utils/balance";
 import { createAgenticWalletForJob, returnUsdcToClient, getWalletBalance } from "../utils/privy-agentic";
 import { submitAtomFeedback, getAtomSummary, computeReputationScore, AtomTag } from "../utils/atom-reputation";
 import { registerAgentOn8004WithBackendPayer } from "../utils/agent-registry-8004";
-import { ensureDevnetBalance, transferSolFromBackend } from "../utils/devnet-helpers";
+import { transferSolFromBackend } from "../utils/devnet-helpers";
 import { IS_DEVNET } from "@agent-arena/shared";
 import { startBackgroundPositionMonitor, stopBackgroundPositionMonitor } from "../services/position-monitor";
 import { preFlightPositionSync } from "../services/position-monitor";
@@ -124,7 +124,6 @@ export async function hireAgent(params: {
       dailyCapUsdc: params.dailyCap,
       durationDays: params.durationDays ?? 7,
       denySolTransfers: true,
-      fundSol: 0, // we fund separately below for devnet
     });
 
     walletId = agentic.walletId;
@@ -133,13 +132,18 @@ export async function hireAgent(params: {
 
     console.log(`[Supervisor] Created Agentic Wallet for job (${agent.name}): ${walletAddress} with policy ${policyId}`);
 
-    // Fund with devnet SOL for transaction fees
+    // Seed agentic wallet with devnet SOL from backend payer
+    // This SOL is for the wallet's own transaction fees, NOT backend infrastructure
     if (IS_DEVNET && walletAddress) {
       try {
-        await ensureDevnetBalance(walletAddress, 0.1);
-        console.log(`[Supervisor] Ensured devnet SOL for agent wallet ${walletAddress}`);
+        const fundSig = await transferSolFromBackend(walletAddress, 0.1);
+        if (fundSig) {
+          console.log(`[Supervisor] Seeded agent wallet ${walletAddress} with 0.1 SOL from backend payer: ${fundSig}`);
+        } else {
+          console.warn(`[Supervisor] Failed to seed agent wallet — backend payer may need devnet SOL`);
+        }
       } catch (err: any) {
-        console.warn(`[Supervisor] Devnet funding failed: ${err.message}`);
+        console.warn(`[Supervisor] Agent wallet funding failed: ${err.message}`);
       }
     }
   } catch (err: any) {
