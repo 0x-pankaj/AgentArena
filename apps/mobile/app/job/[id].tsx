@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Clipboard, ActivityIndicator, RefreshControl } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { VersionedTransaction } from '@solana/web3.js';
+
 import { getSolanaConnection } from '../../src/lib/solana';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
 import { FeedItem } from '../../src/components/FeedItem';
 import { SkeletonCard, SkeletonLoader } from '../../src/components/SkeletonLoader';
-import { useJobGet, useFeedByJob, useJobCancel, useJobWalletBalance, useJobFund, useJobResume, useJobRegisterOnChain, useJobConfirmOnChain, usePaperTradingBalance, usePaperTradingTopUp, useJobSwitchMode } from '../../src/lib/api';
+import { useJobGet, useFeedByJob, useJobCancel, useJobWalletBalance, useJobFund, useJobResume, usePaperTradingBalance, usePaperTradingTopUp, useJobSwitchMode, useJobPolicyDashboard } from '../../src/lib/api';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useEmbeddedSolanaWallet } from '@privy-io/expo';
 import { useSolBalance } from '../../src/hooks/useSolBalance';
@@ -28,14 +28,12 @@ export default function JobDetailScreen() {
   const cancelJob = useJobCancel();
   const fundJob = useJobFund();
   const resumeJob = useJobResume();
-  const registerOnChain = useJobRegisterOnChain();
-  const confirmOnChain = useJobConfirmOnChain();
   const walletBalance = useJobWalletBalance(id ?? '');
   const paperBalance = usePaperTradingBalance(id ?? '');
   const topUpPaper = usePaperTradingTopUp();
   const switchMode = useJobSwitchMode();
+  const { data: policyData } = useJobPolicyDashboard(id ?? '');
 
-  const [signing, setSigning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = async () => {
@@ -90,115 +88,7 @@ export default function JobDetailScreen() {
     } catch (err: any) { Alert.alert('Error', err?.message ?? 'Failed to resume'); }
   };
 
-  const handleRegisterOnChain = async () => {
-    if (!walletAddress) return;
-    setSigning(true);
-    try {
-      // 1. Get instruction data from backend
-      const result = await registerOnChain.mutateAsync(job.id);
-      if (result.message === 'Already registered') {
-        Alert.alert('Info', 'Already registered on-chain');
-        setSigning(false);
-        return;
-      }
-
-      // 2. Build transaction locally with fresh blockhash
-      const { Connection, PublicKey, TransactionInstruction, SystemProgram, VersionedTransaction, TransactionMessage } = await import('@solana/web3.js');
-                          const conn = getSolanaConnection();
-
-      const programId = new PublicKey(result.programId);
-      const user = new PublicKey(walletAddress);
-      const privyWalletPk = new PublicKey(result.privyWalletAddress);
-
-      // Use hash from backend (no crypto module in RN)
-      const jobIdHashBytes = Buffer.from(result.jobIdHash, 'hex');
-      const [pda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('job'), user.toBytes(), jobIdHashBytes],
-        programId
-      );
-
-      // Build instruction data: discriminator(8) + agent_id(borsh String) + privy_wallet(32 bytes)
-      const discriminator = Buffer.from([137, 22, 138, 41, 76, 208, 114, 50]); // initialize_job
-      const agentIdBytes = Buffer.from(job.id, 'utf-8');
-      const agentIdLen = Buffer.alloc(4);
-      agentIdLen.writeUInt32LE(agentIdBytes.length);
-      const privyWalletBytes = privyWalletPk.toBuffer();
-      const data = Buffer.concat([discriminator, agentIdLen, agentIdBytes, privyWalletBytes]);
-
-      const ix = new TransactionInstruction({
-        keys: [
-          { pubkey: pda, isSigner: false, isWritable: true },
-          { pubkey: user, isSigner: true, isWritable: true },
-          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-        ],
-        programId,
-        data,
-      });
-
-      // Get fresh blockhash
-      const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash('confirmed');
-
-      // Build versioned transaction
-      const messageV0 = new TransactionMessage({
-        payerKey: user,
-        recentBlockhash: blockhash,
-        instructions: [ix],
-      }).compileToV0Message();
-      const tx = new VersionedTransaction(messageV0);
-
-      // 3. Sign and send
-      let txSig = '';
-
-      if (connectionMethod === 'mwa' && transact) {
-        await transact(async (wallet: any) => {
-          await wallet.authorize({
-            cluster: 'devnet',
-            identity: { name: 'AgentArena', uri: 'https://agentarena.dev', icon: 'favicon.ico' },
-          });
-          const sigs = await (wallet as any).signAndSendTransactions({
-            payloads: [Buffer.from(tx.serialize()).toString('base64')],
-          });
-          txSig = sigs[0];
-        });
-      } else if (wallets && wallets.length > 0) {
-        const provider = await wallets[0].getProvider();
-        const result2 = await (provider as any).request({
-          method: 'signAndSendTransaction',
-          params: { transaction: tx, connection: conn },
-        });
-        txSig = result2.signature;
-      } else if (transact) {
-        await transact(async (wallet: any) => {
-          await wallet.authorize({
-            cluster: 'devnet',
-            identity: { name: 'AgentArena', uri: 'https://agentarena.dev', icon: 'favicon.ico' },
-          });
-          const sigs = await (wallet as any).signAndSendTransactions({
-            payloads: [Buffer.from(tx.serialize()).toString('base64')],
-          });
-          txSig = sigs[0];
-        });
-      } else {
-        Alert.alert('No Wallet', 'Connect Phantom/Solflare via MWA to register on-chain.');
-        setSigning(false);
-        return;
-      }
-
-      console.log('On-chain TX:', txSig);
-
-      // 4. Confirm with backend
-      await confirmOnChain.mutateAsync({
-        id: job.id,
-        onChainAddress: result.onChainAddress,
-        txSignature: txSig,
-      });
-      Alert.alert('Registered!', 'Job registered on Solana devnet.');
-    } catch (err: any) {
-      Alert.alert('Error', err?.message ?? 'Registration failed');
-    } finally {
-      setSigning(false);
-    }
-  };
+  // On-chain registration removed — using Agentic Wallet + Policy instead
 
   const copyWallet = () => {
     if (job.privyWalletAddress) { Clipboard.setString(job.privyWalletAddress); Alert.alert('Copied', 'Wallet address copied'); }
@@ -318,44 +208,53 @@ export default function JobDetailScreen() {
               )
             )}
 
-            {/* On-Chain Registration Status */}
-            {isOnChain ? (
-              <View style={styles.onChainBadge}>
-                <Text style={styles.onChainBadgeText}>✓ Registered on Solana</Text>
-                <Text style={styles.onChainBadgeAddr} numberOfLines={1}>{job.onChainAddress}</Text>
-              </View>
-            ) : (
-              <>
-                {(userSolBalance.data?.sol ?? 0) < 0.01 && (
-                  <View style={styles.lowBalanceBanner}>
-                    <Text style={styles.lowBalanceText}>
-                      Your wallet needs SOL for tx fees ({(userSolBalance.data?.sol ?? 0).toFixed(4)} SOL)
-                    </Text>
-                    <Pressable
-                      style={styles.airdropBtn}
-                      onPress={async () => {
-                        try {
-                          const { Connection, PublicKey, LAMPORTS_PER_SOL } = await import('@solana/web3.js');
-      const conn = getSolanaConnection();
-                          const sig = await conn.requestAirdrop(new PublicKey(walletAddress!), 1 * LAMPORTS_PER_SOL);
-                          Alert.alert('Airdrop Sent', `1 SOL sent\nTX: ${sig.slice(0, 16)}...`);
-                          setTimeout(() => userSolBalance.refetch(), 3000);
-                        } catch (err: any) {
-                          Alert.alert('Airdrop Failed', err?.message ?? 'Rate limited. Try again.');
-                        }
-                      }}>
-                      <Text style={styles.airdropBtnText}>Airdrop 1 SOL</Text>
-                    </Pressable>
+            {/* Policy Dashboard */}
+            {policyData && (
+              <View style={styles.policyCard}>
+                <Text style={styles.policyTitle}>Policy Dashboard</Text>
+                <View style={styles.policyRow}>
+                  <View style={styles.policyItem}>
+                    <Text style={styles.policyLabel}>Max Budget</Text>
+                    <Text style={styles.policyValue}>${policyData.maxCap}</Text>
+                  </View>
+                  <View style={styles.policyItem}>
+                    <Text style={styles.policyLabel}>Daily Cap</Text>
+                    <Text style={styles.policyValue}>${policyData.dailyCap}</Text>
+                  </View>
+                </View>
+                <View style={styles.policyRow}>
+                  <View style={styles.policyItem}>
+                    <Text style={styles.policyLabel}>Spent</Text>
+                    <Text style={styles.policyValue}>${policyData.spent.toFixed(2)}</Text>
+                  </View>
+                  <View style={styles.policyItem}>
+                    <Text style={styles.policyLabel}>Remaining</Text>
+                    <Text style={[styles.policyValue, { color: Colors.success }]}>${policyData.remaining.toFixed(2)}</Text>
+                  </View>
+                </View>
+                {policyData.policyExpiryAt && (
+                  <View style={styles.policyRow}>
+                    <View style={styles.policyItem}>
+                      <Text style={styles.policyLabel}>Expires</Text>
+                      <Text style={styles.policyValue}>{new Date(policyData.policyExpiryAt).toLocaleDateString()}</Text>
+                    </View>
+                    <View style={styles.policyItem}>
+                      <Text style={styles.policyLabel}>Wallet</Text>
+                      <Text style={[styles.policyValue, { fontSize: 11 }]} numberOfLines={1}>
+                        {policyData.walletAddress?.substring(0, 8)}...{policyData.walletAddress?.slice(-4)}
+                      </Text>
+                    </View>
                   </View>
                 )}
-                <Pressable
-                  style={({ pressed }) => [styles.registerBtn, pressed && { opacity: 0.85 }, signing && { opacity: 0.5 }]}
-                  onPress={handleRegisterOnChain}
-                  disabled={signing}>
-                  {signing ? <ActivityIndicator size="small" color={Colors.accent} />
-                    : <Text style={styles.registerBtnText}>Register On-Chain</Text>}
-                </Pressable>
-              </>
+                <View style={styles.policyRules}>
+                  {policyData.policyRules?.slice(0, 3).map((rule: any, idx: number) => (
+                    <View key={idx} style={styles.policyRule}>
+                      <Text style={styles.policyRuleDot}>✓</Text>
+                      <Text style={styles.policyRuleText}>{rule.name}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
             )}
 
             {/* Positions */}
@@ -541,4 +440,19 @@ const styles = StyleSheet.create({
   stopButtonText: { fontFamily: Fonts.body, fontSize: 15, fontWeight: '700', color: Colors.danger },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.xl },
   emptyText: { fontFamily: Fonts.body, fontSize: 16, color: Colors.textMuted },
+
+  // Policy Dashboard
+  policyCard: {
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1,
+    borderColor: Colors.border, padding: Spacing.xl, gap: Spacing.md,
+  },
+  policyTitle: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
+  policyRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  policyItem: { flex: 1, alignItems: 'center', gap: 2 },
+  policyLabel: { fontFamily: Fonts.body, fontSize: 10, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1 },
+  policyValue: { fontFamily: Fonts.mono, fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
+  policyRules: { gap: Spacing.xs, marginTop: Spacing.sm },
+  policyRule: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  policyRuleDot: { fontSize: 12, color: Colors.success },
+  policyRuleText: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textSecondary },
 });

@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert, ActivityIndicator, Clipboard, RefreshControl } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { VersionedTransaction, PublicKey } from '@solana/web3.js';
+
 import { getSolanaConnection } from '../../src/lib/solana';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
 import { SkeletonCard, SkeletonLoader } from '../../src/components/SkeletonLoader';
 import { FeedItem } from '../../src/components/FeedItem';
-import { useAgentGet, useFeedByAgent, useJobCreate, useJobFund, useJobResume, useJobWalletBalance, useJobConfirmOnChain } from '../../src/lib/api';
+import { useAgentGet, useFeedByAgent, useJobCreate, useJobFund, useJobResume, useJobWalletBalance, useAgentGetReputation } from '../../src/lib/api';
 import { useLiveFeed } from '../../src/hooks/useLiveFeed';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useEmbeddedSolanaWallet } from '@privy-io/expo';
@@ -17,7 +17,7 @@ import { useSolBalance } from '../../src/hooks/useSolBalance';
 let transact: any = null;
 try { transact = require('@solana-mobile/mobile-wallet-adapter-protocol').transact; } catch {}
 
-type HireStep = 'config' | 'sign' | 'fund' | 'done';
+type HireStep = 'config' | 'done';
 
 export default function AgentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -59,14 +59,11 @@ export default function AgentDetailScreen() {
   const hireJob = useJobCreate();
   const fundJob = useJobFund();
   const resumeJob = useJobResume();
-  const confirmOnChain = useJobConfirmOnChain();
+
 
   const [step, setStep] = useState<HireStep>('config');
   const [jobId, setJobId] = useState<string | null>(null);
   const [privyWallet, setPrivyWallet] = useState<string | null>(null);
-  const [pendingPda, setPendingPda] = useState<string | null>(null);
-  const [signed, setSigned] = useState(false);
-  const [signing, setSigning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
 
@@ -83,14 +80,16 @@ export default function AgentDetailScreen() {
   const walletBalance = useJobWalletBalance(jobId ?? '');
   const hasBalance = (walletBalance.data?.usdc ?? 0) > 0 || (walletBalance.data?.sol ?? 0) > 0;
 
-  // Poll balance in fund step
+  // Poll balance when job is active
   useEffect(() => {
-    if (step !== 'fund' || !jobId) return;
+    if (!jobId) return;
     const interval = setInterval(() => walletBalance.refetch(), 5000);
     return () => clearInterval(interval);
-  }, [step, jobId]);
+  }, [jobId]);
 
   const agent = agentData ?? null;
+  const { data: reputationData } = useAgentGetReputation(id!);
+  const atomRep = reputationData ?? agent?.atomReputation ?? null;
 
   if (!agent) {
     return (
@@ -109,7 +108,7 @@ export default function AgentDetailScreen() {
   const categoryColor = Colors[agent.category as keyof typeof Colors] || Colors.accent;
   const performance = agent.performance ?? { totalTrades: 0, winningTrades: 0, totalPnl: 0, winRate: 0 };
 
-  // Step 1: Create job and immediately start for paper trading
+  // Step 1: Create job with Agentic Wallet + policy, then start
   const handleHire = () => {
     if (!isConnected) { router.push('/login'); return; }
     setIsLaunching(true);
@@ -119,16 +118,14 @@ export default function AgentDetailScreen() {
         onSuccess: async (data: any) => {
           setJobId(data.id);
           setPrivyWallet(data.privyWalletAddress);
-          setPendingPda(data.onChainAddress || null);
-          
-          // For paper trading, skip sign/fund and start immediately
+
           try {
             const fundResult = await fundJob.mutateAsync(data.id);
             if (fundResult.success) {
               const resumeResult = await resumeJob.mutateAsync(data.id);
               if (resumeResult.success) {
                 setStep('done');
-                Alert.alert('Agent Started!', `Trading with $${fundResult.balance.usdc.toFixed(2)} paper USDC`, [
+                Alert.alert('Agent Started!', `Trading with $${fundResult.balance.usdc.toFixed(2)} paper USDC\nPolicy: $${maxCap}/trade · $${dailyCap}/day`, [
                   { text: 'View Profile', onPress: () => router.push('/(tabs)/profile') },
                 ]);
               } else {
@@ -151,120 +148,7 @@ export default function AgentDetailScreen() {
     );
   };
 
-  // Step 2: Sign on-chain tx (build locally with fresh blockhash)
-  const handleSign = async () => {
-    if (!walletAddress || !jobId || !privyWallet) return;
-    setSigning(true);
-    try {
-      const { Connection, PublicKey, TransactionInstruction, SystemProgram, TransactionMessage, VersionedTransaction } = await import('@solana/web3.js');
-      const conn = getSolanaConnection();
-
-      // Fetch registration data from backend
-      const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:3001';
-      const res = await fetch(`${baseUrl}/trpc/job.registerOnChain`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-wallet-address': walletAddress },
-        body: JSON.stringify({ id: jobId }),
-      });
-      const resJson = await res.json();
-      const regInfo = resJson.result?.data;
-
-      if (!regInfo?.jobIdHash) {
-        Alert.alert('Error', regInfo?.message || 'Could not get registration data');
-        setSigning(false);
-        return;
-      }
-
-      if (regInfo.message === 'Already registered') {
-        setSigned(true);
-        setStep('fund');
-        setSigning(false);
-        return;
-      }
-
-      const programId = new PublicKey(regInfo.programId);
-      const user = new PublicKey(walletAddress);
-      const privyWalletPk = new PublicKey(privyWallet);
-
-      // Build instruction
-      const jobIdHashBytes = Buffer.from(regInfo.jobIdHash, 'hex');
-      const [pda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('job'), user.toBytes(), jobIdHashBytes], programId
-      );
-
-      const discriminator = Buffer.from([137, 22, 138, 41, 76, 208, 114, 50]);
-      const agentIdBytes = Buffer.from(jobId, 'utf-8');
-      const agentIdLen = Buffer.alloc(4);
-      agentIdLen.writeUInt32LE(agentIdBytes.length);
-      const data = Buffer.concat([discriminator, agentIdLen, agentIdBytes, privyWalletPk.toBuffer()]);
-
-      const ix = new TransactionInstruction({
-        keys: [
-          { pubkey: pda, isSigner: false, isWritable: true },
-          { pubkey: user, isSigner: true, isWritable: true },
-          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-        ],
-        programId, data,
-      });
-
-      // Fresh blockhash + build tx
-      const { blockhash } = await conn.getLatestBlockhash('confirmed');
-      const messageV0 = new TransactionMessage({
-        payerKey: user, recentBlockhash: blockhash, instructions: [ix],
-      }).compileToV0Message();
-      const tx = new VersionedTransaction(messageV0);
-
-      // Sign and send
-      let txSig = '';
-
-      if (connectionMethod === 'mwa' && transact) {
-        await transact(async (wallet: any) => {
-          await wallet.authorize({
-            cluster: 'devnet',
-            identity: { name: 'AgentArena', uri: 'https://agentarena.dev', icon: 'favicon.ico' },
-          });
-          const sigs = await (wallet as any).signAndSendTransactions({
-            payloads: [Buffer.from(tx.serialize()).toString('base64')],
-          });
-          txSig = sigs[0];
-        });
-      } else if (wallets && wallets.length > 0) {
-        const provider = await wallets[0].getProvider();
-        const result = await (provider as any).request({
-          method: 'signAndSendTransaction',
-          params: { transaction: tx, connection: conn },
-        });
-        txSig = result.signature;
-      } else if (transact) {
-        await transact(async (wallet: any) => {
-          await wallet.authorize({
-            cluster: 'devnet',
-            identity: { name: 'AgentArena', uri: 'https://agentarena.dev', icon: 'favicon.ico' },
-          });
-          const sigs = await (wallet as any).signAndSendTransactions({
-            payloads: [Buffer.from(tx.serialize()).toString('base64')],
-          });
-          txSig = sigs[0];
-        });
-      } else {
-        Alert.alert('No Wallet', 'No wallet available for signing. Connect Phantom/Solflare via MWA.');
-        setSigning(false);
-        return;
-      }
-
-      console.log('On-chain TX:', txSig);
-
-      // Confirm on-chain registration with backend
-      await confirmOnChain.mutateAsync({ id: jobId, onChainAddress: pda.toBase58(), txSignature: txSig });
-      setSigned(true);
-      setStep('fund');
-    } catch (err: any) {
-      console.error('Sign error:', err);
-      Alert.alert('Signing Failed', err?.message ?? 'Could not sign transaction');
-    } finally {
-      setSigning(false);
-    }
-  };
+  // On-chain signing removed — Agentic Wallet with policy replaces escrow
 
   // Step 3: Fund + Start
   const handleStart = async () => {
@@ -324,10 +208,17 @@ export default function AgentDetailScreen() {
                     <Text style={styles.agentName}>{agent.name}</Text>
                     {agent.isVerified && <Text style={styles.verifiedBadge}>✓ Verified</Text>}
                   </View>
-                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <View style={[styles.categoryBadge, { backgroundColor: (categoryColor as string) + '22' }]}>
                       <Text style={[styles.categoryText, { color: categoryColor as string }]}>{agent.category.toUpperCase()}</Text>
                     </View>
+                    {atomRep?.formattedTier && (
+                      <View style={[styles.tierBadge, { backgroundColor: atomRep.trustTier === 'Gold' ? '#FFD70022' : atomRep.trustTier === 'Silver' ? '#C0C0C022' : atomRep.trustTier === 'Bronze' ? '#CD7F3222' : '#9CA3AF22' }]}>
+                        <Text style={[styles.tierBadgeText, { color: atomRep.trustTier === 'Gold' ? '#FFD700' : atomRep.trustTier === 'Silver' ? '#C0C0C0' : atomRep.trustTier === 'Bronze' ? '#CD7F32' : '#9CA3AF' }]}>
+                          {atomRep.formattedTier}
+                        </Text>
+                      </View>
+                    )}
                     <View style={styles.paperBadge}>
                       <Text style={styles.paperBadgeText}>PAPER TRADING</Text>
                     </View>
@@ -364,7 +255,7 @@ export default function AgentDetailScreen() {
             {/* === STEP INDICATOR === */}
             <View style={styles.stepsRow}>
               {['Configure', 'Launch'].map((label, i) => {
-                const stepIdx = step === 'config' ? 0 : step === 'done' ? 1 : 0;
+                const stepIdx = step === 'config' ? 0 : 1;
                 const isActive = i === stepIdx;
                 const isDone = i < stepIdx;
                 return (
@@ -406,168 +297,23 @@ export default function AgentDetailScreen() {
               </View>
             )}
 
-            {/* === STEP 2: SIGN === */}
-            {step === 'sign' && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Register On-Chain</Text>
-                <Text style={styles.sectionDesc}>
-                  Sign a transaction to register this job on Solana devnet. This creates a transparent on-chain record linking your wallet to the agent.
-                </Text>
-
-                <View style={styles.infoCard}>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Your Wallet</Text>
-                    <Text style={styles.infoValue} numberOfLines={1}>{walletAddress?.substring(0, 8)}...{walletAddress?.slice(-4)}</Text>
-                  </View>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Agent Wallet</Text>
-                    <Text style={styles.infoValue} numberOfLines={1}>{privyWallet?.substring(0, 8)}...{privyWallet?.slice(-4)}</Text>
-                  </View>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Max / Trade</Text>
-                    <Text style={styles.infoValue}>${maxCap}</Text>
-                  </View>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Daily Cap</Text>
-                    <Text style={styles.infoValue}>${dailyCap}</Text>
-                  </View>
-                </View>
-
-                {!signed ? (
-                  <>
-                    {/* Connected wallet balance */}
-                    <View style={styles.walletBalanceCard}>
-                      <Text style={styles.walletBalanceLabel}>Your Wallet Balance</Text>
-                      <Text style={styles.walletBalanceValue}>
-                        {(userSolBalance.data?.sol ?? 0).toFixed(4)} SOL
-                      </Text>
-                      {(userSolBalance.data?.sol ?? 0) < 0.01 && (
-                        <View style={styles.lowBalanceRow}>
-                          <Text style={styles.lowBalanceText}>Low balance — airdrop SOL for tx fees</Text>
-                          <Pressable
-                            style={styles.airdropBtn}
-                            onPress={async () => {
-                              try {
-                                const { Connection, LAMPORTS_PER_SOL } = await import('@solana/web3.js');
-                                const conn = getSolanaConnection();
-                                const sig = await conn.requestAirdrop(new PublicKey(walletAddress!), 1 * LAMPORTS_PER_SOL);
-                                Alert.alert('Airdrop Sent', `1 SOL sent\nTX: ${sig.slice(0, 16)}...`);
-                                setTimeout(() => userSolBalance.refetch(), 3000);
-                              } catch (err: any) {
-                                Alert.alert('Airdrop Failed', err?.message ?? 'Rate limited. Try again.');
-                              }
-                            }}>
-                            <Text style={styles.airdropBtnText}>Airdrop 1 SOL</Text>
-                          </Pressable>
-                        </View>
-                      )}
-                    </View>
-
-                    <Pressable
-                      style={({ pressed }) => [styles.signBtn, pressed && styles.pressed, signing && styles.disabled]}
-                      onPress={handleSign} disabled={signing}>
-                      {signing ? <ActivityIndicator size="small" color={Colors.textPrimary} />
-                        : <Text style={styles.primaryBtnText}>
-                            {connectionMethod === 'mwa' ? 'Sign with Phantom/Solflare' : 'Register On-Chain'}
-                          </Text>}
-                    </Pressable>
-                    <Pressable style={styles.skipBtn} onPress={() => setStep('fund')}>
-                      <Text style={styles.skipBtnText}>Skip for now</Text>
-                    </Pressable>
-                  </>
-                ) : (
-                  <View style={styles.successBanner}>
-                    <Text style={styles.successBannerText}>✓ Registered on-chain</Text>
-                  </View>
-                )}
-
-                {signed && (
-                  <Pressable style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
-                    onPress={() => setStep('fund')}>
-                    <Text style={styles.primaryBtnText}>Continue to Funding</Text>
-                  </Pressable>
-                )}
-              </View>
-            )}
-
-            {/* === STEP 3: FUND & START === */}
-            {step === 'fund' && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Fund Your Agent</Text>
-                <Text style={styles.sectionDesc}>
-                  Send SOL or USDC to the agent wallet to start trading.
-                </Text>
-
-                <Pressable style={styles.walletCard} onPress={copyWallet}>
-                  <Text style={styles.walletLabel}>Agent Wallet (tap to copy)</Text>
-                  <Text style={styles.walletAddr} numberOfLines={1}>
-                    {privyWallet ? `${privyWallet.substring(0, 12)}...${privyWallet.slice(-8)}` : '...'}
-                  </Text>
-                </Pressable>
-
-                <View style={styles.balanceCard}>
-                  <Text style={styles.balanceLabel}>Current Balance</Text>
-                  {walletBalance.isLoading ? <SkeletonLoader width={120} height={28} /> : (
-                    <View style={styles.balanceValues}>
-                      <Text style={styles.balanceValue}>${(walletBalance.data?.usdc ?? 0).toFixed(2)} USDC</Text>
-                      <Text style={styles.balanceSol}>{(walletBalance.data?.sol ?? 0).toFixed(4)} SOL</Text>
-                    </View>
-                  )}
-                  <Text style={styles.balanceHint}>
-                    {hasBalance ? '✓ Funds detected!' : 'Waiting for funds... (checks every 5s)'}
-                  </Text>
-                </View>
-
-                {/* Fund options */}
-                <View style={styles.fundOptions}>
-                  <Pressable style={styles.fundOptionBtn} onPress={() => {
-                    Clipboard.setString(privyWallet || '');
-                    Alert.alert('Copied', 'Send USDC from your wallet app to this address');
-                  }}>
-                    <Text style={styles.fundOptionText}>Copy Address</Text>
-                  </Pressable>
-                  <Pressable style={styles.fundOptionBtn} onPress={async () => {
-                    try {
-                      const { Connection, PublicKey, LAMPORTS_PER_SOL } = await import('@solana/web3.js');
-                      const conn = getSolanaConnection();
-                      const sig = await conn.requestAirdrop(new PublicKey(privyWallet!), 1 * LAMPORTS_PER_SOL);
-                      Alert.alert('Airdrop Sent', `1 SOL sent to agent wallet\nTX: ${sig.slice(0, 16)}...`);
-                      setTimeout(() => walletBalance.refetch(), 3000);
-                    } catch (err: any) {
-                      Alert.alert('Airdrop Failed', err?.message ?? 'Rate limited. Try again later.');
-                    }
-                  }}>
-                    <Text style={styles.fundOptionText}>Airdrop 1 SOL (devnet)</Text>
-                  </Pressable>
-                </View>
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.primaryBtn, pressed && styles.pressed,
-                    (!hasBalance || fundJob.isPending || resumeJob.isPending) && styles.disabled,
-                  ]}
-                  onPress={handleStart}
-                  disabled={!hasBalance || fundJob.isPending || resumeJob.isPending}>
-                  {(fundJob.isPending || resumeJob.isPending)
-                    ? <ActivityIndicator size="small" color={Colors.textPrimary} />
-                    : <Text style={styles.primaryBtnText}>
-                        {hasBalance ? 'Start Trading Agent' : 'Fund wallet first'}
-                      </Text>}
-                </Pressable>
-              </View>
-            )}
-
-            {/* === DONE === */}
+            {/* === STEP 2: DONE === */}
             {step === 'done' && (
-              <View style={styles.successCard}>
-                <Text style={styles.successIcon}>✓</Text>
-                <Text style={styles.successTitle}>Agent is Active!</Text>
-                <Text style={styles.successDesc}>Your agent is now scanning markets and making trades.</Text>
-                <Pressable style={styles.profileBtn} onPress={() => router.push('/(tabs)/profile')}>
-                  <Text style={styles.profileBtnText}>View in Profile</Text>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Agent Launched!</Text>
+                <Text style={styles.sectionDesc}>
+                  Your agent is now trading with an Agentic Wallet protected by policy limits.
+                </Text>
+                <View style={styles.successBanner}>
+                  <Text style={styles.successBannerText}>✓ Policy Active: ${maxCap}/trade · ${dailyCap}/day</Text>
+                </View>
+                <Pressable style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
+                  onPress={() => router.push('/(tabs)/profile')}>
+                  <Text style={styles.primaryBtnText}>View My Jobs</Text>
                 </Pressable>
               </View>
             )}
+
           </>
         )}
 
@@ -652,6 +398,8 @@ const styles = StyleSheet.create({
   activityHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
   categoryBadgeSmall: { paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: BorderRadius.sm },
   categoryTextSmall: { fontFamily: Fonts.body, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
+  tierBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: BorderRadius.sm },
+  tierBadgeText: { fontFamily: Fonts.body, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
   liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, backgroundColor: Colors.success + '22' },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.success },
   liveText: { fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', color: Colors.success, letterSpacing: 1 },

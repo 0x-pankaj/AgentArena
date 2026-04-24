@@ -176,6 +176,13 @@ export default function LeaderboardScreen() {
                       <Text style={styles.agentName} numberOfLines={1}>{agentName}</Text>
                       <View style={styles.agentMeta}>
                         <View style={[styles.catDot, { backgroundColor: categoryColor(category) }]} />
+                        {entry.trustTier && entry.trustTier !== 'Unknown' && (
+                          <Text style={[styles.tierText, {
+                            color: entry.trustTier === 'Gold' ? '#FFD700' : entry.trustTier === 'Silver' ? '#C0C0C0' : entry.trustTier === 'Bronze' ? '#CD7F32' : '#9CA3AF'
+                          }]}>
+                            {entry.trustTier === 'Gold' ? '🥇' : entry.trustTier === 'Silver' ? '🥈' : entry.trustTier === 'Bronze' ? '🥉' : '💎'} {entry.trustTier}
+                          </Text>
+                        )}
                         {isActive && <View style={styles.activeDot} />}
                       </View>
                     </View>
@@ -328,6 +335,7 @@ const styles = StyleSheet.create({
   agentName: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '600', color: Colors.textPrimary, flex: 1 },
   agentMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   catDot: { width: 6, height: 6, borderRadius: 3 },
+  tierText: { fontFamily: Fonts.body, fontSize: 10, fontWeight: '600' },
   activeDot: {
     width: 6,
     height: 6,

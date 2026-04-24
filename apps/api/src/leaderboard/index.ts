@@ -18,6 +18,10 @@ export interface LeaderboardEntry {
   activePositions: number;
   lastActivityAt: string | null;
   rank: number;
+  // ATOM Reputation
+  trustTier?: string;
+  reputationScore?: number;
+  atomEnabled?: boolean;
 }
 
 export interface GlobalStats {
@@ -193,6 +197,13 @@ async function enrichLeaderboardEntry(
     } catch {}
   }
 
+  // Get ATOM reputation from DB
+  const [agent] = await db
+    .select({ trustTier: schema.agents.trustTier, reputationScore: schema.agents.reputationScore, atomEnabled: schema.agents.atomEnabled })
+    .from(schema.agents)
+    .where(eq(schema.agents.id, agentId))
+    .limit(1);
+
   return {
     ...baseEntry,
     totalVolume: Number(stats.totalVolume ?? 0),
@@ -201,6 +212,9 @@ async function enrichLeaderboardEntry(
     recentTrend,
     activePositions: Number(activePositions[0]?.count ?? 0),
     lastActivityAt,
+    trustTier: agent?.trustTier ?? "Unknown",
+    reputationScore: agent?.reputationScore ? Number(agent.reputationScore) : 0,
+    atomEnabled: agent?.atomEnabled ?? false,
   };
 }
 

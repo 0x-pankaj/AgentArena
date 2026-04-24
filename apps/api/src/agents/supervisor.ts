@@ -10,11 +10,9 @@ import {
 } from "./registry";
 import type { AgentRuntimeContext, AgentTickResult } from "../ai/types";
 import { publishFeedEvent, buildFeedEvent } from "../feed";
-import { createAgentWallet, fundAgentWallet } from "../utils/privy";
 import { getEffectiveBalance } from "../utils/balance";
-import { createAgentPolicy } from "../utils/privy-policies";
-import { buildInitializeJobTx, getJobProfilePDA } from "../anchor/job-client";
-import { PublicKey } from "@solana/web3.js";
+import { createAgenticWalletForJob, returnUsdcToClient, getWalletBalance } from "../utils/privy-agentic";
+import { submitAtomFeedback, getAtomSummary, computeReputationScore, AtomTag } from "../utils/atom-reputation";
 import { startBackgroundPositionMonitor, stopBackgroundPositionMonitor } from "../services/position-monitor";
 import { preFlightPositionSync } from "../services/position-monitor";
 
@@ -51,18 +49,18 @@ export function initializeSupervisor(): void {
   );
 }
 
-// --- Hire an agent (create job, provision Privy wallet, build on-chain tx) ---
+// --- Hire an agent (create job, provision Agentic Wallet with policy) ---
 
 export async function hireAgent(params: {
   agentId: string;
   clientAddress: string;
   maxCap: number;
   dailyCap: number;
+  durationDays?: number;
 }): Promise<{
   jobId: string;
   privyWalletAddress?: string;
-  onChainAddress?: string;
-  transaction: string;
+  policyId?: string;
 }> {
   // 1. Get agent from DB
   const [agent] = await db
@@ -79,29 +77,29 @@ export async function hireAgent(params: {
     throw new Error("Agent is not active");
   }
 
-  // 2. Try to create Privy wallet (optional for paper trading — won't fail if unavailable)
-  let agentWallet: { id: string; address: string } | null = null;
+  // 2. Create Agentic Wallet with dynamic job policy
+  let walletId: string | null = null;
+  let walletAddress: string | null = null;
   let policyId: string | null = null;
+
   try {
-    policyId = await createAgentPolicy(DEPLOY_PHASE);
-    console.log(`[Supervisor] Created ${DEPLOY_PHASE} policy for job: ${policyId}`);
+    const agentic = await createAgenticWalletForJob({
+      jobId: "pending", // will update after job insert
+      agentName: agent.name,
+      maxBudgetUsdc: params.maxCap,
+      dailyCapUsdc: params.dailyCap,
+      durationDays: params.durationDays ?? 7,
+      denySolTransfers: true,
+      fundSol: IS_PRODUCTION ? 0.05 : 0,
+    });
 
-    agentWallet = await createAgentWallet(agent.name, [policyId]);
-    console.log(`[Supervisor] Created Privy wallet for job (${agent.name}): ${agentWallet.address} with policy ${policyId}`);
+    walletId = agentic.walletId;
+    walletAddress = agentic.walletAddress;
+    policyId = agentic.policyId;
 
-    // Fund wallet with SOL for tx fees (skip in simulated mode)
-    if (IS_PRODUCTION) {
-      try {
-        const { solSig } = await fundAgentWallet(agentWallet.address, 0.05);
-        console.log(`[Supervisor] Funded wallet with 0.05 SOL: ${solSig}`);
-      } catch (err: any) {
-        console.error(`[Supervisor] Failed to fund wallet with SOL: ${err.message}`);
-      }
-    } else {
-      console.log(`[Supervisor] SIMULATED MODE: Skipping auto SOL funding`);
-    }
+    console.log(`[Supervisor] Created Agentic Wallet for job (${agent.name}): ${walletAddress} with policy ${policyId}`);
   } catch (err: any) {
-    console.warn(`[Supervisor] Privy wallet creation failed (continuing without wallet for paper trading): ${err.message}`);
+    console.warn(`[Supervisor] Agentic wallet creation failed (continuing without wallet for paper trading): ${err.message}`);
   }
 
   // 3. Create job in DB (paused by default, paper trading mode)
@@ -110,46 +108,33 @@ export async function hireAgent(params: {
     .values({
       clientAddress: params.clientAddress,
       agentId: params.agentId,
-      privyWalletId: agentWallet?.id ?? null,
-      privyWalletAddress: agentWallet?.address ?? null,
+      privyWalletId: walletId ?? null,
+      privyWalletAddress: walletAddress ?? null,
       privyPolicyId: policyId ?? null,
       maxCap: String(params.maxCap),
       dailyCap: String(params.dailyCap),
       status: "paused",
       tradingMode: "paper",
       paperBalance: String(DEFAULT_PAPER_BALANCE_USDC),
+      policyExpiryAt: new Date(Date.now() + (params.durationDays ?? 7) * 86400000),
     })
     .returning();
 
-  // 4. Build on-chain initialize_job transaction (optional — requires deployed program)
-  let txBase64 = "";
-  let pdaAddress = "";
-  if (agentWallet?.address) {
+  // If wallet was created, update policy name with real jobId
+  if (policyId && walletId) {
     try {
-      const tx = await buildInitializeJobTx({
-        userAddress: params.clientAddress,
-        agentId: job.id,
-        privyWalletAddress: agentWallet.address,
-      });
-
-      const serialized = tx.serialize({
-        requireAllSignatures: false,
-        verifySignatures: false,
-      });
-      txBase64 = serialized.toString("base64");
-
-      const [jobPDA] = getJobProfilePDA(new PublicKey(params.clientAddress), job.id);
-      pdaAddress = jobPDA.toBase58();
-    } catch (err: any) {
-      console.warn(`[Supervisor] On-chain tx build failed (program may not be deployed): ${err.message}`);
+      // Policies are immutable; we already named it with pending. For hackathon, this is fine.
+      // In production, we'd re-create with the real jobId.
+      console.log(`[Supervisor] Job ${job.id} linked to policy ${policyId}`);
+    } catch {
+      // ignore
     }
   }
 
   return {
     jobId: job.id,
-    privyWalletAddress: agentWallet?.address,
-    onChainAddress: pdaAddress || undefined,
-    transaction: txBase64,
+    privyWalletAddress: walletAddress ?? undefined,
+    policyId: policyId ?? undefined,
   };
 }
 
@@ -505,7 +490,7 @@ export function resumeAgentLoop(jobId: string, category: string = "geo"): boolea
   return true;
 }
 
-// --- Cancel a job (stop agent + update DB) ---
+// --- Cancel a job (stop agent, return funds, update DB) ---
 
 export async function cancelJob(jobId: string): Promise<boolean> {
   const [job] = await db
@@ -518,6 +503,24 @@ export async function cancelJob(jobId: string): Promise<boolean> {
 
   stopAgentLoop(jobId);
 
+  // Return remaining live funds to client
+  if (job.tradingMode === "live" && job.privyWalletId && job.privyWalletAddress) {
+    try {
+      const bal = await getWalletBalance(job.privyWalletAddress);
+      if (bal.usdc > 0.01) {
+        const sig = await returnUsdcToClient(
+          job.privyWalletId,
+          job.privyWalletAddress,
+          job.clientAddress,
+          bal.usdc
+        );
+        console.log(`[Supervisor] Returned ${bal.usdc} USDC to client on cancel: ${sig}`);
+      }
+    } catch (err: any) {
+      console.error(`[Supervisor] Failed to return funds on cancel: ${err.message}`);
+    }
+  }
+
   await db
     .update(schema.jobs)
     .set({
@@ -529,9 +532,9 @@ export async function cancelJob(jobId: string): Promise<boolean> {
   return true;
 }
 
-// --- Approve job (release payment) ---
+// --- Complete a job (stop agent, submit ATOM feedback, return funds) ---
 
-export async function approveJob(jobId: string): Promise<boolean> {
+export async function completeJob(jobId: string): Promise<boolean> {
   const [job] = await db
     .select()
     .from(schema.jobs)
@@ -542,6 +545,75 @@ export async function approveJob(jobId: string): Promise<boolean> {
 
   stopAgentLoop(jobId);
 
+  // Calculate job performance
+  const trades = await db
+    .select()
+    .from(schema.trades)
+    .where(eq(schema.trades.jobId, jobId));
+
+  const winningTrades = trades.filter((t) => t.outcome === "win").length;
+  const totalPnl = trades.reduce((sum, t) => sum + Number(t.profitLoss ?? 0), 0);
+  const winRate = trades.length > 0 ? winningTrades / trades.length : 0;
+
+  // Submit ATOM feedback if agent has 8004 asset
+  const [agent] = await db
+    .select()
+    .from(schema.agents)
+    .where(eq(schema.agents.id, job.agentId))
+    .limit(1);
+
+  if (agent?.assetAddress) {
+    try {
+      const pnlPercent = job.totalInvested && Number(job.totalInvested) > 0
+        ? (totalPnl / Number(job.totalInvested)) * 100
+        : 0;
+
+      const feedback = await submitAtomFeedback({
+        agentAsset: agent.assetAddress,
+        value: Math.abs(pnlPercent).toFixed(2),
+        tag1: pnlPercent >= 0 ? AtomTag.profit : AtomTag.loss,
+        tag2: AtomTag.day,
+        reviewerAddress: job.clientAddress,
+      });
+
+      if (feedback) {
+        console.log(`[Supervisor] Submitted ATOM feedback for agent ${agent.id}: ${pnlPercent.toFixed(2)}%`);
+
+        // Update agent reputation in DB
+        const summary = await getAtomSummary(agent.assetAddress);
+        if (summary) {
+          await db
+            .update(schema.agents)
+            .set({
+              trustTier: summary.trustTier,
+              reputationScore: String(computeReputationScore(summary)),
+            })
+            .where(eq(schema.agents.id, job.agentId));
+        }
+      }
+    } catch (err: any) {
+      console.error(`[Supervisor] ATOM feedback failed: ${err.message}`);
+    }
+  }
+
+  // Return remaining live funds to client
+  if (job.tradingMode === "live" && job.privyWalletId && job.privyWalletAddress) {
+    try {
+      const bal = await getWalletBalance(job.privyWalletAddress);
+      if (bal.usdc > 0.01) {
+        const sig = await returnUsdcToClient(
+          job.privyWalletId,
+          job.privyWalletAddress,
+          job.clientAddress,
+          bal.usdc
+        );
+        console.log(`[Supervisor] Returned ${bal.usdc} USDC to client on completion: ${sig}`);
+      }
+    } catch (err: any) {
+      console.error(`[Supervisor] Failed to return funds on completion: ${err.message}`);
+    }
+  }
+
   await db
     .update(schema.jobs)
     .set({
@@ -551,6 +623,12 @@ export async function approveJob(jobId: string): Promise<boolean> {
     .where(eq(schema.jobs.id, jobId));
 
   return true;
+}
+
+// --- Approve job (alias for completeJob) ---
+
+export async function approveJob(jobId: string): Promise<boolean> {
+  return completeJob(jobId);
 }
 
 // --- Get agent status ---

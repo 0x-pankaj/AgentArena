@@ -10,7 +10,9 @@ export const users = pgTable("users", {
 export const agents = pgTable("agents", {
   id: uuid("id").defaultRandom().primaryKey(),
   ownerAddress: varchar("owner_address", { length: 44 }).notNull().references(() => users.walletAddress),
-  onChainAddress: varchar("on_chain_address", { length: 44 }),
+  onChainAddress: varchar("on_chain_address", { length: 44 }), // Deprecated: old PDA address
+  assetAddress: varchar("asset_address", { length: 44 }), // 8004 Metaplex Core NFT asset
+  atomStatsAddress: varchar("atom_stats_address", { length: 44 }), // ATOM stats PDA
   name: varchar("name", { length: 100 }).notNull(),
   category: varchar("category", { length: 20 }).notNull(),
   description: text("description"),
@@ -19,11 +21,15 @@ export const agents = pgTable("agents", {
   strategyConfig: jsonb("strategy_config"),
   isActive: boolean("is_active").default(true),
   isVerified: boolean("is_verified").default(false),
+  trustTier: varchar("trust_tier", { length: 20 }).default("Unknown"), // ATOM trust tier
+  reputationScore: decimal("reputation_score", { precision: 5, scale: 2 }).default("0"), // 0-100
+  atomEnabled: boolean("atom_enabled").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   ownerIdx: index("agents_owner_idx").on(table.ownerAddress),
   categoryIdx: index("agents_category_idx").on(table.category),
   activeIdx: index("agents_active_idx").on(table.isActive),
+  assetIdx: index("agents_asset_idx").on(table.assetAddress),
 }));
 
 export const jobs = pgTable("jobs", {
@@ -33,7 +39,7 @@ export const jobs = pgTable("jobs", {
   privyWalletId: varchar("privy_wallet_id", { length: 200 }),
   privyWalletAddress: varchar("privy_wallet_address", { length: 200 }),
   privyPolicyId: varchar("privy_policy_id", { length: 200 }), // Privy policy ID attached to this job's wallet
-  onChainAddress: varchar("on_chain_address", { length: 44 }),
+  onChainAddress: varchar("on_chain_address", { length: 44 }), // Deprecated: old escrow PDA
   maxCap: decimal("max_cap", { precision: 18, scale: 6 }),
   dailyCap: decimal("daily_cap", { precision: 18, scale: 6 }),
   status: varchar("status", { length: 20 }).default("paused"),
@@ -41,6 +47,7 @@ export const jobs = pgTable("jobs", {
   paperBalance: decimal("paper_balance", { precision: 18, scale: 6 }).default("1000"),
   totalInvested: decimal("total_invested", { precision: 18, scale: 6 }).default("0"),
   totalProfit: decimal("total_profit", { precision: 18, scale: 6 }).default("0"),
+  policyExpiryAt: timestamp("policy_expiry_at"), // When the Privy policy expires
   startedAt: timestamp("started_at"),
   endedAt: timestamp("ended_at"),
   createdAt: timestamp("created_at").defaultNow(),

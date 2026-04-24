@@ -3,13 +3,20 @@ import { z } from "zod";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { db, schema } from "../db";
 import { getAgentStatus, listActiveAgents } from "../agents/supervisor";
-import {
-  buildRegisterAgentTx,
-  registerAgentWithPrivy,
-  getAgentProfile,
-  agentProfileExists,
-} from "../anchor/registry-client";
 import { getEffectiveBalance } from "../utils/balance";
+import {
+  buildRegisterAgentTx8004,
+  isAgentRegisteredOn8004,
+  fetchAgentAsset,
+  getAgentExplorerUrl,
+} from "../utils/agent-registry-8004";
+import {
+  getAtomSummary,
+  computeReputationScore,
+  formatTrustTier,
+  getAtomStatsPDA,
+} from "../utils/atom-reputation";
+import { PublicKey } from "@solana/web3.js";
 
 const agentInputSchema = z.object({
   name: z.string().min(1).max(100),
@@ -82,29 +89,150 @@ export const agentRouter = router({
 
       const status = getAgentStatus(input.id);
 
-      return { ...agent, performance: perf ?? null, runtimeStatus: status };
-    }),
-
-  buildRegisterTx: protectedProcedure
-    .input(agentInputSchema)
-    .mutation(async ({ input, ctx }) => {
-      const alreadyRegistered = await agentProfileExists(ctx.walletAddress);
-      if (alreadyRegistered) {
-        throw new Error("You already have a registered agent on-chain");
+      // Fetch on-chain ATOM reputation
+      let atomReputation = null;
+      if (agent.assetAddress) {
+        const summary = await getAtomSummary(agent.assetAddress);
+        if (summary) {
+          atomReputation = {
+            ...summary,
+            formattedTier: formatTrustTier(summary.trustTier),
+            compositeScore: computeReputationScore(summary),
+          };
+        }
       }
 
-      const tx = await buildRegisterAgentTx({
+      return { ...agent, performance: perf ?? null, runtimeStatus: status, atomReputation };
+    }),
+
+  // Register agent on 8004 Solana Agent Registry (on-chain NFT)
+  registerOn8004: protectedProcedure
+    .input(z.object({
+      agentId: z.string().uuid(),
+      atomEnabled: z.boolean().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const [agent] = await db
+        .select()
+        .from(schema.agents)
+        .where(
+          and(
+            eq(schema.agents.id, input.agentId),
+            eq(schema.agents.ownerAddress, ctx.walletAddress)
+          )
+        )
+        .limit(1);
+
+      if (!agent) {
+        throw new Error("Agent not found or not owned by you");
+      }
+
+      if (agent.assetAddress) {
+        return { success: true, assetAddress: agent.assetAddress, message: "Already registered on 8004" };
+      }
+
+      const alreadyRegistered = await isAgentRegisteredOn8004(ctx.walletAddress);
+      if (alreadyRegistered) {
+        const asset = await fetchAgentAsset(ctx.walletAddress);
+        if (asset) {
+          const [statsPda] = getAtomStatsPDA(new PublicKey(asset.assetAddress));
+          await db
+            .update(schema.agents)
+            .set({ assetAddress: asset.assetAddress, atomStatsAddress: statsPda.toBase58(), atomEnabled: asset.atomEnabled })
+            .where(eq(schema.agents.id, input.agentId));
+          return { success: true, assetAddress: asset.assetAddress, message: "Synced existing 8004 registration" };
+        }
+      }
+
+      // Build unsigned transaction for frontend to sign
+      const tx = await buildRegisterAgentTx8004({
         ownerAddress: ctx.walletAddress,
-        ...input,
+        metadata: {
+          name: agent.name,
+          description: agent.description ?? "",
+          category: agent.category,
+          capabilities: agent.capabilities ?? [],
+          pricingModel: agent.pricingModel as any,
+        },
+        atomEnabled: input.atomEnabled,
       });
 
-      const serialized = tx.serialize({
-        requireAllSignatures: false,
-        verifySignatures: false,
-      });
+      const serialized = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
 
       return {
+        success: true,
         transaction: serialized.toString("base64"),
+        message: "Sign this transaction to mint your 8004 Agent NFT",
+      };
+    }),
+
+  // Confirm 8004 registration after user signs
+  confirm8004Registration: protectedProcedure
+    .input(z.object({
+      agentId: z.string().uuid(),
+      txSignature: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const [agent] = await db
+        .select()
+        .from(schema.agents)
+        .where(
+          and(
+            eq(schema.agents.id, input.agentId),
+            eq(schema.agents.ownerAddress, ctx.walletAddress)
+          )
+        )
+        .limit(1);
+
+      if (!agent) {
+        throw new Error("Agent not found or not owned by you");
+      }
+
+      // Verify on-chain
+      const asset = await fetchAgentAsset(ctx.walletAddress);
+      if (!asset) {
+        throw new Error("On-chain registration not found. Please try again.");
+      }
+
+      const [statsPda] = getAtomStatsPDA(new PublicKey(asset.assetAddress));
+      await db
+        .update(schema.agents)
+        .set({
+          assetAddress: asset.assetAddress,
+          atomStatsAddress: statsPda.toBase58(),
+          atomEnabled: asset.atomEnabled,
+        })
+        .where(eq(schema.agents.id, input.agentId));
+
+      return {
+        success: true,
+        assetAddress: asset.assetAddress,
+        explorerUrl: getAgentExplorerUrl(asset.assetAddress),
+      };
+    }),
+
+  // Get ATOM reputation for an agent
+  getReputation: publicProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .query(async ({ input }) => {
+      const [agent] = await db
+        .select()
+        .from(schema.agents)
+        .where(eq(schema.agents.id, input.id))
+        .limit(1);
+
+      if (!agent?.assetAddress) {
+        return null;
+      }
+
+      const summary = await getAtomSummary(agent.assetAddress);
+      if (!summary) return null;
+
+      return {
+        ...summary,
+        formattedTier: formatTrustTier(summary.trustTier),
+        compositeScore: computeReputationScore(summary),
+        assetAddress: agent.assetAddress,
       };
     }),
 
@@ -120,26 +248,6 @@ export const agentRouter = router({
         .insert(schema.users)
         .values({ walletAddress: ctx.walletAddress })
         .onConflictDoNothing();
-
-      // On-chain registration (if Privy user)
-      let onChainAddr = onChainAddress;
-
-      if (connectionMethod === "privy") {
-        const alreadyRegistered = await agentProfileExists(ctx.walletAddress);
-        if (!alreadyRegistered) {
-          // Build tx for frontend to sign
-          const tx = await buildRegisterAgentTx({
-            ownerAddress: ctx.walletAddress,
-            ...agentData,
-          });
-          const serialized = tx.serialize({
-            requireAllSignatures: false,
-            verifySignatures: false,
-          });
-          onChainAddr = undefined; // Will be set via confirmRegistration
-          // Return tx for frontend signing
-        }
-      }
 
       // Save agent metadata to DB (no wallet provisioning)
       const [agent] = await db
@@ -157,7 +265,7 @@ export const agentRouter = router({
             totalCap: agentData.totalCap,
           },
           capabilities: agentData.capabilities,
-          onChainAddress: onChainAddr,
+          onChainAddress: onChainAddress,
         })
         .returning();
 
@@ -167,36 +275,6 @@ export const agentRouter = router({
         .onConflictDoNothing();
 
       return agent;
-    }),
-
-  confirmRegistration: protectedProcedure
-    .input(z.object({
-      agentId: z.string().uuid(),
-      onChainAddress: z.string(),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const [agent] = await db
-        .update(schema.agents)
-        .set({ onChainAddress: input.onChainAddress })
-        .where(
-          and(
-            eq(schema.agents.id, input.agentId),
-            eq(schema.agents.ownerAddress, ctx.walletAddress)
-          )
-        )
-        .returning();
-
-      if (!agent) {
-        throw new Error("Agent not found or not owned by you");
-      }
-
-      return { success: true, onChainAddress: input.onChainAddress };
-    }),
-
-  getOnChainProfile: publicProcedure
-    .input(z.object({ ownerAddress: z.string() }))
-    .query(async ({ input }) => {
-      return getAgentProfile(input.ownerAddress);
     }),
 
   update: protectedProcedure

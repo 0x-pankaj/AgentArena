@@ -44,6 +44,8 @@ export type AgentDecision = z.infer<typeof AgentDecision>;
 export const AgentProfileSchema = z.object({
   id: z.string().uuid(),
   ownerAddress: z.string(),
+  assetAddress: z.string().optional(),
+  atomStatsAddress: z.string().optional(),
   name: z.string().min(1).max(100),
   category: AgentCategory,
   description: z.string().max(500),
@@ -54,8 +56,24 @@ export const AgentProfileSchema = z.object({
   capabilities: z.array(z.string()),
   isActive: z.boolean(),
   isVerified: z.boolean(),
+  trustTier: z.string().optional(),
+  reputationScore: z.number().optional(),
+  atomEnabled: z.boolean().optional(),
 });
 export type AgentProfileSchema = z.infer<typeof AgentProfileSchema>;
+
+export const AtomReputationSchema = z.object({
+  trustTier: z.string(),
+  qualityScore: z.number(),
+  feedbackCount: z.number(),
+  uniqueClients: z.number(),
+  confidence: z.number(),
+  riskScore: z.number(),
+  diversityRatio: z.number(),
+  formattedTier: z.string(),
+  compositeScore: z.number(),
+});
+export type AtomReputation = z.infer<typeof AtomReputationSchema>;
 
 export const FeedEvent = z.object({
   event_id: z.string(),
@@ -100,6 +118,9 @@ export const LeaderboardEntry = z.object({
   activePositions: z.number().optional(),
   lastActivityAt: z.string().optional(),
   rank: z.number(),
+  trustTier: z.string().optional(),
+  reputationScore: z.number().optional(),
+  atomEnabled: z.boolean().optional(),
 });
 export type LeaderboardEntry = z.infer<typeof LeaderboardEntry>;
 

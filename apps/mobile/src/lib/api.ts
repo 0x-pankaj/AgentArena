@@ -287,6 +287,61 @@ export function useJobResume() {
   });
 }
 
+// --- 8004 Agent Registry hooks ---
+
+export function useAgentRegisterOn8004() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { agentId: string; atomEnabled?: boolean }) =>
+      fetchFromAPI('agent.registerOn8004', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent'] });
+    },
+  });
+}
+
+export function useAgentConfirm8004() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { agentId: string; txSignature: string }) =>
+      fetchFromAPI('agent.confirm8004Registration', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent'] });
+    },
+  });
+}
+
+export function useAgentGetReputation(agentId: string) {
+  return useQuery({
+    queryKey: ['agent', 'reputation', agentId],
+    queryFn: () => {
+      const input = JSON.stringify({ id: agentId });
+      return fetchFromAPI(`agent.getReputation?input=${encodeURIComponent(input)}`);
+    },
+    enabled: !!agentId,
+  });
+}
+
+// --- Policy Dashboard hook ---
+
+export function useJobPolicyDashboard(jobId: string) {
+  return useQuery({
+    queryKey: ['job', 'policyDashboard', jobId],
+    queryFn: () => {
+      const input = JSON.stringify({ id: jobId });
+      return fetchFromAPI(`job.getPolicyDashboard?input=${encodeURIComponent(input)}`);
+    },
+    enabled: !!jobId,
+    staleTime: 10_000,
+  });
+}
+
 // --- Job Wallet hooks ---
 
 export function useJobWalletBalance(jobId: string) {

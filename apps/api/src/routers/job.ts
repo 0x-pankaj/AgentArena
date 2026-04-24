@@ -4,10 +4,11 @@ import { eq, and, desc } from "drizzle-orm";
 import { db, schema } from "../db";
 import { hireAgent, fundJob, cancelJob, approveJob, pauseAgentLoop, resumeJob } from "../agents/supervisor";
 import { getEffectiveBalance } from "../utils/balance";
+import { getPolicy, getWalletBalance } from "../utils/privy-agentic";
 
 async function enrichJobWithAgent(job: any) {
   const [agent] = await db
-    .select({ name: schema.agents.name, category: schema.agents.category })
+    .select({ name: schema.agents.name, category: schema.agents.category, assetAddress: schema.agents.assetAddress })
     .from(schema.agents)
     .where(eq(schema.agents.id, job.agentId))
     .limit(1);
@@ -15,16 +16,18 @@ async function enrichJobWithAgent(job: any) {
     ...job,
     agentName: agent?.name ?? "Unknown",
     agentCategory: agent?.category ?? "geo",
+    agentAssetAddress: agent?.assetAddress,
   };
 }
 
 export const jobRouter = router({
-  // Step 1: Hire agent — creates Privy wallet, builds on-chain tx, saves job as "paused"
+  // Step 1: Hire agent — creates Agentic Wallet with policy, saves job as "paused"
   create: protectedProcedure
     .input(z.object({
       agentId: z.string().uuid(),
       maxCap: z.number().min(1),
       dailyCap: z.number().min(1),
+      durationDays: z.number().min(1).max(30).default(7),
     }))
     .mutation(async ({ input, ctx }) => {
       // Ensure user exists
@@ -38,6 +41,7 @@ export const jobRouter = router({
         clientAddress: ctx.walletAddress,
         maxCap: input.maxCap,
         dailyCap: input.dailyCap,
+        durationDays: input.durationDays,
       });
 
       const [job] = await db
@@ -49,8 +53,7 @@ export const jobRouter = router({
       return {
         ...(await enrichJobWithAgent(job)),
         privyWalletAddress: result.privyWalletAddress,
-        onChainAddress: result.onChainAddress,
-        transaction: result.transaction,
+        policyId: result.policyId,
       };
     }),
 
@@ -108,7 +111,7 @@ export const jobRouter = router({
       }
     }),
 
-  // Get job wallet balance (respects DEPLOY_PHASE: simulated in dev/traction, real in production)
+  // Get job wallet balance
   getWalletBalance: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
@@ -166,7 +169,17 @@ export const jobRouter = router({
         paperBalance = await getPaperBalance(job.id);
       }
 
-      return { ...(await enrichJobWithAgent(job)), positions, trades, paperBalance };
+      // Get policy details if available
+      let policyDetails = null;
+      if (job.privyPolicyId) {
+        try {
+          policyDetails = await getPolicy(job.privyPolicyId);
+        } catch {
+          // ignore
+        }
+      }
+
+      return { ...(await enrichJobWithAgent(job)), positions, trades, paperBalance, policyDetails };
     }),
 
   list: protectedProcedure
@@ -269,6 +282,24 @@ export const jobRouter = router({
       return { success };
     }),
 
+  // Deprecated: kept for mobile backward compatibility (no-op)
+  registerOnChain: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ input }) => {
+      return { success: true, message: "On-chain registration deprecated — using 8004 + Privy Agentic Wallets" };
+    }),
+
+  // Deprecated: kept for mobile backward compatibility (no-op)
+  confirmOnChain: protectedProcedure
+    .input(z.object({
+      id: z.string().uuid(),
+      onChainAddress: z.string(),
+      txSignature: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      return { success: true, onChainAddress: input.onChainAddress, message: "On-chain registration deprecated" };
+    }),
+
   // Switch trading mode (paper <-> live)
   switchMode: protectedProcedure
     .input(z.object({
@@ -304,10 +335,10 @@ export const jobRouter = router({
       return { success: true, tradingMode: updated.tradingMode };
     }),
 
-  // Register existing job on-chain (for jobs created with "skip")
-  registerOnChain: protectedProcedure
+  // Get policy dashboard for a job
+  getPolicyDashboard: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ input, ctx }) => {
+    .query(async ({ input, ctx }) => {
       const [job] = await db
         .select()
         .from(schema.jobs)
@@ -323,80 +354,27 @@ export const jobRouter = router({
         throw new Error("Job not found or not owned by you");
       }
 
-      if (job.onChainAddress) {
-        return { success: true, onChainAddress: job.onChainAddress, message: "Already registered" };
-      }
+      const policy = job.privyPolicyId ? await getPolicy(job.privyPolicyId).catch(() => null) : null;
+      const balance = job.privyWalletAddress ? await getWalletBalance(job.privyWalletAddress).catch(() => ({ usdc: 0, sol: 0 })) : { usdc: 0, sol: 0 };
 
-      if (!job.privyWalletAddress) {
-        throw new Error("Job has no wallet");
-      }
-
-      const { getJobProfilePDA } = await import("../anchor/job-client");
-      const { PublicKey } = await import("@solana/web3.js");
-      const { createHash } = await import("crypto");
-      const idl = await import("../anchor/agent_registry.json");
-
-      const [pda] = getJobProfilePDA(new PublicKey(ctx.walletAddress), job.id);
-
-      // Return the hash so mobile doesn't need crypto module
-      const jobIdHash = createHash("sha256").update(job.id).digest("hex");
+      const maxCap = Number(job.maxCap ?? 0);
+      const spent = Number(job.totalInvested ?? 0);
+      const remaining = Math.max(0, maxCap - spent);
 
       return {
-        success: true,
-        onChainAddress: pda.toBase58(),
-        programId: idl.address,
         jobId: job.id,
-        jobIdHash,
-        privyWalletAddress: job.privyWalletAddress,
-        message: "Ready to register on-chain",
+        status: job.status,
+        tradingMode: job.tradingMode,
+        maxCap,
+        dailyCap: Number(job.dailyCap ?? 0),
+        spent,
+        remaining,
+        usdcBalance: balance.usdc,
+        solBalance: balance.sol,
+        policyExpiryAt: job.policyExpiryAt,
+        policyName: policy?.name ?? null,
+        policyRules: policy?.rules ?? [],
+        walletAddress: job.privyWalletAddress,
       };
-    }),
-
-  // Confirm on-chain registration after user signs
-  confirmOnChain: protectedProcedure
-    .input(z.object({
-      id: z.string().uuid(),
-      onChainAddress: z.string(),
-      txSignature: z.string().optional(),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const [job] = await db
-        .update(schema.jobs)
-        .set({ onChainAddress: input.onChainAddress })
-        .where(
-          and(
-            eq(schema.jobs.id, input.id),
-            eq(schema.jobs.clientAddress, ctx.walletAddress)
-          )
-        )
-        .returning();
-
-      if (!job) {
-        throw new Error("Job not found or not owned by you");
-      }
-
-      // Publish feed event for on-chain registration
-      const [agent] = await db
-        .select({ name: schema.agents.name })
-        .from(schema.agents)
-        .where(eq(schema.agents.id, job.agentId))
-        .limit(1);
-
-      if (agent) {
-        const { buildFeedEvent, publishFeedEvent } = await import("../feed");
-        const feedEvent = buildFeedEvent({
-          agentId: job.agentId,
-          agentName: agent.name,
-          category: "trade",
-          severity: "info",
-          content: {
-            summary: `${agent.name} registered on Solana`,
-          },
-          displayMessage: `${agent.name} has been registered on-chain by ${ctx.walletAddress.slice(0, 6)}...${ctx.walletAddress.slice(-4)}`,
-        });
-        await publishFeedEvent(feedEvent);
-      }
-
-      return { success: true, onChainAddress: input.onChainAddress };
     }),
 });
