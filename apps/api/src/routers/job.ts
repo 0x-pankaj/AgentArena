@@ -54,6 +54,7 @@ export const jobRouter = router({
         ...(await enrichJobWithAgent(job)),
         privyWalletAddress: result.privyWalletAddress,
         policyId: result.policyId,
+        explorerLinks: result.explorerLinks,
       };
     }),
 

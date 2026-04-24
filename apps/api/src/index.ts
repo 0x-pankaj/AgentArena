@@ -17,19 +17,22 @@ import { startMetricsLogging } from "./services/jupiter-metrics";
 import { db, schema } from "./db";
 import { EVOLUTION_CONFIG } from "@agent-arena/shared";
 import type { TradeJobData, TradeJobResult } from "./services/queue-service";
+import { verifyBackendPayer, getBackendPayerInfo } from "./utils/devnet-helpers";
 
 const app = new Hono();
 
 app.use("*", cors());
 app.use("*", logger());
 
-app.get("/health", (c) =>
-  c.json({
+app.get("/health", async (c) => {
+  const payerInfo = await getBackendPayerInfo();
+  return c.json({
     status: "ok",
     timestamp: new Date().toISOString(),
     ws: "running",
-  })
-);
+    backendPayer: payerInfo,
+  });
+});
 
 app.use(
   "/trpc/*",
@@ -45,6 +48,17 @@ const wsPort = Number(process.env.WS_PORT) || 3002;
 // --- Startup ---
 
 async function startup() {
+  // 0. Verify backend payer (critical for 8004 + ATOM)
+  const payerStatus = await verifyBackendPayer();
+  if (!payerStatus.hasFunds) {
+    console.error("[Startup] ❌ Backend payer has insufficient devnet SOL. 8004/ATOM transactions will FAIL.");
+    console.error(`[Startup]    Address: ${payerStatus.address}`);
+    console.error(`[Startup]    Balance: ${payerStatus.balanceSol} SOL`);
+    console.error(`[Startup]    Airdrop with: solana airdrop 2 ${payerStatus.address} --url devnet`);
+  } else {
+    console.log(`[Startup] ✅ Backend payer ready: ${payerStatus.address} (${payerStatus.balanceSol} SOL)`);
+  }
+
   // 1. Initialize agent registry
   initializeSupervisor();
 

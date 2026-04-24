@@ -14,7 +14,7 @@ import { getEffectiveBalance } from "../utils/balance";
 import { createAgenticWalletForJob, returnUsdcToClient, getWalletBalance } from "../utils/privy-agentic";
 import { submitAtomFeedback, getAtomSummary, computeReputationScore, AtomTag } from "../utils/atom-reputation";
 import { registerAgentOn8004WithBackendPayer } from "../utils/agent-registry-8004";
-import { transferSolFromBackend } from "../utils/devnet-helpers";
+import { transferSolFromBackend, getExplorerUrl } from "../utils/devnet-helpers";
 import { IS_DEVNET } from "@agent-arena/shared";
 import { startBackgroundPositionMonitor, stopBackgroundPositionMonitor } from "../services/position-monitor";
 import { preFlightPositionSync } from "../services/position-monitor";
@@ -64,6 +64,11 @@ export async function hireAgent(params: {
   jobId: string;
   privyWalletAddress?: string;
   policyId?: string;
+  explorerLinks?: {
+    agentAsset?: string;
+    fundTx?: string;
+    agentWallet?: string;
+  };
 }> {
   // 1. Get agent from DB
   const [agent] = await db
@@ -79,6 +84,8 @@ export async function hireAgent(params: {
   if (!agent.isActive) {
     throw new Error("Agent is not active");
   }
+
+  const explorerLinks: { agentAsset?: string; fundTx?: string; agentWallet?: string } = {};
 
   // 2. Ensure agent is registered on 8004 (auto-register if needed)
   if (!agent.assetAddress && IS_DEVNET) {
@@ -105,10 +112,14 @@ export async function hireAgent(params: {
         .where(eq(schema.agents.id, params.agentId));
 
       agent.assetAddress = result.agentAsset;
-      console.log(`[Supervisor] Auto-registered agent ${agent.id} on 8004: ${result.agentAsset}`);
+      explorerLinks.agentAsset = getExplorerUrl("address", result.agentAsset);
+      console.log(`[Supervisor] ✅ Auto-registered agent ${agent.id} on 8004: ${result.agentAsset}`);
+      console.log(`[Supervisor]    Explorer: ${explorerLinks.agentAsset}`);
     } catch (err: any) {
       console.warn(`[Supervisor] 8004 auto-registration failed: ${err.message}`);
     }
+  } else if (agent.assetAddress) {
+    explorerLinks.agentAsset = getExplorerUrl("address", agent.assetAddress);
   }
 
   // 3. Create Agentic Wallet with dynamic job policy
@@ -138,7 +149,9 @@ export async function hireAgent(params: {
       try {
         const fundSig = await transferSolFromBackend(walletAddress, 0.1);
         if (fundSig) {
-          console.log(`[Supervisor] Seeded agent wallet ${walletAddress} with 0.1 SOL from backend payer: ${fundSig}`);
+          explorerLinks.fundTx = getExplorerUrl("tx", fundSig);
+          explorerLinks.agentWallet = getExplorerUrl("address", walletAddress);
+          console.log(`[Supervisor] ✅ Seeded agent wallet ${walletAddress} with 0.1 SOL: ${fundSig}`);
         } else {
           console.warn(`[Supervisor] Failed to seed agent wallet — backend payer may need devnet SOL`);
         }
@@ -183,6 +196,7 @@ export async function hireAgent(params: {
     jobId: job.id,
     privyWalletAddress: walletAddress ?? undefined,
     policyId: policyId ?? undefined,
+    explorerLinks: Object.keys(explorerLinks).length > 0 ? explorerLinks : undefined,
   };
 }
 
