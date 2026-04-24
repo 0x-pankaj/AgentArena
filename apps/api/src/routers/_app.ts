@@ -1,7 +1,7 @@
 import { router } from "../utils/trpc";
 import { agentRouter } from "./agent";
 import { marketRouter } from "./market";
-import { tradeRouter, positionRouter } from "./trade";
+import { tradeRouter, positionRouter, paperTradingRouter } from "./trade";
 import { jobRouter } from "./job";
 import { userRouter } from "./user";
 import { leaderboardRouter } from "./leaderboard";
@@ -13,6 +13,7 @@ export const appRouter = router({
   market: marketRouter,
   trade: tradeRouter,
   position: positionRouter,
+  paperTrading: paperTradingRouter,
   job: jobRouter,
   user: userRouter,
   leaderboard: leaderboardRouter,

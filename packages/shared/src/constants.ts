@@ -36,8 +36,14 @@ export const JUPITER_PREDICT_BASE_URL = "https://prediction-market-api.jup.ag/ap
 export const JUPITER_PREDICT_DOCS = "https://prediction-market-api.jup.ag/docs";
 export const JUPUSD_MINT = "JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD";
 
-// Whether to execute trades (false = decision-only mode, log but don't trade)
-// In production, real trades are executed. In dev/traction, always decision-only.
+// Paper Trading Configuration
+export const PAPER_TRADING_ENABLED = process.env.PAPER_TRADING_ENABLED !== "false";
+export const DEFAULT_PAPER_BALANCE_USDC = Number(process.env.DEFAULT_PAPER_BALANCE_USDC ?? "1000");
+export const DEFAULT_TAKE_PROFIT_PERCENT = Number(process.env.DEFAULT_TAKE_PROFIT_PERCENT ?? "0.20");
+export const DEFAULT_STOP_LOSS_PERCENT = Number(process.env.DEFAULT_STOP_LOSS_PERCENT ?? "0.15");
+
+// Whether to execute trades (false = paper trading only, log but don't trade on-chain)
+// In production, real trades are executed. In dev/traction, paper trading is default.
 export const EXECUTE_TRADES = IS_PRODUCTION;
 
 // Simulated mode: uses TEST_WALLET_BALANCE instead of real on-chain balance

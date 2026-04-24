@@ -37,6 +37,8 @@ export const jobs = pgTable("jobs", {
   maxCap: decimal("max_cap", { precision: 18, scale: 6 }),
   dailyCap: decimal("daily_cap", { precision: 18, scale: 6 }),
   status: varchar("status", { length: 20 }).default("paused"),
+  tradingMode: varchar("trading_mode", { length: 10 }).default("paper").notNull(), // "paper" | "live"
+  paperBalance: decimal("paper_balance", { precision: 18, scale: 6 }).default("1000"),
   totalInvested: decimal("total_invested", { precision: 18, scale: 6 }).default("0"),
   totalProfit: decimal("total_profit", { precision: 18, scale: 6 }).default("0"),
   startedAt: timestamp("started_at"),
@@ -46,6 +48,7 @@ export const jobs = pgTable("jobs", {
   clientIdx: index("jobs_client_idx").on(table.clientAddress),
   agentIdx: index("jobs_agent_idx").on(table.agentId),
   statusIdx: index("jobs_status_idx").on(table.status),
+  modeIdx: index("jobs_mode_idx").on(table.tradingMode),
 }));
 
 export const positions = pgTable("positions", {
@@ -59,14 +62,46 @@ export const positions = pgTable("positions", {
   currentPrice: decimal("current_price", { precision: 10, scale: 6 }),
   pnl: decimal("pnl", { precision: 18, scale: 6 }),
   status: varchar("status", { length: 20 }).default("open"),
+  isPaperTrade: boolean("is_paper_trade").default(true).notNull(),
+  expiresAt: timestamp("expires_at"),
+  takeProfitPercent: decimal("take_profit_percent", { precision: 5, scale: 4 }).default("0.20"),
+  stopLossPercent: decimal("stop_loss_percent", { precision: 5, scale: 4 }).default("0.15"),
+  marketResult: varchar("market_result", { length: 20 }),
+  claimableAt: timestamp("claimable_at"),
+  claimedAt: timestamp("claimed_at"),
   reasoningSnippet: text("reasoning_snippet"),
   txSignature: varchar("tx_signature", { length: 88 }),
   positionPubkey: varchar("position_pubkey", { length: 44 }),
+  simulatedOrderPubkey: varchar("simulated_order_pubkey", { length: 100 }),
+  simulatedPositionPubkey: varchar("simulated_position_pubkey", { length: 100 }),
   openedAt: timestamp("opened_at").defaultNow(),
   closedAt: timestamp("closed_at"),
 }, (table) => ({
   jobIdx: index("positions_job_idx").on(table.jobId),
   statusIdx: index("positions_status_idx").on(table.status),
+  paperIdx: index("positions_paper_idx").on(table.isPaperTrade),
+  marketIdx: index("positions_market_idx").on(table.marketId),
+}));
+
+export const paperOrders = pgTable("paper_orders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  jobId: uuid("job_id").notNull().references(() => jobs.id),
+  marketId: varchar("market_id", { length: 100 }).notNull(),
+  side: varchar("side", { length: 10 }).notNull(),
+  amount: decimal("amount", { precision: 18, scale: 6 }).notNull(),
+  depositAmount: decimal("deposit_amount", { precision: 18, scale: 6 }).notNull(),
+  status: varchar("status", { length: 20 }).default("pending").notNull(), // pending | filled | failed
+  simulatedTxSignature: varchar("simulated_tx_signature", { length: 100 }),
+  simulatedOrderPubkey: varchar("simulated_order_pubkey", { length: 100 }),
+  simulatedPositionPubkey: varchar("simulated_position_pubkey", { length: 100 }),
+  fillPrice: decimal("fill_price", { precision: 10, scale: 6 }),
+  filledAt: timestamp("filled_at"),
+  failedReason: text("failed_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  jobIdx: index("paper_orders_job_idx").on(table.jobId),
+  statusIdx: index("paper_orders_status_idx").on(table.status),
+  marketIdx: index("paper_orders_market_idx").on(table.marketId),
 }));
 
 export const trades = pgTable("trades", {
@@ -92,7 +127,8 @@ export const trades = pgTable("trades", {
 }));
 
 export const agentPerformance = pgTable("agent_performance", {
-  agentId: uuid("agent_id").primaryKey().references(() => agents.id),
+  agentId: uuid("agent_id").notNull().references(() => agents.id),
+  isPaperTrading: boolean("is_paper_trading").default(true).notNull(),
   totalTrades: integer("total_trades").default(0),
   winningTrades: integer("winning_trades").default(0),
   totalPnl: decimal("total_pnl", { precision: 18, scale: 6 }).default("0"),
@@ -101,7 +137,9 @@ export const agentPerformance = pgTable("agent_performance", {
   maxDrawdown: decimal("max_drawdown", { precision: 10, scale: 4 }),
   totalVolume: decimal("total_volume", { precision: 18, scale: 6 }).default("0"),
   lastUpdated: timestamp("last_updated").defaultNow(),
-});
+}, (table) => ({
+  pk: index("agent_perf_pk").on(table.agentId, table.isPaperTrading),
+}));
 
 export const marketData = pgTable("market_data", {
   marketId: varchar("market_id", { length: 100 }).primaryKey(),

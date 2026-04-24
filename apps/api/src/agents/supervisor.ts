@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { TEST_MODE, TEST_WALLET_BALANCE_USDC, TEST_WALLET_BALANCE_SOL, DEPLOY_PHASE, IS_SIMULATED, IS_PRODUCTION, EMERGENCY_STOP } from "@agent-arena/shared";
+import { TEST_MODE, TEST_WALLET_BALANCE_USDC, TEST_WALLET_BALANCE_SOL, DEPLOY_PHASE, IS_SIMULATED, IS_PRODUCTION, EMERGENCY_STOP, DEFAULT_PAPER_BALANCE_USDC } from "@agent-arena/shared";
 import { db, schema } from "../db";
 import { redis } from "../utils/redis";
 import { REDIS_KEYS } from "@agent-arena/shared";
@@ -15,7 +15,8 @@ import { getEffectiveBalance } from "../utils/balance";
 import { createAgentPolicy } from "../utils/privy-policies";
 import { buildInitializeJobTx, getJobProfilePDA } from "../anchor/job-client";
 import { PublicKey } from "@solana/web3.js";
-import { startBackgroundPriceMonitor, stopBackgroundPriceMonitor } from "../services/price-monitor";
+import { startBackgroundPositionMonitor, stopBackgroundPositionMonitor } from "../services/position-monitor";
+import { preFlightPositionSync } from "../services/position-monitor";
 
 // --- Category to registry ID mapping ---
 
@@ -59,7 +60,7 @@ export async function hireAgent(params: {
   dailyCap: number;
 }): Promise<{
   jobId: string;
-  privyWalletAddress: string;
+  privyWalletAddress?: string;
   onChainAddress?: string;
   transaction: string;
 }> {
@@ -78,69 +79,75 @@ export async function hireAgent(params: {
     throw new Error("Agent is not active");
   }
 
-  // 2. Create phase-appropriate Privy policy for this job's wallet
-  const policyId = await createAgentPolicy(DEPLOY_PHASE);
-  console.log(`[Supervisor] Created ${DEPLOY_PHASE} policy for job: ${policyId}`);
+  // 2. Try to create Privy wallet (optional for paper trading — won't fail if unavailable)
+  let agentWallet: { id: string; address: string } | null = null;
+  let policyId: string | null = null;
+  try {
+    policyId = await createAgentPolicy(DEPLOY_PHASE);
+    console.log(`[Supervisor] Created ${DEPLOY_PHASE} policy for job: ${policyId}`);
 
-  // 3. Create Privy wallet with policy attached
-  let agentWallet: { id: string; address: string };
-  agentWallet = await createAgentWallet(agent.name, [policyId]);
-  console.log(`[Supervisor] Created Privy wallet for job (${agent.name}): ${agentWallet.address} with policy ${policyId}`);
+    agentWallet = await createAgentWallet(agent.name, [policyId]);
+    console.log(`[Supervisor] Created Privy wallet for job (${agent.name}): ${agentWallet.address} with policy ${policyId}`);
 
-  // 4. Fund wallet with SOL for tx fees (skip in simulated mode — fund manually on devnet)
-  if (IS_PRODUCTION) {
-    try {
-      const { solSig } = await fundAgentWallet(agentWallet.address, 0.05);
-      console.log(`[Supervisor] Funded wallet with 0.05 SOL: ${solSig}`);
-    } catch (err: any) {
-      console.error(`[Supervisor] Failed to fund wallet with SOL: ${err.message}`);
+    // Fund wallet with SOL for tx fees (skip in simulated mode)
+    if (IS_PRODUCTION) {
+      try {
+        const { solSig } = await fundAgentWallet(agentWallet.address, 0.05);
+        console.log(`[Supervisor] Funded wallet with 0.05 SOL: ${solSig}`);
+      } catch (err: any) {
+        console.error(`[Supervisor] Failed to fund wallet with SOL: ${err.message}`);
+      }
+    } else {
+      console.log(`[Supervisor] SIMULATED MODE: Skipping auto SOL funding`);
     }
-  } else {
-    console.log(`[Supervisor] SIMULATED MODE: Skipping auto SOL funding — fund wallet manually on devnet`);
+  } catch (err: any) {
+    console.warn(`[Supervisor] Privy wallet creation failed (continuing without wallet for paper trading): ${err.message}`);
   }
 
-  // 5. Create job in DB (paused by default)
+  // 3. Create job in DB (paused by default, paper trading mode)
   const [job] = await db
     .insert(schema.jobs)
     .values({
       clientAddress: params.clientAddress,
       agentId: params.agentId,
-      privyWalletId: agentWallet.id,
-      privyWalletAddress: agentWallet.address,
-      privyPolicyId: policyId,
+      privyWalletId: agentWallet?.id ?? null,
+      privyWalletAddress: agentWallet?.address ?? null,
+      privyPolicyId: policyId ?? null,
       maxCap: String(params.maxCap),
       dailyCap: String(params.dailyCap),
       status: "paused",
+      tradingMode: "paper",
+      paperBalance: String(DEFAULT_PAPER_BALANCE_USDC),
     })
     .returning();
 
-  // 5. Build on-chain initialize_job transaction (optional — requires deployed program)
+  // 4. Build on-chain initialize_job transaction (optional — requires deployed program)
   let txBase64 = "";
   let pdaAddress = "";
-  try {
-    const tx = await buildInitializeJobTx({
-      userAddress: params.clientAddress,
-      agentId: job.id,
-      privyWalletAddress: agentWallet.address,
-    });
+  if (agentWallet?.address) {
+    try {
+      const tx = await buildInitializeJobTx({
+        userAddress: params.clientAddress,
+        agentId: job.id,
+        privyWalletAddress: agentWallet.address,
+      });
 
-    const serialized = tx.serialize({
-      requireAllSignatures: false,
-      verifySignatures: false,
-    });
-    txBase64 = serialized.toString("base64");
+      const serialized = tx.serialize({
+        requireAllSignatures: false,
+        verifySignatures: false,
+      });
+      txBase64 = serialized.toString("base64");
 
-    // Store PDA address for reference, but DON'T save to DB yet
-    // It will be saved only after user signs the tx
-    const [jobPDA] = getJobProfilePDA(new PublicKey(params.clientAddress), job.id);
-    pdaAddress = jobPDA.toBase58();
-  } catch (err: any) {
-    console.warn(`[Supervisor] On-chain tx build failed (program may not be deployed): ${err.message}`);
+      const [jobPDA] = getJobProfilePDA(new PublicKey(params.clientAddress), job.id);
+      pdaAddress = jobPDA.toBase58();
+    } catch (err: any) {
+      console.warn(`[Supervisor] On-chain tx build failed (program may not be deployed): ${err.message}`);
+    }
   }
 
   return {
     jobId: job.id,
-    privyWalletAddress: agentWallet.address,
+    privyWalletAddress: agentWallet?.address,
     onChainAddress: pdaAddress || undefined,
     transaction: txBase64,
   };
@@ -158,11 +165,27 @@ export async function fundJob(jobId: string): Promise<{
     .where(eq(schema.jobs.id, jobId))
     .limit(1);
 
-  if (!job || !job.privyWalletAddress) {
-    throw new Error("Job not found or has no wallet");
+  if (!job) {
+    throw new Error("Job not found");
   }
 
-  // Simulated mode: trust manual setup, use configured test balance
+  const tradingMode = (job.tradingMode as "paper" | "live") ?? "paper";
+
+  // For paper trading, always succeed with paper balance — no wallet needed
+  if (tradingMode === "paper") {
+    const paperBal = job.paperBalance ? Number(job.paperBalance) : DEFAULT_PAPER_BALANCE_USDC;
+    await db
+      .update(schema.jobs)
+      .set({ totalInvested: String(paperBal) })
+      .where(eq(schema.jobs.id, jobId));
+    return { success: true, balance: { usdc: paperBal, sol: 0.05 } };
+  }
+
+  // Live mode: require real wallet with funds
+  if (!job.privyWalletAddress) {
+    throw new Error("Job has no wallet");
+  }
+
   const effectiveBalance = IS_SIMULATED
     ? { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL }
     : await getEffectiveBalance(job.privyWalletAddress);
@@ -171,8 +194,6 @@ export async function fundJob(jobId: string): Promise<{
     return { success: false, balance: effectiveBalance };
   }
 
-
-  // Update totalInvested by adding the USDC balance
   await db
     .update(schema.jobs)
     .set({ totalInvested: sql`${schema.jobs.totalInvested} + ${String(effectiveBalance.usdc)}` })
@@ -198,25 +219,32 @@ export async function resumeJob(jobId: string): Promise<boolean> {
     return true; // already running
   }
 
-  if (!job.privyWalletAddress) {
-    throw new Error("Job has no wallet — cannot resume");
-  }
+  const tradingMode = (job.tradingMode as "paper" | "live") ?? "paper";
 
-  // Check real devnet balance; fall back to test balance if RPC fails
+  // For paper trading, skip wallet checks and use paper balance
   let effectiveBalance: { usdc: number; sol: number };
-  try {
-    effectiveBalance = await getEffectiveBalance(job.privyWalletAddress);
-  } catch {
-    effectiveBalance = { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL };
-  }
+  if (tradingMode === "paper") {
+    const paperBal = job.paperBalance ? Number(job.paperBalance) : DEFAULT_PAPER_BALANCE_USDC;
+    effectiveBalance = { usdc: paperBal, sol: 0.05 };
+  } else {
+    // Live mode: require real wallet
+    if (!job.privyWalletAddress) {
+      throw new Error("Job has no wallet — cannot resume");
+    }
 
-  // In simulated mode, trust manual setup — use configured balance even if RPC returns 0
-  if (IS_SIMULATED) {
-    effectiveBalance = { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL };
-  }
+    try {
+      effectiveBalance = await getEffectiveBalance(job.privyWalletAddress);
+    } catch {
+      effectiveBalance = { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL };
+    }
 
-  if (effectiveBalance.usdc <= 0 && effectiveBalance.sol <= 0) {
-    throw new Error("Wallet has no funds — please fund first");
+    if (IS_SIMULATED) {
+      effectiveBalance = { usdc: TEST_WALLET_BALANCE_USDC, sol: TEST_WALLET_BALANCE_SOL };
+    }
+
+    if (effectiveBalance.usdc <= 0 && effectiveBalance.sol <= 0) {
+      throw new Error("Wallet has no funds — please fund first");
+    }
   }
 
   // Get agent category
@@ -230,7 +258,7 @@ export async function resumeJob(jobId: string): Promise<boolean> {
     throw new Error("Agent not found");
   }
 
-  // Update totalInvested
+  // Update totalInvested and status
   await db
     .update(schema.jobs)
     .set({
@@ -240,16 +268,41 @@ export async function resumeJob(jobId: string): Promise<boolean> {
     })
     .where(eq(schema.jobs.id, jobId));
 
+  // === PRE-FLIGHT POSITION SYNC ===
+  // Before starting the agent loop, sync all open positions:
+  // - Update prices
+  // - Check for expired markets
+  // - Check for resolved markets (auto-claim if paper)
+  try {
+    const syncResult = await preFlightPositionSync({
+      jobId,
+      agentId: job.agentId,
+      agentWalletId: job.privyWalletId ?? "",
+      agentName: agent.name,
+      walletAddress: job.privyWalletAddress ?? "",
+      tradingMode: (job.tradingMode as "paper" | "live") ?? "paper",
+    });
+
+    console.log(
+      `[PreFlightSync] Job ${jobId}: ${syncResult.openPositionsCount} open positions, ` +
+      `${syncResult.closedByExpiry} closed by expiry, ` +
+      `${syncResult.claimedByResolution} claimed by resolution`
+    );
+  } catch (err) {
+    console.error(`[PreFlightSync] Failed for job ${jobId}:`, err);
+    // Don't fail resume — agent can still start and sync on next tick
+  }
+
   // Start agent loop
   const ctx: AgentRuntimeContext = {
     agentId: job.agentId,
     jobId: job.id,
     agentWalletId: job.privyWalletId ?? "",
-    agentWalletAddress: job.privyWalletAddress,
+    agentWalletAddress: job.privyWalletAddress ?? "",
     ownerPubkey: job.clientAddress,
   };
 
-  startAgentLoop(ctx, agent.category);
+  await startAgentLoop(ctx, agent.category);
 
   // Publish feed event — agent actually started
   const feedEvent = buildFeedEvent({
@@ -259,19 +312,19 @@ export async function resumeJob(jobId: string): Promise<boolean> {
     category: "trade",
     severity: "significant",
     content: {
-      summary: `${agent.name} activated with $${effectiveBalance.usdc.toFixed(0)} USDC`,
+      summary: `${agent.name} activated with $${effectiveBalance.usdc.toFixed(0)} USDC (${job.tradingMode ?? "paper"})`,
     },
-    displayMessage: `${agent.name} is now trading with $${effectiveBalance.usdc.toFixed(0)} USDC`,
+    displayMessage: `${agent.name} is now trading with $${effectiveBalance.usdc.toFixed(0)} USDC (${job.tradingMode ?? "paper"})`,
   });
   await publishFeedEvent(feedEvent);
 
-  console.log(`[Supervisor] Resumed job ${jobId} with $${effectiveBalance.usdc} USDC`);
+  console.log(`[Supervisor] Resumed job ${jobId} with $${effectiveBalance.usdc} USDC (${job.tradingMode ?? "paper"})`);
   return true;
 }
 
 // --- Start an agent loop ---
 
-export function startAgentLoop(ctx: AgentRuntimeContext, category: string = "geo"): void {
+export async function startAgentLoop(ctx: AgentRuntimeContext, category: string = "geo"): Promise<void> {
   const existing = activeAgents.get(ctx.jobId);
   if (existing?.running) {
     console.log(`[Supervisor] Job ${ctx.jobId} already running`);
@@ -349,7 +402,22 @@ export function startAgentLoop(ctx: AgentRuntimeContext, category: string = "geo
   agent.intervalId = setInterval(tick, 5 * 60 * 1000);
 
   activeAgents.set(ctx.jobId, agent);
-  startBackgroundPriceMonitor({ jobId: ctx.jobId, agentId: ctx.agentId, agentWalletId: ctx.agentWalletId, agentName: category });
+
+  // Start background position monitor (stop-loss, take-profit, expiry, resolution)
+  const [jobMode] = await db
+    .select({ tradingMode: schema.jobs.tradingMode })
+    .from(schema.jobs)
+    .where(eq(schema.jobs.id, ctx.jobId))
+    .limit(1);
+
+  startBackgroundPositionMonitor({
+    jobId: ctx.jobId,
+    agentId: ctx.agentId,
+    agentWalletId: ctx.agentWalletId,
+    agentName: category,
+    tradingMode: (jobMode?.tradingMode as "paper" | "live") ?? "paper",
+  });
+
   console.log(`[Supervisor] Started agent loop: job ${ctx.jobId} (${category})`);
 }
 
@@ -359,7 +427,7 @@ export function stopAgentLoop(jobId: string): boolean {
   const agent = activeAgents.get(jobId);
   if (!agent) return false;
 
-  stopBackgroundPriceMonitor(jobId);
+  stopBackgroundPositionMonitor(jobId);
   if (agent.intervalId) {
     clearInterval(agent.intervalId);
   }
@@ -377,7 +445,7 @@ export function pauseAgentLoop(jobId: string, reason: string = "User paused"): b
   const agent = activeAgents.get(jobId);
   if (!agent) return false;
 
-  stopBackgroundPriceMonitor(jobId);
+  stopBackgroundPositionMonitor(jobId);
   if (agent.intervalId) {
     clearInterval(agent.intervalId);
     agent.intervalId = null;
@@ -534,11 +602,11 @@ export async function resumeActiveAgents(): Promise<number> {
         agentId: job.agentId,
         jobId: job.id,
         agentWalletId: job.privyWalletId,
-        agentWalletAddress: job.privyWalletAddress,
+    agentWalletAddress: job.privyWalletAddress ?? "",
         ownerPubkey: job.clientAddress,
       };
 
-      startAgentLoop(ctx, agent.category);
+      await startAgentLoop(ctx, agent.category);
       count++;
     }
   }

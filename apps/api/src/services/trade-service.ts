@@ -1,20 +1,22 @@
 import { eq, and, desc } from "drizzle-orm";
 import { db, schema } from "../db";
 import { redis } from "../utils/redis";
-import { REDIS_KEYS, EXECUTE_TRADES, IS_DEVNET } from "@agent-arena/shared";
+import { REDIS_KEYS, EXECUTE_TRADES } from "@agent-arena/shared";
 import {
   jupiterPredict,
   type CreateOrderParams,
-  type JupiterPosition,
 } from "../plugins/polymarket-plugin";
 import {
   runPreTradeChecks,
   checkStopLoss,
   calculatePositionSize,
   type PortfolioSnapshot,
-  type PositionRecord,
 } from "../plugins/risk-plugin";
 import { signSolanaTransaction } from "../utils/privy";
+import {
+  paperBuyOrder,
+  paperClosePosition,
+} from "./paper-trading";
 
 // --- Retry helper for external API calls ---
 
@@ -160,58 +162,99 @@ export async function executeBuyOrder(params: {
   );
   const finalAmount = Math.min(params.amount, positionSize);
 
-  // 3. Create order via Jupiter Predict API
+  // 3. Check trading mode for this job
+  const [job] = await db
+    .select({ tradingMode: schema.jobs.tradingMode })
+    .from(schema.jobs)
+    .where(eq(schema.jobs.id, params.jobId))
+    .limit(1);
+
+  const tradingMode = job?.tradingMode ?? "paper";
+
+  // 4. Execute based on trading mode
   try {
+    if (tradingMode === "paper") {
+      // Paper trading: simulate execution with real market data
+      const result = await paperBuyOrder({
+        jobId: params.jobId,
+        agentId: params.agentId,
+        marketId: params.marketId,
+        marketQuestion: params.marketQuestion,
+        isYes: params.isYes,
+        depositAmount: finalAmount,
+        entryPrice: params.entryPrice,
+        reasoning: params.reasoning,
+        category: params.category,
+        marketClosesAt: params.marketClosesAt,
+      });
+
+      if (!result.success) {
+        return { success: false, error: result.error };
+      }
+
+      // Fetch the created position
+      const orderPubkey = result.orderPubkey ?? `paper-order-${params.jobId}-${Date.now()}`;
+      const [position] = await db
+        .select()
+        .from(schema.positions)
+        .where(eq(schema.positions.simulatedOrderPubkey, orderPubkey))
+        .limit(1);
+
+      if (position) {
+        // Push to feed
+        await redis.xadd(
+          REDIS_KEYS.AGENT_EVENTS_STREAM,
+          "*",
+          "event",
+          JSON.stringify({
+            type: "trade",
+            agentId: params.agentId,
+            action: "buy",
+            marketId: params.marketId,
+            marketQuestion: params.marketQuestion,
+            side: params.isYes ? "yes" : "no",
+            amount: result.contracts ?? finalAmount,
+            reasoning: params.reasoning,
+            txSignature: result.txSignature,
+            isPaperTrade: true,
+            timestamp: new Date().toISOString(),
+          })
+        );
+
+        await redis.set(
+          `${REDIS_KEYS.AGENT_STATS_PREFIX}${params.agentId}:last_trade`,
+          String(Date.now())
+        );
+
+        return { success: true, position };
+      }
+
+      return { success: false, error: "Paper trade executed but position not found" };
+    }
+
+    // Live trading: real Jupiter API + on-chain signing
+    if (!EXECUTE_TRADES) {
+      return { success: false, error: "Live trading disabled — set DEPLOY_PHASE=production and EXECUTE_TRADES=true" };
+    }
+
     const orderParams: CreateOrderParams = {
       ownerPubkey: params.ownerPubkey,
       marketId: params.marketId,
       isYes: params.isYes,
       isBuy: true,
-      depositAmount: String(Math.round(finalAmount * 1_000_000)), // USDC has 6 decimals
+      depositAmount: String(Math.round(finalAmount * 1_000_000)),
     };
-
-    // Decision-only mode: log but don't execute on devnet
-    if (!EXECUTE_TRADES) {
-      console.log(
-        `[DECISION-ONLY] Agent ${params.agentId}: BUY ${params.isYes ? "YES" : "NO"} $${finalAmount} on "${params.marketQuestion}"`
-      );
-      console.log(`  Confidence: ${(params.confidence * 100).toFixed(0)}%`);
-      console.log(`  Reasoning: ${params.reasoning.slice(0, 200)}`);
-
-      // Push decision to feed as analysis event (not a trade)
-      await redis.xadd(
-        REDIS_KEYS.AGENT_EVENTS_STREAM,
-        "*",
-        "event",
-        JSON.stringify({
-          type: "decision",
-          agentId: params.agentId,
-          action: "would_buy",
-          marketId: params.marketId,
-          marketQuestion: params.marketQuestion,
-          side: params.isYes ? "yes" : "no",
-          amount: finalAmount,
-          confidence: params.confidence,
-          reasoning: params.reasoning,
-          timestamp: new Date().toISOString(),
-        })
-      );
-
-      return { success: false, error: "Decision-only mode (devnet) — trade not executed" };
-    }
 
     const order = await withRetry(
       () => jupiterPredict.createOrder(orderParams),
       "jupiter.createOrder"
     );
 
-    // 4. Sign the transaction
     const txSignature = await signSolanaTransaction(
       params.agentWalletId,
       order.transaction
     );
 
-    // 5. Record position in DB
     const [position] = await db
       .insert(schema.positions)
       .values({
@@ -222,13 +265,13 @@ export async function executeBuyOrder(params: {
         amount: String(finalAmount),
         entryPrice: String(params.entryPrice),
         status: "open",
+        isPaperTrade: false,
         reasoningSnippet: params.reasoning,
         txSignature,
         positionPubkey: order.positionPubkey ?? null,
       })
       .returning();
 
-    // 6. Push to Redis stream for public feed
     await redis.xadd(
       REDIS_KEYS.AGENT_EVENTS_STREAM,
       "*",
@@ -243,11 +286,11 @@ export async function executeBuyOrder(params: {
         amount: finalAmount,
         reasoning: params.reasoning,
         txSignature,
+        isPaperTrade: false,
         timestamp: new Date().toISOString(),
       })
     );
 
-    // 7. Update last trade timestamp
     await redis.set(
       `${REDIS_KEYS.AGENT_STATS_PREFIX}${params.agentId}:last_trade`,
       String(Date.now())
@@ -289,42 +332,75 @@ export async function closePosition(params: {
   }
 
   try {
-    // Decision-only mode: log but don't execute on devnet
-    if (!EXECUTE_TRADES) {
-      console.log(
-        `[DECISION-ONLY] Agent ${params.agentId}: CLOSE position ${params.positionId} on "${position.marketQuestion}"`
-      );
-      console.log(`  Reason: ${params.reason}`);
+    // Route based on trading mode
+    if (position.isPaperTrade) {
+      const result = await paperClosePosition({
+        jobId: position.jobId,
+        positionId: params.positionId,
+        agentId: params.agentId,
+        reason: params.reason,
+      });
 
-      await redis.xadd(
-        REDIS_KEYS.AGENT_EVENTS_STREAM,
-        "*",
-        "event",
-        JSON.stringify({
-          type: "decision",
+      if (result.success) {
+        // Push to feed
+        await redis.xadd(
+          REDIS_KEYS.AGENT_EVENTS_STREAM,
+          "*",
+          "event",
+          JSON.stringify({
+            type: "position_update",
+            agentId: params.agentId,
+            action: "sell",
+            marketId: position.marketId,
+            marketQuestion: position.marketQuestion,
+            pnl: result.pnl
+              ? { value: result.pnl, percent: (result.pnl / Number(position.amount)) * 100 }
+              : undefined,
+            reason: params.reason,
+            isPaperTrade: true,
+            timestamp: new Date().toISOString(),
+          })
+        );
+
+        // Return a synthetic trade record for compatibility
+        const syntheticTrade = {
+          id: `paper-${Date.now()}`,
+          jobId: position.jobId,
           agentId: params.agentId,
-          action: "would_close",
-          positionId: params.positionId,
+          marketId: position.marketId,
           marketQuestion: position.marketQuestion,
-          reason: params.reason,
-          timestamp: new Date().toISOString(),
-        })
-      );
+          side: position.side,
+          amount: position.amount,
+          entryPrice: position.entryPrice,
+          exitPrice: String(result.proceeds ? result.proceeds / Number(position.amount) : position.currentPrice),
+          outcome: (result.pnl && result.pnl >= 0 ? "win" : "loss") as "win" | "loss" | null,
+          profitLoss: String(result.pnl ?? 0),
+          reasoning: params.reason,
+          executedAt: new Date(),
+          settledAt: new Date(),
+          txSignature: position.txSignature,
+        } as typeof schema.trades.$inferSelect;
 
-      return { success: false, error: "Decision-only mode (devnet) — close not executed" };
+        return { success: true, trade: syntheticTrade };
+      }
+
+      return { success: false, error: result.error };
     }
 
-    // 2. Close via Jupiter Predict API
+    // Live trading close
+    if (!EXECUTE_TRADES) {
+      return { success: false, error: "Live trading disabled" };
+    }
+
     const closeIdentifier = position.positionPubkey ?? position.txSignature ?? position.marketId;
     if (!closeIdentifier || closeIdentifier.length === 0) {
-      return { success: false, error: "No valid identifier to close position (missing positionPubkey, txSignature, and marketId)" };
+      return { success: false, error: "No valid identifier to close position" };
     }
     await withRetry(
       () => jupiterPredict.closePosition(closeIdentifier),
       "jupiter.closePosition"
     );
 
-    // 3. Update position
     const exitPrice = position.currentPrice ?? position.entryPrice;
     const pnl = calculatePnl(
       Number(position.amount),
@@ -342,7 +418,6 @@ export async function closePosition(params: {
       })
       .where(eq(schema.positions.id, params.positionId));
 
-    // 4. Record trade
     const [trade] = await db
       .insert(schema.trades)
       .values({
@@ -361,7 +436,6 @@ export async function closePosition(params: {
       })
       .returning();
 
-    // 5. Push to feed
     await redis.xadd(
       REDIS_KEYS.AGENT_EVENTS_STREAM,
       "*",
@@ -374,6 +448,7 @@ export async function closePosition(params: {
         marketQuestion: position.marketQuestion,
         pnl: { value: pnl, percent: (pnl / Number(position.amount)) * 100 },
         reason: params.reason,
+        isPaperTrade: false,
         timestamp: new Date().toISOString(),
       })
     );

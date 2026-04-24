@@ -159,7 +159,14 @@ export const jobRouter = router({
         .where(eq(schema.trades.jobId, input.id))
         .orderBy(desc(schema.trades.executedAt));
 
-      return { ...(await enrichJobWithAgent(job)), positions, trades };
+      // Get paper balance if applicable
+      let paperBalance = null;
+      if (job.tradingMode === "paper") {
+        const { getPaperBalance } = await import("../services/paper-trading");
+        paperBalance = await getPaperBalance(job.id);
+      }
+
+      return { ...(await enrichJobWithAgent(job)), positions, trades, paperBalance };
     }),
 
   list: protectedProcedure
@@ -260,6 +267,41 @@ export const jobRouter = router({
       }
 
       return { success };
+    }),
+
+  // Switch trading mode (paper <-> live)
+  switchMode: protectedProcedure
+    .input(z.object({
+      id: z.string().uuid(),
+      mode: z.enum(["paper", "live"]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const [job] = await db
+        .select()
+        .from(schema.jobs)
+        .where(
+          and(
+            eq(schema.jobs.id, input.id),
+            eq(schema.jobs.clientAddress, ctx.walletAddress)
+          )
+        )
+        .limit(1);
+
+      if (!job) {
+        throw new Error("Job not found or not owned by you");
+      }
+
+      if (job.status === "active") {
+        throw new Error("Cannot switch mode while job is active. Please pause first.");
+      }
+
+      const [updated] = await db
+        .update(schema.jobs)
+        .set({ tradingMode: input.mode })
+        .where(eq(schema.jobs.id, input.id))
+        .returning();
+
+      return { success: true, tradingMode: updated.tradingMode };
     }),
 
   // Register existing job on-chain (for jobs created with "skip")

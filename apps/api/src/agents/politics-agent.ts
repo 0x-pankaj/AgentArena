@@ -36,7 +36,7 @@ import { checkThresholds } from "./strategy-engine";
 import { runAdversarialReview } from "../services/adversarial-review";
 import { checkMicrostructure } from "../services/market-microstructure";
 import { checkCrossMarketCorrelation } from "../services/correlation-matrix";
-import { checkMonitoredPositions, registerPositionForMonitoring } from "../services/price-monitor";
+
 import { getAllCalibratedWeights, decayConfidence, getConfidenceAdjustment } from "../services/calibration-service";
 import { recordAgentPrediction } from "../services/outcome-feedback";
 import { runScenarioAnalysis, quickScenarioGate } from "../services/scenario-analysis";
@@ -537,21 +537,7 @@ export async function runPoliticsAgentTick(
             console.error(`[Politics Agent] Failed to record prompt links: ${err.message}`)
           );
 
-          // Feature 8: Register position for real-time price monitoring
-          await registerPositionForMonitoring({
-            positionId: result.positionId,
-            marketId: decision.marketId ?? "",
-            marketQuestion: decision.marketQuestion ?? "",
-            agentId: ctx.agentId,
-            agentName: AGENT_NAME,
-            jobId: ctx.jobId,
-            agentWalletId: ctx.agentWalletId,
-            side: decision.isYes ? "yes" : "no",
-            entryPrice: 0.5,
-            stopLossPrice: 0.5 * (1 - AGENT_LIMITS.STOP_LOSS_PERCENT),
-            amount: decision.amount ?? 0,
-            ownerPubkey: ctx.ownerPubkey,
-          }).catch((err) => console.error(`[Politics Agent] Failed to register position monitoring: ${err.message}`));
+          // Position monitoring is handled automatically by the unified position-monitor service
         }
         fsm.transition("order_placed");
         await saveState();

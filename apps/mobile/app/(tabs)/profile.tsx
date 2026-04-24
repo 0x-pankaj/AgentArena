@@ -1,17 +1,29 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Clipboard } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Clipboard, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
 import { useAuthStore } from '../../src/stores/authStore';
 import { SkeletonCard, SkeletonLoader } from '../../src/components/SkeletonLoader';
-import { useUserPortfolio, useJobList, useJobPause, useJobResume, useJobWalletBalance, useJobFund } from '../../src/lib/api';
+import { useUserPortfolio, useJobList, useJobPause, useJobResume, useJobWalletBalance, useJobFund, usePaperTradingBalance } from '../../src/lib/api';
 import { useSolBalance } from '../../src/hooks/useSolBalance';
 import { usePrivy } from '@privy-io/expo';
 
-function JobWalletBadge({ jobId }: { jobId: string }) {
-  const balance = useJobWalletBalance(jobId);
-  const usdc = balance.data?.usdc ?? 0;
+function JobWalletBadge({ jobId, tradingMode }: { jobId: string; tradingMode?: string }) {
+  const isPaper = (tradingMode ?? 'paper') === 'paper';
+  const liveBalance = useJobWalletBalance(jobId);
+  const paperBalance = usePaperTradingBalance(jobId);
+
+  if (isPaper) {
+    const bal = paperBalance.data?.balance ?? 0;
+    return (
+      <Text style={[styles.walletBadge, { color: Colors.accent }]}>
+        ${Number(bal).toFixed(0)} PAPER
+      </Text>
+    );
+  }
+
+  const usdc = liveBalance.data?.usdc ?? 0;
   return (
     <Text style={styles.walletBadge}>
       ${usdc.toFixed(0)} USDC
@@ -30,6 +42,18 @@ export default function ProfileScreen() {
   const resumeJob = useJobResume();
   const fundJob = useJobFund();
   const solBalance = useSolBalance(walletAddress);
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([
+      portfolio.refetch(),
+      jobs.refetch(),
+      solBalance.refetch(),
+    ]);
+    setRefreshing(false);
+  }, [portfolio, jobs, solBalance]);
 
   const handleDisconnect = () => {
     Alert.alert('Disconnect Wallet', 'Are you sure you want to disconnect?', [
@@ -88,7 +112,14 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
+        }
+      >
         <View style={styles.header}>
           <Text style={styles.title}>Profile</Text>
           <Pressable style={styles.settingsButton}>
@@ -170,17 +201,24 @@ export default function ProfileScreen() {
                     </View>
                     <View>
                       <Text style={styles.jobAgentName}>{job.agentName ?? 'Agent'}</Text>
-                      <Text style={[
-                        styles.jobStatus,
-                        { color: job.status === 'active' ? Colors.success : job.status === 'paused' ? Colors.warning : Colors.textMuted }
-                      ]}>{(job.status ?? 'paused').toUpperCase()}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Text style={[
+                          styles.jobStatus,
+                          { color: job.status === 'active' ? Colors.success : job.status === 'paused' ? Colors.warning : Colors.textMuted }
+                        ]}>{(job.status ?? 'paused').toUpperCase()}</Text>
+                        <View style={[styles.modeBadgeSmall, { backgroundColor: (job.tradingMode ?? 'paper') === 'paper' ? Colors.accent + '22' : Colors.success + '22' }]}>
+                          <Text style={[styles.modeBadgeTextSmall, { color: (job.tradingMode ?? 'paper') === 'paper' ? Colors.accent : Colors.success }]}>
+                            {(job.tradingMode ?? 'paper') === 'paper' ? 'PAPER' : 'LIVE'}
+                          </Text>
+                        </View>
+                      </View>
                     </View>
                   </View>
                   <View style={styles.jobPnl}>
                     <Text style={[styles.jobPnlValue, { color: job.totalProfit >= 0 ? Colors.success : Colors.danger }]}>
                       {job.totalProfit >= 0 ? '+' : ''}${job.totalProfit.toFixed(2)}
                     </Text>
-                    <JobWalletBadge jobId={job.id} />
+                    <JobWalletBadge jobId={job.id} tradingMode={job.tradingMode} />
                   </View>
                 </View>
                 <View style={styles.positionsRow}>
@@ -290,6 +328,11 @@ const styles = StyleSheet.create({
   jobPnl: { alignItems: 'flex-end', gap: 2 },
   jobPnlValue: { fontFamily: Fonts.mono, fontSize: 16, fontWeight: '700' },
   walletBadge: { fontFamily: Fonts.mono, fontSize: 10, color: Colors.textMuted },
+  modeBadgeSmall: {
+    paddingHorizontal: 4, paddingVertical: 1,
+    borderRadius: BorderRadius.sm,
+  },
+  modeBadgeTextSmall: { fontFamily: Fonts.body, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
   positionsRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingTop: Spacing.sm, borderTopWidth: 1, borderTopColor: Colors.border,

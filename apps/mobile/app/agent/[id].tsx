@@ -68,6 +68,7 @@ export default function AgentDetailScreen() {
   const [signed, setSigned] = useState(false);
   const [signing, setSigning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -108,19 +109,44 @@ export default function AgentDetailScreen() {
   const categoryColor = Colors[agent.category as keyof typeof Colors] || Colors.accent;
   const performance = agent.performance ?? { totalTrades: 0, winningTrades: 0, totalPnl: 0, winRate: 0 };
 
-  // Step 1: Create job (Privy wallet + on-chain tx)
+  // Step 1: Create job and immediately start for paper trading
   const handleHire = () => {
     if (!isConnected) { router.push('/login'); return; }
+    setIsLaunching(true);
     hireJob.mutate(
       { agentId: agent.id, maxCap: parseFloat(maxCap) || 100, dailyCap: parseFloat(dailyCap) || 500 },
       {
-        onSuccess: (data: any) => {
+        onSuccess: async (data: any) => {
           setJobId(data.id);
           setPrivyWallet(data.privyWalletAddress);
           setPendingPda(data.onChainAddress || null);
-          setStep('sign');
+          
+          // For paper trading, skip sign/fund and start immediately
+          try {
+            const fundResult = await fundJob.mutateAsync(data.id);
+            if (fundResult.success) {
+              const resumeResult = await resumeJob.mutateAsync(data.id);
+              if (resumeResult.success) {
+                setStep('done');
+                Alert.alert('Agent Started!', `Trading with $${fundResult.balance.usdc.toFixed(2)} paper USDC`, [
+                  { text: 'View Profile', onPress: () => router.push('/(tabs)/profile') },
+                ]);
+              } else {
+                Alert.alert('Error', resumeResult.message ?? 'Failed to start agent');
+              }
+            } else {
+              Alert.alert('Error', 'Failed to fund agent');
+            }
+          } catch (err: any) {
+            Alert.alert('Error', err?.message ?? 'Failed to start agent');
+          } finally {
+            setIsLaunching(false);
+          }
         },
-        onError: (err: any) => Alert.alert('Error', err?.message ?? 'Failed to hire'),
+        onError: (err: any) => {
+          Alert.alert('Error', err?.message ?? 'Failed to hire');
+          setIsLaunching(false);
+        },
       }
     );
   };
@@ -298,12 +324,23 @@ export default function AgentDetailScreen() {
                     <Text style={styles.agentName}>{agent.name}</Text>
                     {agent.isVerified && <Text style={styles.verifiedBadge}>✓ Verified</Text>}
                   </View>
-                  <View style={[styles.categoryBadge, { backgroundColor: (categoryColor as string) + '22' }]}>
-                    <Text style={[styles.categoryText, { color: categoryColor as string }]}>{agent.category.toUpperCase()}</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <View style={[styles.categoryBadge, { backgroundColor: (categoryColor as string) + '22' }]}>
+                      <Text style={[styles.categoryText, { color: categoryColor as string }]}>{agent.category.toUpperCase()}</Text>
+                    </View>
+                    <View style={styles.paperBadge}>
+                      <Text style={styles.paperBadgeText}>PAPER TRADING</Text>
+                    </View>
                   </View>
                 </View>
               </View>
               <Text style={styles.description}>{agent.description}</Text>
+              <View style={styles.paperBanner}>
+                <Text style={styles.paperBannerTitle}>Paper Trading Mode</Text>
+                <Text style={styles.paperBannerDesc}>
+                  This agent trades with simulated funds. No real money is used. You get $1,000 paper USDC to start.
+                </Text>
+              </View>
             </View>
 
             {/* Stats */}
@@ -326,8 +363,8 @@ export default function AgentDetailScreen() {
 
             {/* === STEP INDICATOR === */}
             <View style={styles.stepsRow}>
-              {['Configure', 'Sign', 'Fund & Start'].map((label, i) => {
-                const stepIdx = step === 'config' ? 0 : step === 'sign' ? 1 : 2;
+              {['Configure', 'Launch'].map((label, i) => {
+                const stepIdx = step === 'config' ? 0 : step === 'done' ? 1 : 0;
                 const isActive = i === stepIdx;
                 const isDone = i < stepIdx;
                 return (
@@ -361,10 +398,10 @@ export default function AgentDetailScreen() {
                   </View>
                 </View>
                 <Pressable
-                  style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed, hireJob.isPending && styles.disabled]}
-                  onPress={handleHire} disabled={hireJob.isPending}>
-                  {hireJob.isPending ? <ActivityIndicator size="small" color={Colors.textPrimary} />
-                    : <Text style={styles.primaryBtnText}>Configure & Continue</Text>}
+                  style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed, (hireJob.isPending || isLaunching) && styles.disabled]}
+                  onPress={handleHire} disabled={hireJob.isPending || isLaunching}>
+                  {hireJob.isPending || isLaunching ? <ActivityIndicator size="small" color={Colors.textPrimary} />
+                    : <Text style={styles.primaryBtnText}>Launch Paper Agent</Text>}
                 </Pressable>
               </View>
             )}
@@ -578,6 +615,17 @@ const styles = StyleSheet.create({
   backIcon: { fontSize: 18, color: Colors.textPrimary },
   headerTitle: { fontFamily: Fonts.heading, fontSize: 20, fontWeight: '700', color: Colors.textPrimary },
   profileBox: { gap: Spacing.lg },
+  paperBadge: {
+    backgroundColor: Colors.accent + '22', borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm, paddingVertical: 2,
+  },
+  paperBadgeText: { fontFamily: Fonts.body, fontSize: 10, fontWeight: '700', color: Colors.accent, letterSpacing: 0.5 },
+  paperBanner: {
+    backgroundColor: Colors.accent + '15', borderRadius: BorderRadius.md, borderWidth: 1,
+    borderColor: Colors.accent, padding: Spacing.lg, gap: Spacing.xs, marginTop: Spacing.sm,
+  },
+  paperBannerTitle: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '700', color: Colors.accent },
+  paperBannerDesc: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textSecondary, lineHeight: 18 },
   avatarRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
   avatar: { width: 64, height: 64, borderRadius: BorderRadius.lg, justifyContent: 'center', alignItems: 'center' },
   avatarText: { fontFamily: Fonts.mono, fontSize: 22, fontWeight: '700' },

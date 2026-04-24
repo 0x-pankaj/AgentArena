@@ -328,3 +328,58 @@ export function useJobConfirmOnChain() {
     },
   });
 }
+
+// --- Paper Trading hooks ---
+
+export function usePaperTradingBalance(jobId: string) {
+  return useQuery({
+    queryKey: ['paperTrading', 'balance', jobId],
+    queryFn: () => {
+      const input = JSON.stringify({ jobId });
+      return fetchFromAPI(`paperTrading.getBalance?input=${encodeURIComponent(input)}`);
+    },
+    enabled: !!jobId,
+    staleTime: 10_000,
+  });
+}
+
+export function usePaperTradingTopUp() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { jobId: string; amount: number }) =>
+      fetchFromAPI('paperTrading.topUp', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['paperTrading', 'balance', variables.jobId] });
+      queryClient.invalidateQueries({ queryKey: ['job'] });
+    },
+  });
+}
+
+export function usePaperTradingPortfolio(jobId: string) {
+  return useQuery({
+    queryKey: ['paperTrading', 'portfolio', jobId],
+    queryFn: () => {
+      const input = JSON.stringify({ jobId });
+      return fetchFromAPI(`paperTrading.getPortfolio?input=${encodeURIComponent(input)}`);
+    },
+    enabled: !!jobId,
+    staleTime: 10_000,
+  });
+}
+
+export function useJobSwitchMode() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { id: string; mode: 'paper' | 'live' }) =>
+      fetchFromAPI('job.switchMode', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job'] });
+    },
+  });
+}

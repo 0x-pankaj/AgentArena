@@ -4,11 +4,12 @@ import { getEffectiveBalance } from "../utils/balance";
 import {
   executeBuyOrder,
   closePosition,
-  checkStopLosses,
 } from "../services/trade-service";
 import { getMarket, getTrendingMarkets } from "../services/market-service";
 import { getMarketsForAgent } from "../services/market-event-bus";
 import { publishFeedEvent, buildFeedEvent } from "../feed";
+import { monitorJobPositions } from "../services/position-monitor";
+import { getPaperBalance, getPaperPortfolio } from "../services/paper-trading";
 import type { LLMDecision, MarketContext, AgentPosition } from "./strategy-engine";
 import type { PortfolioSnapshot } from "../plugins/risk-plugin";
 import { EXECUTE_TRADES, IS_SIMULATED, TEST_WALLET_BALANCE_USDC, TEST_WALLET_BALANCE_SOL } from "@agent-arena/shared";
@@ -559,32 +560,47 @@ export async function executeSell(
   return { success: false, error: result.error };
 }
 
-// --- Monitor positions (check stop-loss, resolution) ---
+// --- Monitor positions (check stop-loss, take-profit, expiry, resolution) ---
 
 export async function monitorPositions(
   agentId: string,
   jobId: string,
   agentWalletId: string,
   agentName: string = "Agent"
-): Promise<{ closedCount: number }> {
-  const { closed } = await checkStopLosses(agentId, agentWalletId);
+): Promise<{ closedCount: number; claimedCount: number }> {
+  // Get job trading mode
+  const [job] = await db
+    .select({ tradingMode: schema.jobs.tradingMode })
+    .from(schema.jobs)
+    .where(eq(schema.jobs.id, jobId))
+    .limit(1);
 
-  if (closed > 0) {
+  const tradingMode = (job?.tradingMode as "paper" | "live") ?? "paper";
+
+  const result = await monitorJobPositions({
+    jobId,
+    agentId,
+    agentWalletId,
+    agentName,
+    tradingMode,
+  });
+
+  if (result.closed > 0 || result.claimed > 0) {
     const feedEvent = buildFeedEvent({
       agentId,
       agentName,
       jobId,
       category: "position_update",
-      severity: "critical",
+      severity: result.exits.some(e => e.type === "stop_loss") ? "critical" : "significant",
       content: {
-        summary: `Stop-loss triggered on ${closed} position(s)`,
+        summary: `Monitored ${result.checked} positions: ${result.closed} closed, ${result.claimed} claimed`,
       },
-      displayMessage: `${agentName} auto-closed ${closed} position(s) due to stop-loss`,
+      displayMessage: `${agentName} monitored positions: ${result.closed} closed, ${result.claimed} claimed`,
     });
     await publishFeedEvent(feedEvent);
   }
 
-  return { closedCount: closed };
+  return { closedCount: result.closed, claimedCount: result.claimed };
 }
 
 // --- Build portfolio snapshot for risk checks ---
@@ -597,7 +613,23 @@ export async function buildPortfolioSnapshot(
   await refreshSOLPrice();
 
   let balance: { sol: number; usdc: number };
-  if (IS_SIMULATED) {
+  let isPaperMode = false;
+
+  if (jobId) {
+    const [job] = await db
+      .select({ tradingMode: schema.jobs.tradingMode })
+      .from(schema.jobs)
+      .where(eq(schema.jobs.id, jobId))
+      .limit(1);
+    isPaperMode = job?.tradingMode === "paper";
+  }
+
+  if (isPaperMode && jobId) {
+    // Paper mode: use simulated paper balance
+    const paperBalance = await getPaperBalance(jobId);
+    balance = { sol: 0, usdc: paperBalance };
+    console.log(`[PaperTrading] Using paper balance: $${paperBalance.toFixed(2)} USDC`);
+  } else if (IS_SIMULATED) {
     balance = { sol: TEST_WALLET_BALANCE_SOL, usdc: TEST_WALLET_BALANCE_USDC };
     console.log(`[SIMULATED] Using simulated $${TEST_WALLET_BALANCE_USDC} USDC balance`);
   } else {
@@ -607,7 +639,7 @@ export async function buildPortfolioSnapshot(
   const totalPnl = positions.reduce((sum, p) => sum + p.pnl, 0);
 
   // Calculate actual daily PnL from today's settled trades
-  let dailyPnl = totalPnl; // fallback to unrealized PnL
+  let dailyPnl = totalPnl;
   if (jobId) {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -626,7 +658,7 @@ export async function buildPortfolioSnapshot(
       (sum, t) => sum + Number(t.profitLoss ?? 0),
       0
     );
-    dailyPnl = realizedDaily + totalPnl; // realized today + unrealized on open positions
+    dailyPnl = realizedDaily + totalPnl;
   }
 
   return {

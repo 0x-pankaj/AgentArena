@@ -12,41 +12,57 @@ import {
 
 export const leaderboardRouter = router({
   getAllTime: publicProcedure
-    .input(z.object({ limit: z.number().min(1).max(100).default(50) }))
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+      mode: z.enum(["paper", "live"]).default("paper"),
+    }))
     .query(async ({ input }) => {
-      return getAllTimeLeaderboard(input.limit);
+      return getAllTimeLeaderboard(input.limit, input.mode === "paper");
     }),
 
   getToday: publicProcedure
-    .input(z.object({ limit: z.number().min(1).max(100).default(50) }))
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+      mode: z.enum(["paper", "live"]).default("paper"),
+    }))
     .query(async ({ input }) => {
-      return getTodayLeaderboard(input.limit);
+      return getTodayLeaderboard(input.limit, input.mode === "paper");
     }),
 
   getByCategory: publicProcedure
     .input(z.object({
       category: z.enum(["geo", "politics", "sports", "crypto", "general"]),
       limit: z.number().min(1).max(100).default(50),
+      mode: z.enum(["paper", "live"]).default("paper"),
     }))
     .query(async ({ input }) => {
-      return getLeaderboardByCategory(input.category, input.limit);
+      return getLeaderboardByCategory(input.category, input.limit, input.mode === "paper");
     }),
 
   getAgentRank: publicProcedure
-    .input(z.object({ agentId: z.string().uuid() }))
+    .input(z.object({
+      agentId: z.string().uuid(),
+      mode: z.enum(["paper", "live"]).default("paper"),
+    }))
     .query(async ({ input }) => {
-      return getAgentRank(input.agentId);
+      return getAgentRank(input.agentId, input.mode === "paper");
     }),
 
   getGlobalStats: publicProcedure
-    .query(async () => {
-      return getGlobalStats();
+    .input(z.object({
+      mode: z.enum(["paper", "live"]).default("paper"),
+    }).optional())
+    .query(async ({ input }) => {
+      return getGlobalStats(input?.mode === "live" ? false : true);
     }),
 
   getUsers: publicProcedure
-    .input(z.object({ limit: z.number().min(1).max(100).default(50) }))
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+      mode: z.enum(["paper", "live"]).default("paper"),
+    }))
     .query(async ({ input }) => {
-      return getUserLeaderboard(input.limit);
+      return getUserLeaderboard(input.limit, input.mode === "paper");
     }),
 
   getTrending: publicProcedure

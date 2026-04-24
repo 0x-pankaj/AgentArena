@@ -40,7 +40,7 @@ import { runAdversarialReview } from "../services/adversarial-review";
 
 import { checkMicrostructure } from "../services/market-microstructure";
 import { checkCrossMarketCorrelation } from "../services/correlation-matrix";
-import { checkMonitoredPositions, pollPriceUpdates, registerPositionForMonitoring, unregisterPositionFromMonitoring } from "../services/price-monitor";
+
 import { getAllCalibratedWeights, decayConfidence, getConfidenceAdjustment, recordSignalPrediction } from "../services/calibration-service";
 import { recordAgentPrediction as recordOutcomePrediction } from "../services/outcome-feedback";
 import { runScenarioAnalysis, quickScenarioGate } from "../services/scenario-analysis";
@@ -474,21 +474,7 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
             console.error(`[Crypto Agent] Failed to record prompt links: ${err.message}`)
           );
 
-          // Feature 8: Register position for real-time price monitoring
-          await registerPositionForMonitoring({
-            positionId: result.positionId,
-            marketId: decision.marketId ?? "",
-            marketQuestion: decision.marketQuestion ?? "",
-            agentId: ctx.agentId,
-            agentName: AGENT_NAME,
-            jobId: ctx.jobId,
-            agentWalletId: ctx.agentWalletId,
-            side: decision.isYes ? "yes" : "no",
-            entryPrice: 0.5, // Will be updated when position opens
-            stopLossPrice: 0.5 * (1 - AGENT_LIMITS.STOP_LOSS_PERCENT),
-            amount: decision.amount ?? 0,
-            ownerPubkey: ctx.ownerPubkey,
-          }).catch((err) => console.error(`[Crypto Agent] Failed to register position monitoring: ${err.message}`));
+          // Position monitoring is handled automatically by the unified position-monitor service
         }
         fsm.transition("order_placed");
         await saveState();

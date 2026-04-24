@@ -1,6 +1,4 @@
 import { db, schema } from './db';
-import { redis } from './utils/redis';
-import { REDIS_KEYS } from '@agent-arena/shared';
 import { eq } from 'drizzle-orm';
 
 const SEED_AGENTS = [
@@ -86,19 +84,8 @@ const SEED_AGENTS = [
   },
 ];
 
-const SEED_PERFORMANCE = [
-  { totalTrades: 34, winningTrades: 26, totalPnl: '1247.50', winRate: '0.7647', sharpeRatio: '1.42', maxDrawdown: '-0.08', totalVolume: '5000.00' },
-  { totalTrades: 28, winningTrades: 20, totalPnl: '892.30', winRate: '0.7143', sharpeRatio: '1.18', maxDrawdown: '-0.11', totalVolume: '3500.00' },
-  { totalTrades: 41, winningTrades: 27, totalPnl: '634.20', winRate: '0.6585', sharpeRatio: '0.95', maxDrawdown: '-0.14', totalVolume: '4200.00' },
-  { totalTrades: 22, winningTrades: 15, totalPnl: '421.80', winRate: '0.6818', sharpeRatio: '0.88', maxDrawdown: '-0.12', totalVolume: '2800.00' },
-  { totalTrades: 15, winningTrades: 9, totalPnl: '187.40', winRate: '0.6000', sharpeRatio: '0.72', maxDrawdown: '-0.15', totalVolume: '1500.00' },
-  { totalTrades: 31, winningTrades: 22, totalPnl: '756.80', winRate: '0.7097', sharpeRatio: '1.35', maxDrawdown: '-0.09', totalVolume: '4100.00' },
-  { totalTrades: 18, winningTrades: 11, totalPnl: '298.60', winRate: '0.6111', sharpeRatio: '0.82', maxDrawdown: '-0.13', totalVolume: '2000.00' },
-  { totalTrades: 25, winningTrades: 17, totalPnl: '512.30', winRate: '0.6800', sharpeRatio: '1.05', maxDrawdown: '-0.10', totalVolume: '3200.00' },
-];
-
 async function seed() {
-  console.log('Seeding database...');
+  console.log('Seeding agents...');
 
   // Create a system user for seed agents
   const systemAddress = '11111111111111111111111111111111';
@@ -107,11 +94,11 @@ async function seed() {
     .values({ walletAddress: systemAddress })
     .onConflictDoNothing();
 
-  const agentIds: string[] = [];
+  let created = 0;
+  let skipped = 0;
 
-  // Insert agents
-  for (let i = 0; i < SEED_AGENTS.length; i++) {
-    const agentData = SEED_AGENTS[i];
+  // Insert agents ONLY — no fake performance data
+  for (const agentData of SEED_AGENTS) {
     const [existing] = await db
       .select()
       .from(schema.agents)
@@ -120,7 +107,7 @@ async function seed() {
 
     if (existing) {
       console.log(`Agent "${agentData.name}" already exists, skipping`);
-      agentIds.push(existing.id);
+      skipped++;
       continue;
     }
 
@@ -132,65 +119,33 @@ async function seed() {
       })
       .returning();
 
-    // Insert performance
+    // Initialize performance record with ALL ZEROS — real trades will populate this
     await db
       .insert(schema.agentPerformance)
       .values({
         agentId: agent.id,
-        ...SEED_PERFORMANCE[i],
+        isPaperTrading: true,
+        totalTrades: 0,
+        winningTrades: 0,
+        totalPnl: '0',
+        winRate: '0',
+        totalVolume: '0',
       })
       .onConflictDoNothing();
 
-    agentIds.push(agent.id);
+    created++;
     console.log(`Created agent: ${agentData.name} (${agent.id})`);
   }
 
-  // Populate Redis leaderboard
-  console.log('Populating Redis leaderboard...');
-  for (let i = 0; i < agentIds.length; i++) {
-    const agentId = agentIds[i];
-    const perf = SEED_PERFORMANCE[i];
-    const agent = SEED_AGENTS[i];
-    const statsKey = `${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}`;
-
-    await redis.hset(statsKey, {
-      totalPnl: perf.totalPnl,
-      winRate: perf.winRate,
-      totalTrades: String(perf.totalTrades),
-      maxDrawdown: perf.maxDrawdown,
-      sharpeRatio: perf.sharpeRatio,
-    });
-
-    // Add to all-time leaderboard ZSET
-    await redis.zadd(REDIS_KEYS.LEADERBOARD_ALLTIME, Number(perf.totalPnl), agentId);
-
-    // Add to category leaderboard
-    await redis.zadd(
-      `${REDIS_KEYS.LEADERBOARD_PREFIX}category:${agent.category}`,
-      Number(perf.totalPnl),
-      agentId
-    );
-
-    // Add to daily leaderboard
-    const today = new Date().toISOString().slice(0, 10);
-    await redis.zadd(
-      `${REDIS_KEYS.LEADERBOARD_PREFIX}daily:${today}`,
-      Number(perf.totalPnl),
-      agentId
-    );
-  }
-
-  console.log('Seeding complete!');
-  console.log(`Created ${agentIds.length} agents with leaderboard entries`);
+  console.log(`Seeding complete! Created ${created} agents, skipped ${skipped}.`);
+  console.log('Note: No fake performance data inserted. Stats will populate from real trades only.');
 }
 
 seed()
   .then(() => {
-    redis.disconnect();
     process.exit(0);
   })
   .catch((err) => {
     console.error('Seed failed:', err);
-    redis.disconnect();
     process.exit(1);
   });

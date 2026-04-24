@@ -51,9 +51,11 @@ export async function updateAgentStats(
     maxDrawdown: number;
     sharpeRatio: number;
     totalVolume: number;
-  }
+  },
+  isPaperTrading: boolean = true
 ): Promise<void> {
-  const key = `${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}`;
+  const modeSuffix = isPaperTrading ? ":paper" : ":live";
+  const key = `${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}${modeSuffix}`;
 
   await redis.hset(key, {
     totalPnl: String(stats.totalPnl),
@@ -64,13 +66,14 @@ export async function updateAgentStats(
     totalVolume: String(stats.totalVolume),
   });
 
-  // Update leaderboard ZSET
-  await redis.zadd(REDIS_KEYS.LEADERBOARD_ALLTIME, stats.totalPnl, agentId);
+  // Update mode-specific leaderboard ZSETs
+  const alltimeKey = `${REDIS_KEYS.LEADERBOARD_ALLTIME}${modeSuffix}`;
+  await redis.zadd(alltimeKey, stats.totalPnl, agentId);
 
   // Update daily leaderboard
   const today = new Date().toISOString().slice(0, 10);
   await redis.zadd(
-    `${REDIS_KEYS.LEADERBOARD_PREFIX}daily:${today}`,
+    `${REDIS_KEYS.LEADERBOARD_PREFIX}daily:${today}${modeSuffix}`,
     stats.totalPnl,
     agentId
   );
@@ -84,28 +87,31 @@ export async function updateAgentStats(
 
   if (agent?.category) {
     await redis.zadd(
-      `${REDIS_KEYS.LEADERBOARD_CATEGORY_PREFIX}${agent.category}`,
+      `${REDIS_KEYS.LEADERBOARD_CATEGORY_PREFIX}${agent.category}${modeSuffix}`,
       stats.totalPnl,
       agentId
     );
   }
 
-  // Update user leaderboard
+  // Update user leaderboard (paper vs live aggregated separately)
   if (agent?.ownerAddress) {
-    await updateUserLeaderboardEntry(agent.ownerAddress);
+    await updateUserLeaderboardEntry(agent.ownerAddress, isPaperTrading);
   }
 
-  // Broadcast leaderboard update via WebSocket
-  const topAgents = await getAllTimeLeaderboard(10);
-  broadcastLeaderboardUpdate({ type: "agents", entries: topAgents.entries });
+  // Broadcast leaderboard update via WebSocket (paper by default)
+  if (isPaperTrading) {
+    const topAgents = await getAllTimeLeaderboard(10, true);
+    broadcastLeaderboardUpdate({ type: "agents", entries: topAgents.entries, mode: "paper" });
+  }
 
   // Invalidate global stats cache
-  await redis.del(REDIS_KEYS.GLOBAL_STATS);
+  await redis.del(`${REDIS_KEYS.GLOBAL_STATS}${modeSuffix}`);
 }
 
 // --- Update user leaderboard entry ---
 
-async function updateUserLeaderboardEntry(walletAddress: string): Promise<void> {
+async function updateUserLeaderboardEntry(walletAddress: string, isPaperTrading: boolean = true): Promise<void> {
+  const modeSuffix = isPaperTrading ? ":paper" : ":live";
   const result = await db
     .select({
       totalPnl: sql<number>`COALESCE(SUM(CAST(${schema.agentPerformance.totalPnl} AS NUMERIC)), 0)`,
@@ -116,19 +122,22 @@ async function updateUserLeaderboardEntry(walletAddress: string): Promise<void> 
     .from(schema.agents)
     .leftJoin(
       schema.agentPerformance,
-      eq(schema.agents.id, schema.agentPerformance.agentId)
+      and(
+        eq(schema.agents.id, schema.agentPerformance.agentId),
+        eq(schema.agentPerformance.isPaperTrading, isPaperTrading)
+      )
     )
     .where(eq(schema.agents.ownerAddress, walletAddress));
 
   const stats = result[0];
   if (stats) {
-    await redis.hset(`${REDIS_KEYS.LEADERBOARD_USERS}:${walletAddress}`, {
+    await redis.hset(`${REDIS_KEYS.LEADERBOARD_USERS}:${walletAddress}${modeSuffix}`, {
       totalPnl: String(stats.totalPnl),
       totalAgents: String(stats.totalAgents),
       avgWinRate: String(stats.avgWinRate),
       totalTrades: String(stats.totalTrades),
     });
-    await redis.zadd(REDIS_KEYS.LEADERBOARD_USERS, Number(stats.totalPnl), walletAddress);
+    await redis.zadd(`${REDIS_KEYS.LEADERBOARD_USERS}${modeSuffix}`, Number(stats.totalPnl), walletAddress);
   }
 }
 
@@ -136,26 +145,33 @@ async function updateUserLeaderboardEntry(walletAddress: string): Promise<void> 
 
 async function enrichLeaderboardEntry(
   agentId: string,
-  baseEntry: Omit<LeaderboardEntry, "totalVolume" | "sharpeRatio" | "maxDrawdown" | "recentTrend" | "activePositions" | "lastActivityAt">
+  baseEntry: Omit<LeaderboardEntry, "totalVolume" | "sharpeRatio" | "maxDrawdown" | "recentTrend" | "activePositions" | "lastActivityAt">,
+  isPaperTrading: boolean = true
 ): Promise<LeaderboardEntry> {
-  const stats = await redis.hgetall(`${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}`);
+  const modeSuffix = isPaperTrading ? ":paper" : ":live";
+  const stats = await redis.hgetall(`${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}${modeSuffix}`);
   const fsmState = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}:fsm`);
 
-  // Get active positions count
+  // Get active positions count (filtered by paper/live mode)
   const activePositions = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(schema.positions)
     .innerJoin(schema.jobs, eq(schema.positions.jobId, schema.jobs.id))
     .where(and(
       eq(schema.jobs.agentId, agentId),
-      eq(schema.positions.status, "open")
+      eq(schema.positions.status, "open"),
+      eq(schema.positions.isPaperTrade, isPaperTrading)
     ));
 
-  // Get recent trades for trend
+  // Get recent trades for trend (filtered by paper/live via positions)
   const recentTrades = await db
     .select({ profitLoss: schema.trades.profitLoss })
     .from(schema.trades)
-    .where(eq(schema.trades.agentId, agentId))
+    .innerJoin(schema.positions, eq(schema.trades.txSignature, schema.positions.txSignature))
+    .where(and(
+      eq(schema.trades.agentId, agentId),
+      eq(schema.positions.isPaperTrade, isPaperTrading)
+    ))
     .orderBy(desc(schema.trades.executedAt))
     .limit(5);
 
@@ -191,10 +207,12 @@ async function enrichLeaderboardEntry(
 // --- Get all-time leaderboard ---
 
 export async function getAllTimeLeaderboard(
-  limit: number = 50
+  limit: number = 50,
+  isPaperTrading: boolean = true
 ): Promise<{ entries: LeaderboardEntry[] }> {
+  const modeSuffix = isPaperTrading ? ":paper" : ":live";
   const raw = await redis.zrange(
-    REDIS_KEYS.LEADERBOARD_ALLTIME,
+    `${REDIS_KEYS.LEADERBOARD_ALLTIME}${modeSuffix}`,
     0,
     limit - 1,
     "REV"
@@ -205,7 +223,7 @@ export async function getAllTimeLeaderboard(
   for (let i = 0; i < raw.length; i++) {
     const agentId = raw[i];
     const stats = await redis.hgetall(
-      `${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}`
+      `${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}${modeSuffix}`
     );
 
     // Get agent name from DB
@@ -225,7 +243,7 @@ export async function getAllTimeLeaderboard(
       rank: i + 1,
     };
 
-    entries.push(await enrichLeaderboardEntry(agentId, baseEntry));
+    entries.push(await enrichLeaderboardEntry(agentId, baseEntry, isPaperTrading));
   }
 
   return { entries };
@@ -234,10 +252,12 @@ export async function getAllTimeLeaderboard(
 // --- Get today's leaderboard ---
 
 export async function getTodayLeaderboard(
-  limit: number = 50
+  limit: number = 50,
+  isPaperTrading: boolean = true
 ): Promise<{ entries: LeaderboardEntry[] }> {
   const today = new Date().toISOString().slice(0, 10);
-  const key = `${REDIS_KEYS.LEADERBOARD_PREFIX}daily:${today}`;
+  const modeSuffix = isPaperTrading ? ":paper" : ":live";
+  const key = `${REDIS_KEYS.LEADERBOARD_PREFIX}daily:${today}${modeSuffix}`;
 
   const raw = await redis.zrange(key, 0, limit - 1, "REV");
 
@@ -246,7 +266,7 @@ export async function getTodayLeaderboard(
   for (let i = 0; i < raw.length; i++) {
     const agentId = raw[i];
     const stats = await redis.hgetall(
-      `${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}`
+      `${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}${modeSuffix}`
     );
 
     const [agent] = await db
@@ -265,7 +285,7 @@ export async function getTodayLeaderboard(
       rank: i + 1,
     };
 
-    entries.push(await enrichLeaderboardEntry(agentId, baseEntry));
+    entries.push(await enrichLeaderboardEntry(agentId, baseEntry, isPaperTrading));
   }
 
   return { entries };
@@ -275,14 +295,16 @@ export async function getTodayLeaderboard(
 
 export async function getLeaderboardByCategory(
   category: string,
-  limit: number = 50
+  limit: number = 50,
+  isPaperTrading: boolean = true
 ): Promise<{ entries: LeaderboardEntry[] }> {
-  const key = `${REDIS_KEYS.LEADERBOARD_CATEGORY_PREFIX}${category}`;
+  const modeSuffix = isPaperTrading ? ":paper" : ":live";
+  const key = `${REDIS_KEYS.LEADERBOARD_CATEGORY_PREFIX}${category}${modeSuffix}`;
   const raw = await redis.zrange(key, 0, limit - 1, "REV");
 
   // If category-specific ZSET is empty, filter from all-time
   if (raw.length === 0) {
-    const all = await getAllTimeLeaderboard(200);
+    const all = await getAllTimeLeaderboard(200, isPaperTrading);
     return {
       entries: all.entries
         .filter((e) => e.category === category)
@@ -295,7 +317,7 @@ export async function getLeaderboardByCategory(
   for (let i = 0; i < raw.length; i++) {
     const agentId = raw[i];
     const stats = await redis.hgetall(
-      `${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}`
+      `${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}${modeSuffix}`
     );
 
     const [agent] = await db
@@ -314,7 +336,7 @@ export async function getLeaderboardByCategory(
       rank: i + 1,
     };
 
-    entries.push(await enrichLeaderboardEntry(agentId, baseEntry));
+    entries.push(await enrichLeaderboardEntry(agentId, baseEntry, isPaperTrading));
   }
 
   return { entries };
@@ -323,13 +345,15 @@ export async function getLeaderboardByCategory(
 // --- Get agent rank ---
 
 export async function getAgentRank(
-  agentId: string
+  agentId: string,
+  isPaperTrading: boolean = true
 ): Promise<{ rank: number; totalAgents: number }> {
+  const modeSuffix = isPaperTrading ? ":paper" : ":live";
   const rank = await redis.zrevrank(
-    REDIS_KEYS.LEADERBOARD_ALLTIME,
+    `${REDIS_KEYS.LEADERBOARD_ALLTIME}${modeSuffix}`,
     agentId
   );
-  const totalAgents = await redis.zcard(REDIS_KEYS.LEADERBOARD_ALLTIME);
+  const totalAgents = await redis.zcard(`${REDIS_KEYS.LEADERBOARD_ALLTIME}${modeSuffix}`);
 
   return {
     rank: rank !== null ? rank + 1 : 0,
@@ -339,21 +363,25 @@ export async function getAgentRank(
 
 // --- Get global stats ---
 
-export async function getGlobalStats(): Promise<GlobalStats> {
+export async function getGlobalStats(isPaperTrading: boolean = true): Promise<GlobalStats> {
+  const modeSuffix = isPaperTrading ? ":paper" : ":live";
+  const cacheKey = `${REDIS_KEYS.GLOBAL_STATS}${modeSuffix}`;
+
   // Try cache first
-  const cached = await redis.get(REDIS_KEYS.GLOBAL_STATS);
+  const cached = await redis.get(cacheKey);
   if (cached) {
     return JSON.parse(cached) as GlobalStats;
   }
 
-  // Aggregate from DB
+  // Aggregate from DB (filtered by paper/live)
   const perfResult = await db
     .select({
       totalVolume: sql<number>`COALESCE(SUM(CAST(${schema.agentPerformance.totalVolume} AS NUMERIC)), 0)`,
       totalPnl: sql<number>`COALESCE(SUM(CAST(${schema.agentPerformance.totalPnl} AS NUMERIC)), 0)`,
       totalTrades: sql<number>`COALESCE(SUM(${schema.agentPerformance.totalTrades}), 0)`,
     })
-    .from(schema.agentPerformance);
+    .from(schema.agentPerformance)
+    .where(eq(schema.agentPerformance.isPaperTrading, isPaperTrading));
 
   const agentCount = await db
     .select({ count: sql<number>`COUNT(DISTINCT ${schema.agents.id})` })
@@ -371,7 +399,13 @@ export async function getGlobalStats(): Promise<GlobalStats> {
       totalPnl: sql<number>`COALESCE(SUM(CAST(${schema.agentPerformance.totalPnl} AS NUMERIC)), 0)`,
     })
     .from(schema.agents)
-    .leftJoin(schema.agentPerformance, eq(schema.agents.id, schema.agentPerformance.agentId))
+    .leftJoin(
+      schema.agentPerformance,
+      and(
+        eq(schema.agents.id, schema.agentPerformance.agentId),
+        eq(schema.agentPerformance.isPaperTrading, isPaperTrading)
+      )
+    )
     .groupBy(schema.agents.category)
     .orderBy(sql`COALESCE(SUM(CAST(${schema.agentPerformance.totalPnl} AS NUMERIC)), 0) DESC`)
     .limit(1);
@@ -386,7 +420,7 @@ export async function getGlobalStats(): Promise<GlobalStats> {
   };
 
   // Cache for 30 seconds
-  await redis.set(REDIS_KEYS.GLOBAL_STATS, JSON.stringify(stats), "EX", 30);
+  await redis.set(cacheKey, JSON.stringify(stats), "EX", 30);
 
   return stats;
 }
@@ -394,17 +428,21 @@ export async function getGlobalStats(): Promise<GlobalStats> {
 // --- Get user leaderboard ---
 
 export async function getUserLeaderboard(
-  limit: number = 50
+  limit: number = 50,
+  isPaperTrading: boolean = true
 ): Promise<{ entries: UserLeaderboardEntry[] }> {
+  const modeSuffix = isPaperTrading ? ":paper" : ":live";
+  const redisKey = `${REDIS_KEYS.LEADERBOARD_USERS}${modeSuffix}`;
+
   // Try Redis sorted set first
-  const raw = await redis.zrange(REDIS_KEYS.LEADERBOARD_USERS, 0, limit - 1, "REV");
+  const raw = await redis.zrange(redisKey, 0, limit - 1, "REV");
 
   if (raw.length > 0) {
     const entries: UserLeaderboardEntry[] = [];
 
     for (let i = 0; i < raw.length; i++) {
       const walletAddress = raw[i];
-      const stats = await redis.hgetall(`${REDIS_KEYS.LEADERBOARD_USERS}:${walletAddress}`);
+      const stats = await redis.hgetall(`${REDIS_KEYS.LEADERBOARD_USERS}:${walletAddress}${modeSuffix}`);
 
       if (!stats.totalPnl) continue;
 
@@ -415,7 +453,7 @@ export async function getUserLeaderboard(
         .where(eq(schema.users.walletAddress, walletAddress))
         .limit(1);
 
-      // Get best agent
+      // Get best agent (filtered by mode)
       const bestAgent = await db
         .select({
           id: schema.agents.id,
@@ -423,7 +461,13 @@ export async function getUserLeaderboard(
           pnl: schema.agentPerformance.totalPnl,
         })
         .from(schema.agents)
-        .leftJoin(schema.agentPerformance, eq(schema.agents.id, schema.agentPerformance.agentId))
+        .leftJoin(
+          schema.agentPerformance,
+          and(
+            eq(schema.agents.id, schema.agentPerformance.agentId),
+            eq(schema.agentPerformance.isPaperTrading, isPaperTrading)
+          )
+        )
         .where(eq(schema.agents.ownerAddress, walletAddress))
         .orderBy(desc(schema.agentPerformance.totalPnl))
         .limit(1);
@@ -445,7 +489,7 @@ export async function getUserLeaderboard(
     return { entries };
   }
 
-  // Fallback: aggregate from DB
+  // Fallback: aggregate from DB (filtered by paper/live)
   const result = await db
     .select({
       ownerAddress: schema.agents.ownerAddress,
@@ -456,7 +500,13 @@ export async function getUserLeaderboard(
       totalTrades: sql<number>`COALESCE(SUM(${schema.agentPerformance.totalTrades}), 0)`,
     })
     .from(schema.agents)
-    .leftJoin(schema.agentPerformance, eq(schema.agents.id, schema.agentPerformance.agentId))
+    .leftJoin(
+      schema.agentPerformance,
+      and(
+        eq(schema.agents.id, schema.agentPerformance.agentId),
+        eq(schema.agentPerformance.isPaperTrading, isPaperTrading)
+      )
+    )
     .leftJoin(schema.users, eq(schema.agents.ownerAddress, schema.users.walletAddress))
     .groupBy(schema.agents.ownerAddress, schema.users.username)
     .orderBy(sql`COALESCE(SUM(CAST(${schema.agentPerformance.totalPnl} AS NUMERIC)), 0) DESC`)
@@ -475,7 +525,13 @@ export async function getUserLeaderboard(
         pnl: schema.agentPerformance.totalPnl,
       })
       .from(schema.agents)
-      .leftJoin(schema.agentPerformance, eq(schema.agents.id, schema.agentPerformance.agentId))
+      .leftJoin(
+        schema.agentPerformance,
+        and(
+          eq(schema.agents.id, schema.agentPerformance.agentId),
+          eq(schema.agentPerformance.isPaperTrading, isPaperTrading)
+        )
+      )
       .where(eq(schema.agents.ownerAddress, row.ownerAddress))
       .orderBy(desc(schema.agentPerformance.totalPnl))
       .limit(1);
@@ -496,13 +552,13 @@ export async function getUserLeaderboard(
 
   // Cache in Redis
   for (const entry of entries) {
-    await redis.hset(`${REDIS_KEYS.LEADERBOARD_USERS}:${entry.walletAddress}`, {
+    await redis.hset(`${REDIS_KEYS.LEADERBOARD_USERS}:${entry.walletAddress}${modeSuffix}`, {
       totalPnl: String(entry.totalPnl),
       totalAgents: String(entry.totalAgents),
       avgWinRate: String(entry.avgWinRate),
       totalTrades: String(entry.totalTrades),
     });
-    await redis.zadd(REDIS_KEYS.LEADERBOARD_USERS, entry.totalPnl, entry.walletAddress);
+    await redis.zadd(redisKey, entry.totalPnl, entry.walletAddress);
   }
 
   return { entries };

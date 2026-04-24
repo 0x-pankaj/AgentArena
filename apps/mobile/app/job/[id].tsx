@@ -7,7 +7,7 @@ import { getSolanaConnection } from '../../src/lib/solana';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
 import { FeedItem } from '../../src/components/FeedItem';
 import { SkeletonCard, SkeletonLoader } from '../../src/components/SkeletonLoader';
-import { useJobGet, useFeedByJob, useJobCancel, useJobWalletBalance, useJobFund, useJobResume, useJobRegisterOnChain, useJobConfirmOnChain } from '../../src/lib/api';
+import { useJobGet, useFeedByJob, useJobCancel, useJobWalletBalance, useJobFund, useJobResume, useJobRegisterOnChain, useJobConfirmOnChain, usePaperTradingBalance, usePaperTradingTopUp, useJobSwitchMode } from '../../src/lib/api';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useEmbeddedSolanaWallet } from '@privy-io/expo';
 import { useSolBalance } from '../../src/hooks/useSolBalance';
@@ -31,6 +31,9 @@ export default function JobDetailScreen() {
   const registerOnChain = useJobRegisterOnChain();
   const confirmOnChain = useJobConfirmOnChain();
   const walletBalance = useJobWalletBalance(id ?? '');
+  const paperBalance = usePaperTradingBalance(id ?? '');
+  const topUpPaper = usePaperTradingTopUp();
+  const switchMode = useJobSwitchMode();
 
   const [signing, setSigning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -39,6 +42,7 @@ export default function JobDetailScreen() {
     setRefreshing(true);
     userSolBalance.refetch();
     walletBalance.refetch();
+    paperBalance.refetch();
     setTimeout(() => setRefreshing(false), 1000);
   };
 
@@ -64,6 +68,8 @@ export default function JobDetailScreen() {
   const positions = job.positions ?? [];
   const walletUsdc = walletBalance.data?.usdc ?? 0;
   const isOnChain = !!job.onChainAddress;
+  const isPaperMode = (job.tradingMode ?? 'paper') === 'paper';
+  const paperBal = paperBalance.data?.balance ?? job.paperBalance ?? 0;
 
   const daysSinceStart = job.startedAt
     ? Math.floor((Date.now() - new Date(job.startedAt).getTime()) / (1000 * 60 * 60 * 24))
@@ -238,6 +244,11 @@ export default function JobDetailScreen() {
                       color: job.status === 'active' ? Colors.success : job.status === 'paused' ? Colors.warning : Colors.textMuted
                     }]}>{(job.status ?? 'paused').toUpperCase()}</Text>
                   </View>
+                  <View style={[styles.modeBadge, { backgroundColor: isPaperMode ? Colors.accent + '22' : Colors.success + '22' }]}>
+                    <Text style={[styles.modeBadgeText, { color: isPaperMode ? Colors.accent : Colors.success }]}>
+                      {(job.tradingMode ?? 'paper') === 'paper' ? 'PAPER' : 'LIVE'}
+                    </Text>
+                  </View>
                 </View>
                 <View style={styles.statItem}>
                   <Text style={styles.statLabel}>Duration</Text>
@@ -246,28 +257,65 @@ export default function JobDetailScreen() {
               </View>
             </View>
 
-            {/* Wallet */}
-            {job.privyWalletAddress && (
-              <Pressable style={styles.walletCard} onPress={copyWallet}>
+            {/* Wallet / Paper Balance */}
+            {isPaperMode ? (
+              <View style={styles.walletCard}>
                 <View style={styles.walletRow}>
                   <View style={styles.walletInfo}>
-                    <Text style={styles.walletLabel}>Agent Wallet (tap to copy)</Text>
-                    <Text style={styles.walletAddr} numberOfLines={1}>
-                      {job.privyWalletAddress.substring(0, 12)}...{job.privyWalletAddress.slice(-8)}
-                    </Text>
+                    <Text style={styles.walletLabel}>Paper Trading Balance</Text>
+                    <Text style={styles.walletAddr}>Simulated funds for practice</Text>
                   </View>
                   <View style={styles.walletBalance}>
-                    <Text style={styles.walletBalanceValue}>${walletUsdc.toFixed(2)}</Text>
-                    <Text style={styles.walletBalanceLabel}>USDC</Text>
+                    <Text style={styles.walletBalanceValue}>${Number(paperBal).toFixed(2)}</Text>
+                    <Text style={styles.walletBalanceLabel}>PAPER USDC</Text>
                   </View>
                 </View>
-                {job.maxCap && (
-                  <View style={styles.capRow}>
-                    <Text style={styles.capText}>Max/trade: ${Number(job.maxCap).toFixed(0)}</Text>
-                    <Text style={styles.capText}>Daily: ${Number(job.dailyCap).toFixed(0)}</Text>
+                <View style={styles.capRow}>
+                  <Text style={styles.capText}>Max/trade: ${Number(job.maxCap ?? 0).toFixed(0)}</Text>
+                  <Text style={styles.capText}>Daily: ${Number(job.dailyCap ?? 0).toFixed(0)}</Text>
+                  <Pressable
+                    style={({ pressed }) => [styles.topUpBtn, pressed && { opacity: 0.8 }, topUpPaper.isPending && { opacity: 0.5 }]}
+                    onPress={() => {
+                      Alert.alert(
+                        'Top Up Paper Balance',
+                        'Add simulated USDC to this paper trading account?',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Top Up $1000',
+                            onPress: () => topUpPaper.mutate({ jobId: job.id, amount: 1000 }),
+                          },
+                        ]
+                      );
+                    }}
+                    disabled={topUpPaper.isPending}>
+                    <Text style={styles.topUpBtnText}>{topUpPaper.isPending ? '...' : '+ Top Up'}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              job.privyWalletAddress && (
+                <Pressable style={styles.walletCard} onPress={copyWallet}>
+                  <View style={styles.walletRow}>
+                    <View style={styles.walletInfo}>
+                      <Text style={styles.walletLabel}>Agent Wallet (tap to copy)</Text>
+                      <Text style={styles.walletAddr} numberOfLines={1}>
+                        {job.privyWalletAddress.substring(0, 12)}...{job.privyWalletAddress.slice(-8)}
+                      </Text>
+                    </View>
+                    <View style={styles.walletBalance}>
+                      <Text style={styles.walletBalanceValue}>${walletUsdc.toFixed(2)}</Text>
+                      <Text style={styles.walletBalanceLabel}>USDC</Text>
+                    </View>
                   </View>
-                )}
-              </Pressable>
+                  {job.maxCap && (
+                    <View style={styles.capRow}>
+                      <Text style={styles.capText}>Max/trade: ${Number(job.maxCap).toFixed(0)}</Text>
+                      <Text style={styles.capText}>Daily: ${Number(job.dailyCap).toFixed(0)}</Text>
+                    </View>
+                  )}
+                </Pressable>
+              )
             )}
 
             {/* On-Chain Registration Status */}
@@ -408,6 +456,11 @@ const styles = StyleSheet.create({
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   statusText: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '700', letterSpacing: 1 },
+  modeBadge: {
+    marginTop: 4, paddingHorizontal: Spacing.sm, paddingVertical: 2,
+    borderRadius: BorderRadius.sm, alignSelf: 'flex-start',
+  },
+  modeBadgeText: { fontFamily: Fonts.body, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
   section: { gap: Spacing.md },
   sectionTitle: { fontFamily: Fonts.body, fontSize: 18, fontWeight: '600', color: Colors.textPrimary },
   sectionSubtitle: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, marginTop: -8 },
@@ -451,6 +504,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
   },
   airdropBtnText: { fontFamily: Fonts.body, fontSize: 12, fontWeight: '600', color: Colors.success },
+  topUpBtn: {
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm, backgroundColor: Colors.accent + '22',
+  },
+  topUpBtnText: { fontFamily: Fonts.body, fontSize: 12, fontWeight: '600', color: Colors.accent },
 
   // Positions
   positionCard: {

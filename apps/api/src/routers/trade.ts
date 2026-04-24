@@ -8,6 +8,11 @@ import {
   listPositions,
   getActivePositions,
 } from "../services/trade-service";
+import {
+  getPaperBalance,
+  topUpPaperBalance,
+  getPaperPortfolio,
+} from "../services/paper-trading";
 
 async function verifyJobOwnership(jobId: string, walletAddress: string): Promise<boolean> {
   const [job] = await db
@@ -72,5 +77,41 @@ export const positionRouter = router({
         throw new Error("Job not found or not owned by you");
       }
       return getActivePositions(input.jobId);
+    }),
+});
+
+// --- Paper Trading Router ---
+
+export const paperTradingRouter = router({
+  getBalance: protectedProcedure
+    .input(z.object({ jobId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      if (!(await verifyJobOwnership(input.jobId, ctx.walletAddress))) {
+        throw new Error("Job not found or not owned by you");
+      }
+      const balance = await getPaperBalance(input.jobId);
+      return { balance };
+    }),
+
+  topUp: protectedProcedure
+    .input(z.object({
+      jobId: z.string().uuid(),
+      amount: z.number().min(1).max(100000),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (!(await verifyJobOwnership(input.jobId, ctx.walletAddress))) {
+        throw new Error("Job not found or not owned by you");
+      }
+      const newBalance = await topUpPaperBalance(input.jobId, input.amount);
+      return { success: true, newBalance };
+    }),
+
+  getPortfolio: protectedProcedure
+    .input(z.object({ jobId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      if (!(await verifyJobOwnership(input.jobId, ctx.walletAddress))) {
+        throw new Error("Job not found or not owned by you");
+      }
+      return getPaperPortfolio(input.jobId);
     }),
 });

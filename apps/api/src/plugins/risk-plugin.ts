@@ -182,9 +182,12 @@ export function checkHumanApprovalThreshold(
 export function checkStopLoss(
   entryPrice: number,
   currentPrice: number,
-  side: string = "yes"
+  side: string = "yes",
+  stopLossPercent?: number
 ): RiskCheckResult {
   if (entryPrice <= 0) return { allowed: true }; // no entry price yet
+
+  const slPct = stopLossPercent ?? AGENT_LIMITS.STOP_LOSS_PERCENT;
 
   let loss: number;
   if (side === "yes") {
@@ -195,12 +198,84 @@ export function checkStopLoss(
     loss = (currentPrice - entryPrice) / entryPrice;
   }
 
-  if (loss >= AGENT_LIMITS.STOP_LOSS_PERCENT) {
+  if (loss >= slPct) {
     return {
       allowed: false,
-      reason: `Stop-loss triggered: ${(loss * 100).toFixed(1)}% loss on ${side.toUpperCase()} position (limit: ${AGENT_LIMITS.STOP_LOSS_PERCENT * 100}%)`,
+      reason: `Stop-loss triggered: ${(loss * 100).toFixed(1)}% loss on ${side.toUpperCase()} position (limit: ${(slPct * 100).toFixed(0)}%)`,
     };
   }
+  return { allowed: true };
+}
+
+// --- Take-profit check ---
+
+export function checkTakeProfit(
+  entryPrice: number,
+  currentPrice: number,
+  side: string = "yes",
+  takeProfitPercent?: number
+): RiskCheckResult {
+  if (entryPrice <= 0) return { allowed: true };
+
+  const tpPct = takeProfitPercent ?? 0.20; // default 20%
+
+  let profit: number;
+  if (side === "yes") {
+    profit = (currentPrice - entryPrice) / entryPrice;
+  } else {
+    profit = (entryPrice - currentPrice) / entryPrice;
+  }
+
+  if (profit >= tpPct) {
+    return {
+      allowed: false,
+      reason: `Take-profit triggered: ${(profit * 100).toFixed(1)}% gain on ${side.toUpperCase()} position (target: ${(tpPct * 100).toFixed(0)}%)`,
+    };
+  }
+  return { allowed: true };
+}
+
+// --- Market expiry check ---
+
+export function checkMarketExpiry(
+  positionOpenedAt: Date,
+  marketCloseTime: Date | null,
+  positionExpiresAt: Date | null
+): RiskCheckResult {
+  const now = Date.now();
+
+  if (positionExpiresAt && now > positionExpiresAt.getTime()) {
+    return {
+      allowed: false,
+      reason: `Position expiry reached`,
+    };
+  }
+
+  if (marketCloseTime && now > marketCloseTime.getTime()) {
+    return {
+      allowed: false,
+      reason: `Market has closed`,
+    };
+  }
+
+  return { allowed: true };
+}
+
+// --- Market resolution check ---
+
+export function checkMarketResolutionResult(
+  marketResult: string | null | undefined,
+  positionSide: string
+): RiskCheckResult {
+  if (!marketResult) return { allowed: true };
+
+  if (marketResult === "yes" || marketResult === "no" || marketResult === "cancelled") {
+    return {
+      allowed: false,
+      reason: `Market resolved: ${marketResult.toUpperCase()}`,
+    };
+  }
+
   return { allowed: true };
 }
 
