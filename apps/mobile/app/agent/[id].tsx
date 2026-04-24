@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert, ActivityIndicator, Clipboard, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert, ActivityIndicator, Clipboard, RefreshControl, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -64,6 +64,7 @@ export default function AgentDetailScreen() {
   const [step, setStep] = useState<HireStep>('config');
   const [jobId, setJobId] = useState<string | null>(null);
   const [privyWallet, setPrivyWallet] = useState<string | null>(null);
+  const [explorerLinks, setExplorerLinks] = useState<{ agentAsset?: string; fundTx?: string; agentWallet?: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
 
@@ -118,6 +119,9 @@ export default function AgentDetailScreen() {
         onSuccess: async (data: any) => {
           setJobId(data.id);
           setPrivyWallet(data.privyWalletAddress);
+          if (data.explorerLinks) {
+            setExplorerLinks(data.explorerLinks);
+          }
 
           try {
             const fundResult = await fundJob.mutateAsync(data.id);
@@ -125,9 +129,6 @@ export default function AgentDetailScreen() {
               const resumeResult = await resumeJob.mutateAsync(data.id);
               if (resumeResult.success) {
                 setStep('done');
-                Alert.alert('Agent Started!', `Trading with $${fundResult.balance.usdc.toFixed(2)} paper USDC\nPolicy: $${maxCap}/trade · $${dailyCap}/day`, [
-                  { text: 'View Profile', onPress: () => router.push('/(tabs)/profile') },
-                ]);
               } else {
                 Alert.alert('Error', resumeResult.message ?? 'Failed to start agent');
               }
@@ -353,10 +354,49 @@ export default function AgentDetailScreen() {
             {/* === STEP 2: DONE === */}
             {step === 'done' && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Agent Launched!</Text>
+                <Text style={styles.sectionTitle}>Agent Launched! 🚀</Text>
                 <Text style={styles.sectionDesc}>
-                  Your agent is now trading with an Agentic Wallet protected by policy limits.
+                  Your agent is live on devnet with an Agentic Wallet and policy protection.
                 </Text>
+
+                {/* Explorer Links — The Dopamine Hit */}
+                {explorerLinks && (
+                  <View style={styles.explorerCard}>
+                    <Text style={styles.explorerTitle}>On-Chain Proof</Text>
+                    <Text style={styles.explorerSubtitle}>View transactions on Solana Devnet</Text>
+
+                    {explorerLinks.agentAsset && (
+                      <Pressable style={styles.explorerLink} onPress={() => Linking.openURL(explorerLinks.agentAsset!)}>
+                        <Text style={styles.explorerLinkIcon}>🆔</Text>
+                        <View style={styles.explorerLinkText}>
+                          <Text style={styles.explorerLinkLabel}>Agent NFT</Text>
+                          <Text style={styles.explorerLinkUrl} numberOfLines={1}>View on Solana Explorer →</Text>
+                        </View>
+                      </Pressable>
+                    )}
+
+                    {explorerLinks.fundTx && (
+                      <Pressable style={styles.explorerLink} onPress={() => Linking.openURL(explorerLinks.fundTx!)}>
+                        <Text style={styles.explorerLinkIcon}>💸</Text>
+                        <View style={styles.explorerLinkText}>
+                          <Text style={styles.explorerLinkLabel}>Wallet Funding</Text>
+                          <Text style={styles.explorerLinkUrl} numberOfLines={1}>View on Solana Explorer →</Text>
+                        </View>
+                      </Pressable>
+                    )}
+
+                    {explorerLinks.agentWallet && (
+                      <Pressable style={styles.explorerLink} onPress={() => Linking.openURL(explorerLinks.agentWallet!)}>
+                        <Text style={styles.explorerLinkIcon}>👛</Text>
+                        <View style={styles.explorerLinkText}>
+                          <Text style={styles.explorerLinkLabel}>Agent Wallet</Text>
+                          <Text style={styles.explorerLinkUrl} numberOfLines={1}>View on Solana Explorer →</Text>
+                        </View>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+
                 <View style={styles.successBanner}>
                   <Text style={styles.successBannerText}>✓ Policy Active: ${maxCap}/trade · ${dailyCap}/day</Text>
                 </View>
@@ -603,6 +643,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
   },
   registryBtnText: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
+
+  // Explorer links card
+  explorerCard: {
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1,
+    borderColor: Colors.accent, padding: Spacing.lg, gap: Spacing.md,
+  },
+  explorerTitle: { fontFamily: Fonts.heading, fontSize: 16, fontWeight: '700', color: Colors.accent },
+  explorerSubtitle: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, marginTop: -4 },
+  explorerLink: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.background, borderRadius: BorderRadius.md,
+    padding: Spacing.md, borderWidth: 1, borderColor: Colors.border,
+  },
+  explorerLinkIcon: { fontSize: 24 },
+  explorerLinkText: { flex: 1, gap: 2 },
+  explorerLinkLabel: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
+  explorerLinkUrl: { fontFamily: Fonts.body, fontSize: 12, color: Colors.accent },
 
   feedList: { gap: Spacing.md },
   skeletonList: { gap: Spacing.md },
