@@ -140,7 +140,7 @@ export async function registerAgentOn8004(
   const metadataUri = await uploadMetadata(agentMeta);
 
   const agent = await sdk.registerAgent(metadataUri, {
-    collectionPointer: collection.toBase58(),
+    collectionPointer: `c1:${collection.toBase58()}`,
     atomEnabled: params.atomEnabled ?? true,
   });
 
@@ -207,7 +207,7 @@ export async function buildRegisterAgentTx8004(
   const metadataUri = await uploadMetadata(agentMeta);
 
   const result = await sdk.registerAgent(metadataUri, {
-    collectionPointer: collection.toBase58(),
+    collectionPointer: `c1:${collection.toBase58()}`,
     atomEnabled: params.atomEnabled ?? true,
     skipSend: true,
   });
