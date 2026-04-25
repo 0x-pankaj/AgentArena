@@ -9,6 +9,7 @@ import {
   isAgentRegisteredOn8004,
   fetchAgentAsset,
   getAgentExplorerUrl,
+  registerAgentOn8004WithBackendPayer,
 } from "../utils/agent-registry-8004";
 import {
   getAtomSummary,
@@ -208,6 +209,67 @@ export const agentRouter = router({
         success: true,
         assetAddress: asset.assetAddress,
         explorerUrl: getAgentExplorerUrl(asset.assetAddress),
+      };
+    }),
+
+  // Retroactively register an existing agent on 8004 (admin/dev only)
+  registerRetroactive: protectedProcedure
+    .input(z.object({
+      agentId: z.string().uuid(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const [agent] = await db
+        .select()
+        .from(schema.agents)
+        .where(
+          and(
+            eq(schema.agents.id, input.agentId),
+            eq(schema.agents.ownerAddress, ctx.walletAddress)
+          )
+        )
+        .limit(1);
+
+      if (!agent) {
+        throw new Error("Agent not found or not owned by you");
+      }
+
+      if (agent.assetAddress) {
+        return {
+          success: true,
+          assetAddress: agent.assetAddress,
+          message: "Already registered on 8004",
+          explorerUrl: getAgentExplorerUrl(agent.assetAddress),
+        };
+      }
+
+      // Register on 8004 with backend payer
+      const result = await registerAgentOn8004WithBackendPayer({
+        ownerAddress: ctx.walletAddress,
+        metadata: {
+          name: agent.name,
+          description: agent.description ?? "",
+          category: agent.category,
+          capabilities: agent.capabilities ?? [],
+          pricingModel: agent.pricingModel as any,
+        },
+        atomEnabled: true,
+      });
+
+      const [statsPda] = getAtomStatsPDA(new PublicKey(result.agentAsset));
+      await db
+        .update(schema.agents)
+        .set({
+          assetAddress: result.agentAsset,
+          atomStatsAddress: statsPda.toBase58(),
+          atomEnabled: true,
+        })
+        .where(eq(schema.agents.id, input.agentId));
+
+      return {
+        success: true,
+        assetAddress: result.agentAsset,
+        message: "Registered on 8004",
+        explorerUrl: getAgentExplorerUrl(result.agentAsset),
       };
     }),
 

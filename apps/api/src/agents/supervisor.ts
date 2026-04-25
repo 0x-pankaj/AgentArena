@@ -87,7 +87,7 @@ export async function hireAgent(params: {
 
   const explorerLinks: { agentAsset?: string; fundTx?: string; agentWallet?: string } = {};
 
-  // 2. Ensure agent is registered on 8004 (auto-register if needed)
+  // 2. Ensure agent is registered on 8004 (CRITICAL — fail if we can't)
   if (!agent.assetAddress && IS_DEVNET) {
     try {
       const result = await registerAgentOn8004WithBackendPayer({
@@ -116,7 +116,9 @@ export async function hireAgent(params: {
       console.log(`[Supervisor] ✅ Auto-registered agent ${agent.id} on 8004: ${result.agentAsset}`);
       console.log(`[Supervisor]    Explorer: ${explorerLinks.agentAsset}`);
     } catch (err: any) {
-      console.warn(`[Supervisor] 8004 auto-registration failed: ${err.message}`);
+      console.error(`[Supervisor] ❌ 8004 auto-registration FAILED: ${err.message}`);
+      console.error(`[Supervisor]    Backend payer may need devnet SOL.`);
+      throw new Error(`Agent registration failed: ${err.message}. Please try again.`);
     }
   } else if (agent.assetAddress) {
     explorerLinks.agentAsset = getExplorerUrl("address", agent.assetAddress);
