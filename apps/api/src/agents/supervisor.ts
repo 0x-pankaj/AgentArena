@@ -125,47 +125,63 @@ export async function hireAgent(params: {
   }
 
   // 3. Create Agentic Wallet with dynamic job policy (REQUIRED)
-  const agentic = await createAgenticWalletForJob({
-    jobId: "pending", // will update after job insert
-    agentName: agent.name,
-    maxBudgetUsdc: params.maxCap,
-    dailyCapUsdc: params.dailyCap,
-    durationDays: params.durationDays ?? 7,
-    denySolTransfers: true,
-  });
-
-  console.log(`[Supervisor] Created Agentic Wallet for job (${agent.name}): ${agentic.walletAddress} with policy ${agentic.policyId}`);
+  let agentic;
+  try {
+    agentic = await createAgenticWalletForJob({
+      jobId: "pending", // will update after job insert
+      agentName: agent.name,
+      maxBudgetUsdc: params.maxCap,
+      dailyCapUsdc: params.dailyCap,
+      durationDays: params.durationDays ?? 7,
+      denySolTransfers: true,
+    });
+    console.log(`[Supervisor] Created Agentic Wallet for job (${agent.name}): ${agentic.walletAddress} with policy ${agentic.policyId}`);
+  } catch (err: any) {
+    console.error(`[Supervisor] ❌ Agentic wallet creation FAILED: ${err.message}`);
+    throw new Error(`Agentic wallet creation failed: ${err.message}`);
+  }
 
   // 4. Seed agentic wallet with devnet SOL from backend payer (REQUIRED on devnet)
   if (IS_DEVNET) {
-    const fundSig = await transferSolFromBackend(agentic.walletAddress, 0.1);
-    if (!fundSig) {
-      throw new Error("Agent wallet funding failed: backend payer may need devnet SOL");
+    try {
+      const fundSig = await transferSolFromBackend(agentic.walletAddress, 0.1);
+      if (!fundSig) {
+        throw new Error("Transfer returned null");
+      }
+      explorerLinks.fundTx = getExplorerUrl("tx", fundSig);
+      explorerLinks.agentWallet = getExplorerUrl("address", agentic.walletAddress);
+      console.log(`[Supervisor] ✅ Seeded agent wallet ${agentic.walletAddress} with 0.1 SOL: ${fundSig}`);
+    } catch (err: any) {
+      console.error(`[Supervisor] ❌ Agent wallet funding FAILED: ${err.message}`);
+      throw new Error(`Agent wallet funding failed: ${err.message}`);
     }
-    explorerLinks.fundTx = getExplorerUrl("tx", fundSig);
-    explorerLinks.agentWallet = getExplorerUrl("address", agentic.walletAddress);
-    console.log(`[Supervisor] ✅ Seeded agent wallet ${agentic.walletAddress} with 0.1 SOL: ${fundSig}`);
   }
 
   // 5. Create job in DB (paused by default, paper trading mode)
-  const [job] = await db
-    .insert(schema.jobs)
-    .values({
-      clientAddress: params.clientAddress,
-      agentId: params.agentId,
-      privyWalletId: agentic.walletId,
-      privyWalletAddress: agentic.walletAddress,
-      privyPolicyId: agentic.policyId,
-      maxCap: String(params.maxCap),
-      dailyCap: String(params.dailyCap),
-      status: "paused",
-      tradingMode: "paper",
-      paperBalance: String(DEFAULT_PAPER_BALANCE_USDC),
-      policyExpiryAt: new Date(Date.now() + (params.durationDays ?? 7) * 86400000),
-    })
-    .returning();
+  let job;
+  try {
+    [job] = await db
+      .insert(schema.jobs)
+      .values({
+        clientAddress: params.clientAddress,
+        agentId: params.agentId,
+        privyWalletId: agentic.walletId,
+        privyWalletAddress: agentic.walletAddress,
+        privyPolicyId: agentic.policyId,
+        maxCap: String(params.maxCap),
+        dailyCap: String(params.dailyCap),
+        status: "paused",
+        tradingMode: "paper",
+        paperBalance: String(DEFAULT_PAPER_BALANCE_USDC),
+        policyExpiryAt: new Date(Date.now() + (params.durationDays ?? 7) * 86400000),
+      })
+      .returning();
 
-  console.log(`[Supervisor] Job ${job.id} linked to policy ${agentic.policyId}`);
+    console.log(`[Supervisor] Job ${job.id} linked to policy ${agentic.policyId}`);
+  } catch (err: any) {
+    console.error(`[Supervisor] ❌ Job creation FAILED: ${err.message}`);
+    throw new Error(`Job creation failed: ${err.message}`);
+  }
 
   return {
     jobId: job.id,

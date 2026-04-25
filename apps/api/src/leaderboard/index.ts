@@ -610,6 +610,10 @@ export async function getTrendingAgents(
     const agents = [];
     for (const [agentId, activity] of sorted) {
       try {
+        // Skip non-UUID agent_ids (e.g., registry IDs like "politics-agent")
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId)) {
+          continue;
+        }
         const [agent] = await db
           .select()
           .from(schema.agents)
