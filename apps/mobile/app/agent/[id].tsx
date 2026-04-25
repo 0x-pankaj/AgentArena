@@ -263,18 +263,18 @@ export default function AgentDetailScreen() {
                     <Text style={styles.reputationLabel}>Trust Tier</Text>
                   </View>
                   <View style={styles.reputationItem}>
-                    <Text style={styles.reputationValue}>{atomRep.qualityScore.toFixed(1)}</Text>
+                    <Text style={styles.reputationValue}>{(atomRep.qualityScore ?? 0).toFixed(1)}</Text>
                     <Text style={styles.reputationLabel}>Quality Score</Text>
                   </View>
                   <View style={styles.reputationItem}>
-                    <Text style={styles.reputationValue}>{atomRep.feedbackCount}</Text>
+                    <Text style={styles.reputationValue}>{atomRep.feedbackCount ?? 0}</Text>
                     <Text style={styles.reputationLabel}>Feedbacks</Text>
                   </View>
                 </View>
-                {atomRep.compositeScore > 0 && (
+                {(atomRep.compositeScore ?? 0) > 0 && (
                   <View style={styles.compositeScoreBar}>
-                    <View style={[styles.compositeScoreFill, { width: `${Math.min(atomRep.compositeScore, 100)}%` }]} />
-                    <Text style={styles.compositeScoreText}>Reputation Score: {atomRep.compositeScore.toFixed(0)}/100</Text>
+                    <View style={[styles.compositeScoreFill, { width: `${Math.min(atomRep.compositeScore ?? 0, 100)}%` }]} />
+                    <Text style={styles.compositeScoreText}>Reputation Score: {(atomRep.compositeScore ?? 0).toFixed(0)}/100</Text>
                   </View>
                 )}
               </View>
