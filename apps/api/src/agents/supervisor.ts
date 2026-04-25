@@ -124,56 +124,38 @@ export async function hireAgent(params: {
     explorerLinks.agentAsset = getExplorerUrl("address", agent.assetAddress);
   }
 
-  // 3. Create Agentic Wallet with dynamic job policy
-  let walletId: string | null = null;
-  let walletAddress: string | null = null;
-  let policyId: string | null = null;
+  // 3. Create Agentic Wallet with dynamic job policy (REQUIRED)
+  const agentic = await createAgenticWalletForJob({
+    jobId: "pending", // will update after job insert
+    agentName: agent.name,
+    maxBudgetUsdc: params.maxCap,
+    dailyCapUsdc: params.dailyCap,
+    durationDays: params.durationDays ?? 7,
+    denySolTransfers: true,
+  });
 
-  try {
-    const agentic = await createAgenticWalletForJob({
-      jobId: "pending", // will update after job insert
-      agentName: agent.name,
-      maxBudgetUsdc: params.maxCap,
-      dailyCapUsdc: params.dailyCap,
-      durationDays: params.durationDays ?? 7,
-      denySolTransfers: true,
-    });
+  console.log(`[Supervisor] Created Agentic Wallet for job (${agent.name}): ${agentic.walletAddress} with policy ${agentic.policyId}`);
 
-    walletId = agentic.walletId;
-    walletAddress = agentic.walletAddress;
-    policyId = agentic.policyId;
-
-    console.log(`[Supervisor] Created Agentic Wallet for job (${agent.name}): ${walletAddress} with policy ${policyId}`);
-
-    // Seed agentic wallet with devnet SOL from backend payer
-    // This SOL is for the wallet's own transaction fees, NOT backend infrastructure
-    if (IS_DEVNET && walletAddress) {
-      try {
-        const fundSig = await transferSolFromBackend(walletAddress, 0.1);
-        if (fundSig) {
-          explorerLinks.fundTx = getExplorerUrl("tx", fundSig);
-          explorerLinks.agentWallet = getExplorerUrl("address", walletAddress);
-          console.log(`[Supervisor] ✅ Seeded agent wallet ${walletAddress} with 0.1 SOL: ${fundSig}`);
-        } else {
-          console.warn(`[Supervisor] Failed to seed agent wallet — backend payer may need devnet SOL`);
-        }
-      } catch (err: any) {
-        console.warn(`[Supervisor] Agent wallet funding failed: ${err.message}`);
-      }
+  // 4. Seed agentic wallet with devnet SOL from backend payer (REQUIRED on devnet)
+  if (IS_DEVNET) {
+    const fundSig = await transferSolFromBackend(agentic.walletAddress, 0.1);
+    if (!fundSig) {
+      throw new Error("Agent wallet funding failed: backend payer may need devnet SOL");
     }
-  } catch (err: any) {
-    console.warn(`[Supervisor] Agentic wallet creation failed (continuing without wallet for paper trading): ${err.message}`);
+    explorerLinks.fundTx = getExplorerUrl("tx", fundSig);
+    explorerLinks.agentWallet = getExplorerUrl("address", agentic.walletAddress);
+    console.log(`[Supervisor] ✅ Seeded agent wallet ${agentic.walletAddress} with 0.1 SOL: ${fundSig}`);
   }
 
-  // 3. Create job in DB (paused by default, paper trading mode)
+  // 5. Create job in DB (paused by default, paper trading mode)
   const [job] = await db
     .insert(schema.jobs)
     .values({
       clientAddress: params.clientAddress,
       agentId: params.agentId,
-      privyWalletId: walletId ?? null,
-      privyWalletAddress: walletAddress ?? null,
-      privyPolicyId: policyId ?? null,
+      privyWalletId: agentic.walletId,
+      privyWalletAddress: agentic.walletAddress,
+      privyPolicyId: agentic.policyId,
       maxCap: String(params.maxCap),
       dailyCap: String(params.dailyCap),
       status: "paused",
@@ -183,21 +165,12 @@ export async function hireAgent(params: {
     })
     .returning();
 
-  // If wallet was created, update policy name with real jobId
-  if (policyId && walletId) {
-    try {
-      // Policies are immutable; we already named it with pending. For hackathon, this is fine.
-      // In production, we'd re-create with the real jobId.
-      console.log(`[Supervisor] Job ${job.id} linked to policy ${policyId}`);
-    } catch {
-      // ignore
-    }
-  }
+  console.log(`[Supervisor] Job ${job.id} linked to policy ${agentic.policyId}`);
 
   return {
     jobId: job.id,
-    privyWalletAddress: walletAddress ?? undefined,
-    policyId: policyId ?? undefined,
+    privyWalletAddress: agentic.walletAddress,
+    policyId: agentic.policyId,
     explorerLinks: Object.keys(explorerLinks).length > 0 ? explorerLinks : undefined,
   };
 }
