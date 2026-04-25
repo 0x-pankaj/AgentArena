@@ -583,47 +583,57 @@ export async function getUserLeaderboard(
 export async function getTrendingAgents(
   limit: number = 10
 ): Promise<{ agents: Array<{ id: string; name: string; category: string; lastEvent: string; pnl: number }> }> {
-  // Get recent feed events to find most active agents
-  const raw = await redis.zrange(REDIS_KEYS.FEED_RECENT, 0, 49, "REV");
+  try {
+    // Get recent feed events to find most active agents
+    const raw = await redis.zrange(REDIS_KEYS.FEED_RECENT, 0, 49, "REV");
 
-  const agentActivity = new Map<string, { count: number; lastEvent: string }>();
+    const agentActivity = new Map<string, { count: number; lastEvent: string }>();
 
-  for (const r of raw) {
-    try {
-      const event = JSON.parse(r);
-      const existing = agentActivity.get(event.agent_id);
-      if (!existing) {
-        agentActivity.set(event.agent_id, { count: 1, lastEvent: event.timestamp });
-      } else {
-        existing.count++;
-      }
-    } catch {}
-  }
-
-  // Sort by activity count
-  const sorted = Array.from(agentActivity.entries())
-    .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, limit);
-
-  const agents = [];
-  for (const [agentId, activity] of sorted) {
-    const [agent] = await db
-      .select()
-      .from(schema.agents)
-      .where(eq(schema.agents.id, agentId))
-      .limit(1);
-
-    if (agent) {
-      const stats = await redis.hgetall(`${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}`);
-      agents.push({
-        id: agentId,
-        name: agent.name,
-        category: agent.category,
-        lastEvent: activity.lastEvent,
-        pnl: Number(stats.totalPnl ?? 0),
-      });
+    for (const r of raw) {
+      try {
+        const event = JSON.parse(r);
+        if (!event.agent_id) continue;
+        const existing = agentActivity.get(event.agent_id);
+        if (!existing) {
+          agentActivity.set(event.agent_id, { count: 1, lastEvent: event.timestamp ?? new Date().toISOString() });
+        } else {
+          existing.count++;
+        }
+      } catch {}
     }
-  }
 
-  return { agents };
+    // Sort by activity count
+    const sorted = Array.from(agentActivity.entries())
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, limit);
+
+    const agents = [];
+    for (const [agentId, activity] of sorted) {
+      try {
+        const [agent] = await db
+          .select()
+          .from(schema.agents)
+          .where(eq(schema.agents.id, agentId))
+          .limit(1);
+
+        if (agent) {
+          const stats = await redis.hgetall(`${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}`);
+          agents.push({
+            id: agentId,
+            name: agent.name,
+            category: agent.category,
+            lastEvent: activity.lastEvent,
+            pnl: Number(stats.totalPnl ?? 0),
+          });
+        }
+      } catch (err) {
+        console.warn(`[getTrendingAgents] Failed to load agent ${agentId}:`, err);
+      }
+    }
+
+    return { agents };
+  } catch (err: any) {
+    console.error("[getTrendingAgents] Error:", err.message);
+    return { agents: [] };
+  }
 }
