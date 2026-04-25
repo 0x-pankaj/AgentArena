@@ -3,8 +3,6 @@ import {
   SolanaSDK,
   Tag,
   getAtomStatsPDA,
-  getBaseCollection,
-  fetchRegistryConfig,
   IPFSClient,
 } from "8004-solana";
 import { SOLANA_RPC_URL, SOLANA_COMMITMENT, IS_DEVNET } from "@agent-arena/shared";
@@ -25,11 +23,6 @@ const REGISTRY_PROGRAM_ID = new PublicKey(
 
 const ATOM_ENGINE_PROGRAM_ID = new PublicKey(
   "AToMufS4QD6hEXvcvBDg9m1AHeCLpmZQsyfYa5h9MwAF"
-);
-
-// Devnet base collection (from official 8004-solana deployment)
-const DEVNET_BASE_COLLECTION = new PublicKey(
-  "C6W2bq4BoVT8FDvqhdp3sbcHFBjNBXE8TsNak2wTXQs9"
 );
 
 // Pinata JWT for IPFS uploads (set PINATA_JWT env var for production)
@@ -100,18 +93,6 @@ async function uploadMetadata(metadata: any): Promise<string> {
 // ── Core Functions ─────────────────────────────────────────────
 
 /**
- * Get the 8004 base collection address for the current network.
- */
-export async function get8004Collection(): Promise<PublicKey> {
-  if (IS_DEVNET) {
-    return DEVNET_BASE_COLLECTION;
-  }
-  const sdk = createSDK();
-  const config = await fetchRegistryConfig((sdk as any).connection, REGISTRY_PROGRAM_ID);
-  return (config as any).collection ?? DEVNET_BASE_COLLECTION;
-}
-
-/**
  * Register a new agent on the 8004 Solana Agent Registry.
  */
 export async function registerAgentOn8004(
@@ -123,7 +104,6 @@ export async function registerAgentOn8004(
   }
 ): Promise<RegisterAgentResult> {
   const sdk = createSDK(params.payerKeypair);
-  const collection = await get8004Collection();
 
   const agentMeta = {
     name: params.metadata.name,
@@ -140,7 +120,6 @@ export async function registerAgentOn8004(
   const metadataUri = await uploadMetadata(agentMeta);
 
   const agent = await sdk.registerAgent(metadataUri, {
-    collectionPointer: `c1:${collection.toBase58()}`,
     atomEnabled: params.atomEnabled ?? true,
   });
 
@@ -190,7 +169,6 @@ export async function buildRegisterAgentTx8004(
   }
 ): Promise<Transaction> {
   const sdk = createSDK();
-  const collection = await get8004Collection();
 
   const agentMeta = {
     name: params.metadata.name,
@@ -207,7 +185,6 @@ export async function buildRegisterAgentTx8004(
   const metadataUri = await uploadMetadata(agentMeta);
 
   const result = await sdk.registerAgent(metadataUri, {
-    collectionPointer: `c1:${collection.toBase58()}`,
     atomEnabled: params.atomEnabled ?? true,
     skipSend: true,
   });
