@@ -7,7 +7,7 @@ import { getSolanaConnection } from '../../src/lib/solana';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
 import { SkeletonCard, SkeletonLoader } from '../../src/components/SkeletonLoader';
 import { FeedItem } from '../../src/components/FeedItem';
-import { useAgentGet, useFeedByAgent, useJobCreate, useJobFund, useJobResume, useJobWalletBalance, useAgentGetReputation } from '../../src/lib/api';
+import { useAgentGet, useFeedByAgent, useJobCreate, useJobFund, useJobResume, useJobWalletBalance, useAgentGetReputation, useAgentSwarmProfile } from '../../src/lib/api';
 import { useLiveFeed } from '../../src/hooks/useLiveFeed';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useEmbeddedSolanaWallet } from '@privy-io/expo';
@@ -91,6 +91,7 @@ export default function AgentDetailScreen() {
   const agent = agentData ?? null;
   const { data: reputationData } = useAgentGetReputation(id!);
   const atomRep = reputationData ?? agent?.atomReputation ?? null;
+  const { data: swarmProfile } = useAgentSwarmProfile(id!);
 
   if (!agent) {
     return (
@@ -276,6 +277,38 @@ export default function AgentDetailScreen() {
                     <View style={[styles.compositeScoreFill, { width: `${Math.min(atomRep.compositeScore ?? 0, 100)}%` }]} />
                     <Text style={styles.compositeScoreText}>Reputation Score: {(atomRep.compositeScore ?? 0).toFixed(0)}/100</Text>
                   </View>
+                )}
+              </View>
+            )}
+
+            {/* Swarm Activity */}
+            {swarmProfile && (
+              <View style={styles.swarmCard}>
+                <Text style={styles.swarmTitle}>🕸️ Swarm Activity</Text>
+                <View style={styles.swarmStatsRow}>
+                  <View style={styles.swarmStat}>
+                    <Text style={styles.swarmStatValue}>{swarmProfile.delegations?.total ?? 0}</Text>
+                    <Text style={styles.swarmStatLabel}>Delegations</Text>
+                  </View>
+                  <View style={styles.swarmStat}>
+                    <Text style={styles.swarmStatValue}>{swarmProfile.ratings?.count ?? 0}</Text>
+                    <Text style={styles.swarmStatLabel}>Ratings</Text>
+                  </View>
+                  <View style={styles.swarmStat}>
+                    <Text style={styles.swarmStatValue}>{swarmProfile.consensus?.length ?? 0}</Text>
+                    <Text style={styles.swarmStatLabel}>Consensus</Text>
+                  </View>
+                </View>
+                {swarmProfile.agent?.swarmScore > 0 && (
+                  <View style={styles.swarmScoreBar}>
+                    <View style={[styles.swarmScoreFill, { width: `${Math.min(swarmProfile.agent.swarmScore, 100)}%` }]} />
+                    <Text style={styles.swarmScoreText}>Swarm Score: {swarmProfile.agent.swarmScore.toFixed(1)}/100</Text>
+                  </View>
+                )}
+                {swarmProfile.ratings?.averageReceived > 0 && (
+                  <Text style={styles.swarmSubtitle}>
+                    Average peer rating: {swarmProfile.ratings.averageReceived.toFixed(1)}/100
+                  </Text>
                 )}
               </View>
             )}
@@ -665,4 +698,19 @@ const styles = StyleSheet.create({
   skeletonList: { gap: Spacing.md },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.xl },
   emptyText: { fontFamily: Fonts.body, fontSize: 16, color: Colors.textMuted },
+
+  // Swarm card
+  swarmCard: {
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1,
+    borderColor: Colors.border, padding: Spacing.lg, gap: Spacing.md,
+  },
+  swarmTitle: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
+  swarmStatsRow: { flexDirection: 'row', gap: Spacing.md },
+  swarmStat: { flex: 1, alignItems: 'center', gap: Spacing.xs },
+  swarmStatValue: { fontFamily: Fonts.mono, fontSize: 18, fontWeight: '700', color: Colors.accent },
+  swarmStatLabel: { fontFamily: Fonts.body, fontSize: 11, color: Colors.textMuted },
+  swarmScoreBar: { height: 8, backgroundColor: Colors.border, borderRadius: 4, overflow: 'hidden', marginTop: Spacing.xs },
+  swarmScoreFill: { height: '100%', backgroundColor: Colors.success, borderRadius: 4 },
+  swarmScoreText: { fontFamily: Fonts.mono, fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  swarmSubtitle: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, marginTop: Spacing.xs },
 });

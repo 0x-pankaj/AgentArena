@@ -44,6 +44,7 @@ import { recordAgentPrediction } from "../services/outcome-feedback";
 import { runScenarioAnalysis, quickScenarioGate } from "../services/scenario-analysis";
 import { db, schema } from "../db";
 import { runEnhancedPipeline } from "./enhanced-pipeline";
+import { runSwarmHooks } from "./swarm-hooks";
 
 const AGENT_NAME = "Sports Agent";
 const AGENT_ID = "sports-agent";
@@ -361,7 +362,22 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
         pnl: Number(p.pnl ?? 0),
       }));
       const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
-      const decision = pipelineResult.decision;
+      let decision = pipelineResult.decision;
+
+      // ===== SWARM HOOKS: Delegation + Consensus =====
+      const swarmResult = await runSwarmHooks(ctx, ctx.agentId, "sports", decision);
+      if (!swarmResult.proceed) {
+        fsm.transition("no_edge");
+        await saveState();
+        return {
+          state: fsm.getState() as any,
+          action: "skipped",
+          detail: swarmResult.detail,
+          decision,
+          tokensUsed: pipelineResult.tokensUsed,
+        };
+      }
+      decision = swarmResult.decision ?? decision;
 
       if (decision.action === "buy" && decision.marketId) {
         const buyResult = await executeBuy(
@@ -498,7 +514,22 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
         pnl: Number(p.pnl ?? 0),
       }));
       const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
-      const decision = pipelineResult.decision;
+      let decision = pipelineResult.decision;
+
+      // ===== SWARM HOOKS: Delegation + Consensus =====
+      const swarmResult = await runSwarmHooks(ctx, ctx.agentId, "sports", decision);
+      if (!swarmResult.proceed) {
+        fsm.transition("no_edge");
+        await saveState();
+        return {
+          state: fsm.getState() as any,
+          action: "skipped",
+          detail: swarmResult.detail,
+          decision,
+          tokensUsed: pipelineResult.tokensUsed,
+        };
+      }
+      decision = swarmResult.decision ?? decision;
 
       if (decision.action === "buy" && decision.marketId) {
         const buyResult = await executeBuy(
@@ -516,76 +547,6 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
 
     return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, tokensUsed: pipelineResult.tokensUsed };
 
-  }
-
-  if (fsm.getState() === "EXECUTING") {
-    const decisionRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:decision`);
-    if (!decisionRaw) {
-      fsm.transition("order_failed");
-      await saveState();
-      return { state: fsm.getState(), action: "executed", detail: "No decision in cache" };
-    }
-
-    const decision = JSON.parse(decisionRaw) as TradeDecision;
-    const { positions: dbPositions } = await getActivePositions(ctx.jobId);
-    const positions: AgentPosition[] = dbPositions.map((p) => ({
-      marketId: p.marketId, side: p.side, amount: Number(p.amount),
-      entryPrice: Number(p.entryPrice), currentPrice: Number(p.currentPrice ?? p.entryPrice),
-      pnl: Number(p.pnl ?? 0),
-    }));
-    const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
-
-    if (decision.action === "buy") {
-      // Feature 6: Microstructure check
-      if (decision.marketId) {
-        const microCheck = await checkMicrostructure(decision.marketId, decision.amount ?? 0);
-        if (!microCheck.allowed) {
-          fsm.transition("order_failed"); await saveState();
-          return { state: fsm.getState(), action: "executed", detail: `Microstructure rejected: ${microCheck.reason}`, decision };
-        }
-      }
-      // Feature 7: Correlation check
-      if (decision.marketId) {
-        const positionRisks = positions.map((p) => ({ marketId: p.marketId, marketQuestion: p.marketId, side: p.side, amount: p.amount, category: "sports" as const }));
-        const correlationCheck = checkCrossMarketCorrelation(decision.marketQuestion ?? decision.marketId ?? "", decision.amount ?? 0, positionRisks, portfolio.totalBalance);
-        if (!correlationCheck.allowed) {
-          fsm.transition("order_failed"); await saveState();
-          return { state: fsm.getState(), action: "executed", detail: `Correlation rejected: ${correlationCheck.reason}`, decision };
-        }
-      }
-
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
-
-      const result = await executeBuy(decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "sports");
-      if (result.success) {
-        if (result.positionId) {
-          await recordPromptLinks(result.positionId, "sports").catch(() => {});
-          // Position monitoring is handled automatically by the unified position-monitor service
-        }
-        fsm.transition("order_placed");
-        await saveState();
-        return { state: fsm.getState(), action: "executed", detail: `Buy placed: ${result.positionId}`, decision };
-      } else {
-        fsm.transition("order_failed");
-        await saveState();
-        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME}: Order failed — ${result.error}`, { pipeline_stage: "execution_failed" }, "critical");
-        return { state: fsm.getState(), action: "executed", detail: `Buy failed: ${result.error}`, decision };
-      }
-    } else if (decision.action === "sell" && decision.marketId) {
-      const pos = dbPositions.find((p) => p.marketId === decision.marketId);
-      if (pos) {
-        const result = await executeSell(pos.id, ctx.agentId, ctx.jobId, ctx.agentWalletId, decision.reasoning, AGENT_NAME);
-        if (result.success) {
-          fsm.transition("order_placed");
-          await saveState();
-          return { state: fsm.getState(), action: "executed", detail: `Sell executed: ${decision.marketId}`, decision };
-        }
-      }
-    }
-
-    fsm.transition("order_failed");
-    await saveState();
-    return { state: fsm.getState(), action: "executed", detail: "Execution failed", decision };
   }
 
   if (fsm.getState() === "MONITORING") {

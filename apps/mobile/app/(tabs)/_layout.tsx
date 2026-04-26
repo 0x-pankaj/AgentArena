@@ -8,6 +8,7 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
     index: '🏠',
     feed: '📊',
     leaderboard: '🏆',
+    swarm: '🕸️',
     profile: '👤',
   };
 
@@ -49,6 +50,13 @@ export default function TabLayout() {
         options={{
           title: 'Ranks',
           tabBarIcon: ({ focused }) => <TabIcon name="leaderboard" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="swarm"
+        options={{
+          title: 'Swarm',
+          tabBarIcon: ({ focused }) => <TabIcon name="swarm" focused={focused} />,
         }}
       />
       <Tabs.Screen

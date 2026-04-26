@@ -18,6 +18,17 @@ import { transferSolFromBackend, getExplorerUrl } from "../utils/devnet-helpers"
 import { IS_DEVNET } from "@agent-arena/shared";
 import { startBackgroundPositionMonitor, stopBackgroundPositionMonitor } from "../services/position-monitor";
 import { preFlightPositionSync } from "../services/position-monitor";
+import {
+  detectDelegationOpportunity,
+  requestPeerAnalysis,
+  recordDelegationOnChain,
+  getPendingDelegationsForJob,
+} from "../services/agent-delegation";
+import {
+  shouldTriggerConsensus,
+  collectSwarmVotes,
+  recordConsensusOnChain,
+} from "../services/swarm-consensus";
 
 // --- Category to registry ID mapping ---
 
@@ -683,6 +694,118 @@ export async function completeJob(jobId: string): Promise<boolean> {
 
 export async function approveJob(jobId: string): Promise<boolean> {
   return completeJob(jobId);
+}
+
+// --- Delegate analysis to a peer agent ---
+
+export async function delegateToAgent(
+  fromCtx: AgentRuntimeContext,
+  fromAgentId: string,
+  toCategory: string,
+  marketData: {
+    marketId: string;
+    marketQuestion: string;
+    outcomes?: { name: string; price: number }[];
+    volume?: number;
+    liquidity?: number;
+  }
+): Promise<{
+  success: boolean;
+  interactionId?: string;
+  delegatedAnalysis?: any;
+  error?: string;
+}> {
+  console.log(`[Supervisor] Delegating from ${fromAgentId} to ${toCategory} for "${marketData.marketQuestion}"`);
+
+  const result = await requestPeerAnalysis(fromCtx, fromAgentId, toCategory, marketData);
+
+  if (result.success && result.interactionId && result.delegatedAnalysis) {
+    // Attempt on-chain record (non-blocking)
+    const [interaction] = await db
+      .select()
+      .from(schema.agentInteractions)
+      .where(eq(schema.agentInteractions.id, result.interactionId))
+      .limit(1);
+
+    if (interaction?.toAgentId) {
+      const [toAgent] = await db
+        .select()
+        .from(schema.agents)
+        .where(eq(schema.agents.id, interaction.toAgentId))
+        .limit(1);
+
+      if (toAgent?.assetAddress) {
+        recordDelegationOnChain(
+          fromAgentId,
+          interaction.toAgentId,
+          marketData.marketId,
+          result.delegatedAnalysis.confidence ?? 50,
+          fromCtx.ownerPubkey
+        ).catch((err) => {
+          console.warn(`[Supervisor] On-chain delegation record failed: ${err.message}`);
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
+// --- Trigger swarm consensus for a market ---
+
+export async function triggerSwarmConsensus(
+  ctx: AgentRuntimeContext,
+  initiatingAgentId: string,
+  marketData: {
+    marketId: string;
+    marketQuestion: string;
+    outcomes?: { name: string; price: number }[];
+    volume?: number;
+  },
+  confidence: number,
+  agentCategory: string
+): Promise<{
+  approved: boolean;
+  consensusAction: string;
+  adjustedConfidence: number;
+  votes: any[];
+}> {
+  if (!shouldTriggerConsensus(marketData.marketQuestion, confidence, agentCategory)) {
+    return {
+      approved: true,
+      consensusAction: "skip",
+      adjustedConfidence: confidence,
+      votes: [],
+    };
+  }
+
+  // Determine which agents to consult
+  const votingCategories = ["general"];
+  if (agentCategory !== "crypto") votingCategories.push("crypto");
+  if (agentCategory !== "politics") votingCategories.push("politics");
+  if (agentCategory !== "sports") votingCategories.push("sports");
+
+  console.log(`[Supervisor] Triggering swarm consensus for "${marketData.marketQuestion}" with categories: ${votingCategories.join(", ")}`);
+
+  const consensus = await collectSwarmVotes(marketData, votingCategories, ctx, initiatingAgentId);
+
+  // Record on-chain (non-blocking)
+  recordConsensusOnChain(
+    consensus,
+    marketData.marketId,
+    marketData.marketQuestion,
+    initiatingAgentId,
+    ctx.ownerPubkey
+  ).catch((err) => {
+    console.warn(`[Supervisor] On-chain consensus record failed: ${err.message}`);
+  });
+
+  return {
+    approved: consensus.approved,
+    consensusAction: consensus.consensusAction,
+    adjustedConfidence: consensus.adjustedConfidence,
+    votes: consensus.votes,
+  };
 }
 
 // --- Get agent status ---

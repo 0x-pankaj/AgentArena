@@ -103,10 +103,11 @@ export interface AgentPosition {
 
 export interface AgentTickResult {
   state: AgentState;
-  action: "scanned" | "analyzed" | "executed" | "monitored" | "skipped" | "stopped";
+  action: "scanned" | "analyzed" | "executed" | "monitored" | "skipped" | "stopped" | "buy_yes" | "buy_no" | "buy" | "sell" | "hold" | "long" | "short";
   detail: string;
   decision?: TradeDecision;
   tokensUsed?: number;
+  confidence?: number;
 }
 
 // --- Agent config ---
@@ -132,4 +133,17 @@ export interface AgentRuntimeContext {
   agentWalletId: string;
   agentWalletAddress: string;
   ownerPubkey: string;
+  delegationTarget?: {
+    marketId: string;
+    marketQuestion: string;
+    outcomes?: { name: string; price: number }[];
+    volume?: number;
+    liquidity?: number;
+  };
+  consensusTarget?: {
+    marketId: string;
+    marketQuestion: string;
+    outcomes?: { name: string; price: number }[];
+    volume?: number;
+  };
 }

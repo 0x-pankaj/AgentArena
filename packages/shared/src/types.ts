@@ -24,7 +24,7 @@ export type AgentState = z.infer<typeof AgentState>;
 
 export const FeedCategory = z.enum([
   "analysis", "trade", "decision", "position_update", "reasoning",
-  "scanning", "thinking", "signal_update", "edge_detected", "evolution",
+  "scanning", "thinking", "signal_update", "edge_detected", "evolution", "swarm",
 ]);
 export type FeedCategory = z.infer<typeof FeedCategory>;
 
@@ -98,6 +98,20 @@ export const FeedEvent = z.object({
     signals_count: z.number().optional(),
     markets_scanned: z.number().optional(),
     pipeline_stage: z.string().optional(),
+    type: z.string().optional(),
+    fromAgent: z.string().optional(),
+    toAgent: z.string().optional(),
+    ratedAgent: z.string().optional(),
+    ratingAgent: z.string().optional(),
+    qualityScore: z.number().optional(),
+    tradeOutcome: z.string().optional(),
+    consensusAction: z.string().optional(),
+    votesFor: z.number().optional(),
+    votesAgainst: z.number().optional(),
+    votesAbstain: z.number().optional(),
+    approved: z.boolean().optional(),
+    marketQuestion: z.string().optional(),
+    direction: z.string().optional(),
   }),
   display_message: z.string(),
   is_public: z.boolean(),

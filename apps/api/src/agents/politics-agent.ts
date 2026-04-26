@@ -42,6 +42,7 @@ import { recordAgentPrediction } from "../services/outcome-feedback";
 import { runScenarioAnalysis, quickScenarioGate } from "../services/scenario-analysis";
 import { db, schema } from "../db";
 import { runEnhancedPipeline } from "./enhanced-pipeline";
+import { runSwarmHooks } from "./swarm-hooks";
 
 const AGENT_NAME = "Politics Agent";
 const AGENT_ID = "politics-agent";
@@ -421,7 +422,22 @@ export async function runPoliticsAgentTick(
         pnl: Number(p.pnl ?? 0),
       }));
       const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
-      const decision = pipelineResult.decision;
+      let decision = pipelineResult.decision;
+
+      // ===== SWARM HOOKS: Delegation + Consensus =====
+      const swarmResult = await runSwarmHooks(ctx, ctx.agentId, "politics", decision);
+      if (!swarmResult.proceed) {
+        fsm.transition("no_edge");
+        await saveState();
+        return {
+          state: fsm.getState() as any,
+          action: "skipped",
+          detail: swarmResult.detail,
+          decision,
+          tokensUsed: pipelineResult.tokensUsed,
+        };
+      }
+      decision = swarmResult.decision ?? decision;
 
       if (decision.action === "buy" && decision.marketId) {
         const buyResult = await executeBuy(

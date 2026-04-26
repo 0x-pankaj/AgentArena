@@ -452,3 +452,66 @@ export function useJobSwitchMode() {
     },
   });
 }
+
+// --- Swarm Graph hooks ---
+
+export function useSwarmGraph(agentId?: string, days: number = 30) {
+  return useQuery({
+    queryKey: ['swarm', 'graph', agentId, days],
+    queryFn: () => {
+      const input = JSON.stringify({ agentId, days });
+      return fetchFromAPI(`swarmGraph.getAgentGraph?input=${encodeURIComponent(input)}`);
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function useSwarmStats(days: number = 30) {
+  return useQuery({
+    queryKey: ['swarm', 'stats', days],
+    queryFn: () => {
+      const input = JSON.stringify({ days });
+      return fetchFromAPI(`swarmGraph.getInteractionStats?input=${encodeURIComponent(input)}`);
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function useNetworkDensity() {
+  return useQuery({
+    queryKey: ['swarm', 'density'],
+    queryFn: () => fetchFromAPI('swarmGraph.getNetworkDensity'),
+    staleTime: 60_000,
+  });
+}
+
+export function useReputationDistribution() {
+  return useQuery({
+    queryKey: ['swarm', 'reputationDistribution'],
+    queryFn: () => fetchFromAPI('swarmGraph.getReputationDistribution'),
+    staleTime: 60_000,
+  });
+}
+
+export function useAgentSwarmProfile(agentId: string) {
+  return useQuery({
+    queryKey: ['swarm', 'profile', agentId],
+    queryFn: () => {
+      const input = JSON.stringify({ agentId });
+      return fetchFromAPI(`swarmGraph.getAgentSwarmProfile?input=${encodeURIComponent(input)}`);
+    },
+    enabled: !!agentId,
+    staleTime: 30_000,
+  });
+}
+
+export function useSwarmLeaderboard(limit: number = 20, category?: string) {
+  return useQuery({
+    queryKey: ['swarm', 'leaderboard', limit, category],
+    queryFn: () => {
+      const input = JSON.stringify({ limit, category });
+      return fetchFromAPI(`swarmGraph.getSwarmLeaderboard?input=${encodeURIComponent(input)}`);
+    },
+    staleTime: 30_000,
+  });
+}

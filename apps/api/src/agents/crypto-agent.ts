@@ -46,6 +46,7 @@ import { recordAgentPrediction as recordOutcomePrediction } from "../services/ou
 import { runScenarioAnalysis, quickScenarioGate } from "../services/scenario-analysis";
 import { db, schema } from "../db";
 import { runEnhancedPipeline } from "./enhanced-pipeline";
+import { runSwarmHooks } from "./swarm-hooks";
 
 const AGENT_NAME = "Crypto Agent";
 const AGENT_ID = "crypto-agent";
@@ -362,7 +363,22 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
         pnl: Number(p.pnl ?? 0),
       }));
       const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
-      const decision = pipelineResult.decision;
+      let decision = pipelineResult.decision;
+
+      // ===== SWARM HOOKS: Delegation + Consensus =====
+      const swarmResult = await runSwarmHooks(ctx, ctx.agentId, "crypto", decision);
+      if (!swarmResult.proceed) {
+        fsm.transition("no_edge");
+        await saveState();
+        return {
+          state: fsm.getState() as any,
+          action: "skipped",
+          detail: swarmResult.detail,
+          decision,
+          tokensUsed: pipelineResult.tokensUsed,
+        };
+      }
+      decision = swarmResult.decision ?? decision;
 
       if (decision.action === "buy" && decision.marketId) {
         const buyResult = await executeBuy(
