@@ -174,6 +174,7 @@ export async function hireAgent(params: {
         tradingMode: "paper",
         paperBalance: String(DEFAULT_PAPER_BALANCE_USDC),
         policyExpiryAt: new Date(Date.now() + (params.durationDays ?? 7) * 86400000),
+        explorerLinks: Object.keys(explorerLinks).length > 0 ? explorerLinks : null,
       })
       .returning();
 

@@ -247,19 +247,51 @@ export async function getAtomSummary(agentAsset: string): Promise<AtomSummary | 
     // Layout: discriminator(8) + feedback_count(u64) + quality_score(u64) + hll(128) + salt(8) + ...
     const data = account.data.subarray(8);
 
-    const feedbackCount = Number(data.readBigUInt64LE(0));
-    const qualityScoreRaw = Number(data.readBigUInt64LE(8));
-    const qualityScore = qualityScoreRaw / 1e4; // scaled by 10000
+    // Safe reads with value clamping — protect against layout mismatches
+    let feedbackCount = 0;
+    let qualityScore = 0;
+    let uniqueClients = 0;
+    let trustTierIndex = 0;
+    let confidence = 0;
+    let riskScore = 0;
+    let diversityRatio = 0;
 
-    // HLL unique client estimate (simplified)
-    const hllPacked = data.subarray(16, 144);
-    const uniqueClients = estimateHllCardinality(hllPacked);
+    try {
+      if (data.length >= 8) {
+        feedbackCount = Number(data.readBigUInt64LE(0));
+        if (feedbackCount > 1_000_000 || feedbackCount < 0 || !isFinite(feedbackCount)) feedbackCount = 0;
+      }
+      if (data.length >= 16) {
+        const qualityScoreRaw = Number(data.readBigUInt64LE(8));
+        qualityScore = qualityScoreRaw / 1e4; // scaled by 10000
+        if (qualityScore > 100 || qualityScore < 0 || !isFinite(qualityScore)) qualityScore = 0;
+      }
 
-    // Trust tier from cached field (offset varies by version — adjust as needed)
-    const trustTierIndex = data[300] ?? 0;
-    const confidence = Number(data.readBigUInt64LE(304)) / 1e4;
-    const riskScore = Number(data.readBigUInt64LE(312)) / 1e4;
-    const diversityRatio = Number(data.readBigUInt64LE(320)) / 1e4;
+      // HLL unique client estimate (simplified)
+      if (data.length >= 144) {
+        const hllPacked = data.subarray(16, 144);
+        uniqueClients = estimateHllCardinality(hllPacked);
+      }
+
+      // Trust tier from cached field (offset varies by version — adjust as needed)
+      if (data.length > 300) trustTierIndex = data[300] ?? 0;
+      if (trustTierIndex > 5) trustTierIndex = 0;
+
+      if (data.length > 312) {
+        confidence = Number(data.readBigUInt64LE(304)) / 1e4;
+        if (confidence > 100 || confidence < 0 || !isFinite(confidence)) confidence = 0;
+      }
+      if (data.length > 320) {
+        riskScore = Number(data.readBigUInt64LE(312)) / 1e4;
+        if (riskScore > 100 || riskScore < 0 || !isFinite(riskScore)) riskScore = 0;
+      }
+      if (data.length > 328) {
+        diversityRatio = Number(data.readBigUInt64LE(320)) / 1e4;
+        if (diversityRatio > 100 || diversityRatio < 0 || !isFinite(diversityRatio)) diversityRatio = 0;
+      }
+    } catch (parseErr) {
+      console.warn("[ATOM] getAtomSummary: failed to parse account data, using defaults", parseErr);
+    }
 
     return {
       trustTier: TRUST_TIERS[Math.min(trustTierIndex, TRUST_TIERS.length - 1)],

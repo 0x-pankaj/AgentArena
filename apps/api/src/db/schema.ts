@@ -48,6 +48,7 @@ export const jobs = pgTable("jobs", {
   totalInvested: decimal("total_invested", { precision: 18, scale: 6 }).default("0"),
   totalProfit: decimal("total_profit", { precision: 18, scale: 6 }).default("0"),
   policyExpiryAt: timestamp("policy_expiry_at"), // When the Privy policy expires
+  explorerLinks: jsonb("explorer_links"), // Store { agentAsset, fundTx, agentWallet }
   startedAt: timestamp("started_at"),
   endedAt: timestamp("ended_at"),
   createdAt: timestamp("created_at").defaultNow(),

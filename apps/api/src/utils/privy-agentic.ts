@@ -217,25 +217,38 @@ async function createPolicy(params: {
  */
 export async function createJobPolicy(config: JobPolicyConfig): Promise<string> {
   // For hackathon traction: simplified policy that Privy accepts
-  // Full policy engine can be restored after upgrading Privy SDK
-  const rules: AgenticPolicyRule[] = [
+  // Privy SDK expects camelCase properties (fieldSource, not field_source) — it converts internally
+  const rules = [
     {
       name: "Deny key export",
-      method: "exportPrivateKey" as PolicyMethod,
+      method: "exportPrivateKey",
       conditions: [],
       action: "DENY",
     },
     {
-      name: "Allow transactions",
-      method: "signAndSendTransaction" as PolicyMethod,
-      conditions: [],
+      name: "Allow known programs",
+      method: "signAndSendTransaction",
+      conditions: [
+        {
+          fieldSource: "solana_program_instruction",
+          field: "programId",
+          operator: "in",
+          value: [
+            "11111111111111111111111111111111",              // System Program
+            SPL_TOKEN_PROGRAM,                               // SPL Token
+            ASSOCIATED_TOKEN_PROGRAM,                        // Associated Token
+            JUPITER_PREDICT_PROGRAM,                         // Jupiter Predict
+            COMPUTE_BUDGET_PROGRAM,                          // Compute Budget
+          ],
+        },
+      ],
       action: "ALLOW",
     },
   ];
 
   return createPolicy({
     name: `agent-arena-job-${config.jobId}-${Date.now()}`,
-    rules,
+    rules: rules as any,
   });
 }
 

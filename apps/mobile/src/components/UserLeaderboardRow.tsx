@@ -47,20 +47,24 @@ export function UserLeaderboardRow({ entry, onPress }: UserLeaderboardRowProps) 
       </View>
 
       <View style={styles.bestAgentCol}>
-        <Text style={styles.bestAgentName} numberOfLines={1}>{bestAgent.name}</Text>
-        <Text style={[
-          styles.bestAgentPnl,
-          { color: bestAgent.pnl >= 0 ? Colors.success : Colors.danger }
-        ]}>
-          {bestAgent.pnl >= 0 ? '+' : ''}${bestAgent.pnl.toFixed(0)}
+        <Text style={styles.bestAgentName} numberOfLines={1}>
+          {totalTrades === 0 ? "No Trades" : bestAgent.name}
         </Text>
+        {totalTrades > 0 && (
+          <Text style={[
+            styles.bestAgentPnl,
+            { color: bestAgent.pnl > 0 ? Colors.success : bestAgent.pnl < 0 ? Colors.danger : Colors.textPrimary }
+          ]}>
+            {bestAgent.pnl > 0 ? '+' : ''}${bestAgent.pnl.toFixed(0)}
+          </Text>
+        )}
       </View>
 
       <View style={styles.pnlCol}>
-        <Text style={[styles.pnlValue, { color: totalPnl >= 0 ? Colors.success : Colors.danger }]}>
-          {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(0)}
+        <Text style={[styles.pnlValue, { color: totalPnl > 0 ? Colors.success : totalPnl < 0 ? Colors.danger : Colors.textPrimary }]}>
+          {totalPnl === 0 ? "—" : `${totalPnl > 0 ? '+' : ''}$${totalPnl.toFixed(0)}`}
         </Text>
-        <Text style={styles.winRate}>{(avgWinRate * 100).toFixed(0)}% avg</Text>
+        <Text style={styles.winRate}>{totalTrades === 0 ? "—" : `${(avgWinRate * 100).toFixed(0)}%`} avg</Text>
       </View>
     </Pressable>
   );

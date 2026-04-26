@@ -18,12 +18,14 @@ interface GlobalStatsBannerProps {
 }
 
 function formatCurrency(value: number): string {
+  if (value === 0) return "—";
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
   return `$${value.toFixed(0)}`;
 }
 
 function formatNumber(value: number): string {
+  if (value === 0) return "—";
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
   return String(value);
@@ -52,9 +54,9 @@ export function GlobalStatsBanner({ stats, isLoading }: GlobalStatsBannerProps) 
     },
     {
       label: 'Platform PnL',
-      value: `${stats.totalPnl >= 0 ? '+' : ''}${formatCurrency(stats.totalPnl)}`,
+      value: stats.totalPnl === 0 ? "—" : `${stats.totalPnl > 0 ? '+' : ''}${formatCurrency(stats.totalPnl)}`,
       icon: '📈',
-      color: stats.totalPnl >= 0 ? Colors.success : Colors.danger,
+      color: stats.totalPnl > 0 ? Colors.success : stats.totalPnl < 0 ? Colors.danger : Colors.textPrimary,
     },
     {
       label: 'Active Agents',

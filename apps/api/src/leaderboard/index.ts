@@ -1,4 +1,4 @@
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, not, like } from "drizzle-orm";
 import { db, schema } from "../db";
 import { redis } from "../utils/redis";
 import { REDIS_KEYS } from "@agent-arena/shared";
@@ -459,6 +459,7 @@ export async function getUserLeaderboard(
       const stats = await redis.hgetall(`${REDIS_KEYS.LEADERBOARD_USERS}:${walletAddress}${modeSuffix}`);
 
       if (!stats.totalPnl) continue;
+      if (walletAddress.startsWith("1111111")) continue; // Skip test/system addresses
 
       // Get username
       const [user] = await db
@@ -514,6 +515,7 @@ export async function getUserLeaderboard(
       totalTrades: sql<number>`COALESCE(SUM(${schema.agentPerformance.totalTrades}), 0)`,
     })
     .from(schema.agents)
+    .where(not(like(schema.agents.ownerAddress, "1111111%")))
     .leftJoin(
       schema.agentPerformance,
       and(
