@@ -309,7 +309,7 @@ export const swarmGraphRouter = router({
       const withScores = await Promise.all(
         agents.map(async (a) => ({
           ...a,
-          swarmScore: await getSwarmScore(a.id),
+          swarmScore: await getCached(`swarm:score:${a.id}`, () => getSwarmScore(a.id)),
         }))
       );
 

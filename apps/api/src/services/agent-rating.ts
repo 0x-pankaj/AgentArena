@@ -156,7 +156,7 @@ export async function rateAgentPerformance(
         ratedAgent: ratedAgentName,
         qualityScore,
         tradeOutcome,
-        marketQuestion: interaction.marketQuestion,
+        marketQuestion: interaction.marketQuestion ?? undefined,
       },
       displayMessage: `${ratingAgentName} rated ${ratedAgentName} ${qualityScore}/100 for "${interaction.marketQuestion ?? "delegation"}"`,
     });
@@ -333,7 +333,8 @@ export async function getSwarmScore(agentId: string): Promise<number> {
   const diversityScore = Math.min((uniquePartners[0]?.uniquePartners ?? 0) * 5, 20);
 
   const swarmScore = reputation * 0.3 + activityScore + ratingScore + diversityScore;
-  return Math.round(Math.min(swarmScore, 100) * 100) / 100;
+  const finalScore = Number.isNaN(swarmScore) ? 0 : Math.min(swarmScore, 100);
+  return Math.round(finalScore * 100) / 100;
 }
 
 // --- Helper ---

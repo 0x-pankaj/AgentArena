@@ -101,7 +101,7 @@ export function detectDelegationOpportunity(
   // Threshold: require at least 2 keyword matches or score > 0.3
   if (bestMatch && (bestScore >= 0.3 || lowerQuestion.split(" ").some(w => {
     const targets = DELEGATION_TARGETS[agentCategory] ?? [];
-    return targets.some(tc => CATEGORY_KEYWORDS[tc]?.includes(w.toLowerCase()));
+    return targets.some(tc => CATEGORY_KEYWORDS[tc]?.some(kw => w.toLowerCase().includes(kw.toLowerCase())));
   }))) {
     return bestMatch;
   }

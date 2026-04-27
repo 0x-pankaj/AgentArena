@@ -36,9 +36,9 @@ function detectDelegationOpportunity(marketQuestion: string, agentCategory: stri
   }
   const words = lowerQuestion.split(/\s+/);
   const hasKeywordMatch = words.some((w: string) => {
-    return targets.some((tc: string) => CATEGORY_KEYWORDS[tc]?.includes(w.toLowerCase()));
+    return targets.some((tc: string) => CATEGORY_KEYWORDS[tc]?.some((kw: string) => w.toLowerCase().includes(kw.toLowerCase())));
   });
-  if (bestMatch && (bestScore >= 0.25 || hasKeywordMatch)) return bestMatch;
+  if (bestMatch && (bestScore >= 0.3 || hasKeywordMatch)) return bestMatch;
   return null;
 }
 
@@ -94,6 +94,12 @@ test("Returns null for pure sports market", () => {
 
 test("Detects tariff keyword for politics delegation", () => {
   const result = detectDelegationOpportunity("Will new tariffs crash the crypto market?", "crypto");
+  assertTrue(result !== null);
+  assertEqual(result?.targetCategory, "politics");
+});
+
+test("Detects plural keywords (elections → election)", () => {
+  const result = detectDelegationOpportunity("Will elections affect crypto markets?", "crypto");
   assertTrue(result !== null);
   assertEqual(result?.targetCategory, "politics");
 });
