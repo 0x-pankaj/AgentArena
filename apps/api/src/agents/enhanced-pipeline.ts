@@ -54,6 +54,8 @@ const CATEGORY_DECISION_TOOLS: Record<string, string[]> = {
     "web_search",
     "coingecko_price", "coingecko_global",
     "twitter_search",
+    "reddit_search", "reddit_sentiment",
+    "google_trends", "google_trends_breakout",
     "market_search", "market_detail",
   ],
   politics: [
@@ -62,11 +64,16 @@ const CATEGORY_DECISION_TOOLS: Record<string, string[]> = {
     "acled_search", "acled_conflict_signal",
     "fred_series", "fred_macro_signal",
     "twitter_search", "twitter_social_signal",
+    "reddit_search", "reddit_sentiment",
+    "google_trends", "google_trends_breakout",
     "market_search", "market_detail",
   ],
   sports: [
     "web_search",
     "twitter_search",
+    "reddit_search", "reddit_sentiment",
+    "google_trends", "google_trends_breakout",
+    "sports_odds",
     "market_search", "market_detail",
   ],
   general: [
@@ -74,6 +81,8 @@ const CATEGORY_DECISION_TOOLS: Record<string, string[]> = {
     "gdelt_search", "gdelt_tone",
     "coingecko_price", "coingecko_global",
     "twitter_search",
+    "reddit_search", "reddit_sentiment",
+    "google_trends", "google_trends_breakout",
     "market_search", "market_detail",
   ],
 };
@@ -157,6 +166,18 @@ function buildEnhancedDecisionContext(
   }
   if (signals.sports) {
     parts.push(`- Sports events: ${Object.keys(signals.sports).length}`);
+  }
+  if (signals.reddit) {
+    const subreddits = Object.keys(signals.reddit);
+    const bullish = subreddits.filter((s) => signals.reddit![s].sentiment === "bullish").length;
+    const bearish = subreddits.filter((s) => signals.reddit![s].sentiment === "bearish").length;
+    parts.push(`- Reddit subreddits: ${subreddits.length} (bullish: ${bullish}, bearish: ${bearish}, neutral: ${subreddits.length - bullish - bearish})`);
+  }
+  if (signals.googleTrends) {
+    const keywords = Object.keys(signals.googleTrends);
+    const breakout = keywords.filter((k) => signals.googleTrends![k].trendDirection === "breakout").length;
+    const rising = keywords.filter((k) => signals.googleTrends![k].trendDirection === "rising").length;
+    parts.push(`- Google Trends keywords: ${keywords.length} (breakout: ${breakout}, rising: ${rising})`);
   }
 
   // Temporal adjustments

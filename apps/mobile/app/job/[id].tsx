@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Linking, RefreshControl } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
@@ -29,7 +30,7 @@ export default function JobDetailScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backIcon}>←</Text>
+            <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
           </Pressable>
           <Text style={styles.headerTitle}>Job Detail</Text>
         </View>
@@ -59,7 +60,7 @@ export default function JobDetailScreen() {
       >
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backIcon}>←</Text>
+            <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
           </Pressable>
           <Text style={styles.headerTitle}>Job Detail</Text>
           {job && (
@@ -148,7 +149,7 @@ export default function JobDetailScreen() {
 
                 {job.explorerLinks.agentAsset && (
                   <Pressable style={styles.explorerLink} onPress={() => Linking.openURL(job.explorerLinks.agentAsset!)}>
-                    <Text style={styles.explorerLinkIcon}>🆔</Text>
+                    <Ionicons name="id-card" size={18} color={Colors.accent} />
                     <View style={styles.explorerLinkText}>
                       <Text style={styles.explorerLinkLabel}>Agent NFT</Text>
                       <Text style={styles.explorerLinkUrl} numberOfLines={1}>View on Solana Explorer →</Text>
@@ -158,7 +159,7 @@ export default function JobDetailScreen() {
 
                 {job.explorerLinks.fundTx && (
                   <Pressable style={styles.explorerLink} onPress={() => Linking.openURL(job.explorerLinks.fundTx!)}>
-                    <Text style={styles.explorerLinkIcon}>💸</Text>
+                    <Ionicons name="cash" size={18} color={Colors.accent} />
                     <View style={styles.explorerLinkText}>
                       <Text style={styles.explorerLinkLabel}>Wallet Funding</Text>
                       <Text style={styles.explorerLinkUrl} numberOfLines={1}>View on Solana Explorer →</Text>
@@ -168,7 +169,7 @@ export default function JobDetailScreen() {
 
                 {job.explorerLinks.agentWallet && (
                   <Pressable style={styles.explorerLink} onPress={() => Linking.openURL(job.explorerLinks.agentWallet!)}>
-                    <Text style={styles.explorerLinkIcon}>👛</Text>
+                    <Ionicons name="wallet" size={18} color={Colors.accent} />
                     <View style={styles.explorerLinkText}>
                       <Text style={styles.explorerLinkLabel}>Agent Wallet</Text>
                       <Text style={styles.explorerLinkUrl} numberOfLines={1}>View on Solana Explorer →</Text>
@@ -225,7 +226,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: BorderRadius.xl, backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border, justifyContent: 'center', alignItems: 'center',
   },
-  backIcon: { fontSize: 18, color: Colors.textPrimary },
+
   headerTitle: { fontFamily: Fonts.heading, fontSize: 20, fontWeight: '700', color: Colors.textPrimary, flex: 1 },
   statusBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 },
   statusText: { fontFamily: Fonts.body, fontSize: 12, fontWeight: '700' },
@@ -257,7 +258,7 @@ const styles = StyleSheet.create({
   explorerTitle: { fontFamily: Fonts.heading, fontSize: 16, fontWeight: '700', color: Colors.accent },
   explorerSubtitle: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, marginTop: -4 },
   explorerLink: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.background, borderRadius: BorderRadius.md, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border },
-  explorerLinkIcon: { fontSize: 24 },
+
   explorerLinkText: { flex: 1, gap: 2 },
   explorerLinkLabel: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
   explorerLinkUrl: { fontFamily: Fonts.body, fontSize: 12, color: Colors.accent },

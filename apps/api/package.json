@@ -29,6 +29,7 @@
     "bullmq": "^5.10.0",
     "drizzle-orm": "^0.33.0",
     "exa-js": "^2.10.2",
+    "google-trends-api": "^4.9.2",
     "hono": "^4.5.0",
     "ioredis": "^5.4.0",
     "nanoid": "^5.0.0",

@@ -104,8 +104,12 @@ SIGNAL SOURCES:
 - CoinGecko: Price, volume, market cap, volatility, trending coins
 - DeFiLlama: TVL trends, protocol health, Solana ecosystem growth
 - Twitter: Crypto influencer sentiment, breaking news
+- Reddit: r/cryptocurrency, r/solana, r/ethfinance, r/Bitcoin for grassroots sentiment and early trend detection
+- Google Trends: Search interest for BTC, ETH, SOL, crypto ETF, regulation keywords (leading indicator 12-48h ahead)
 - FRED: Macro indicators (Fed rate, inflation) that drive crypto
 - GDELT: Regulatory news, government crypto policy
+
+Weigh signals by reliability: on-chain data > price action > Reddit sentiment > Google Trends > news > social media
 
 OUTPUT: For each market, provide your independent probability estimate with step-by-step reasoning.
 Be specific about which signals changed your estimate from the market price.`,
@@ -114,6 +118,8 @@ Be specific about which signals changed your estimate from the market price.`,
           "coingecko_price", "coingecko_trending", "coingecko_global",
           "defillama_tvl", "defillama_solana", "defillama_protocols",
           "twitter_search", "twitter_social_signal",
+          "reddit_search", "reddit_sentiment", "reddit_category",
+          "google_trends", "google_trends_category", "google_trends_breakout",
           "fred_series", "fred_macro_signal",
           "gdelt_search",
           "market_detail",
@@ -321,10 +327,26 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
   if (fsm.getState() === "SCANNING") {
     await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} scanning crypto prediction markets (BTC, ETH, SOL, ETFs, regulations)...`, { pipeline_stage: "scanning_start" });
 
-    // Enhanced pipeline: use MarketEventBus for deduped fetching + market ranking
-    await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
-    const markets = await scanMarkets("crypto");
-    
+    // Handle swarm delegation / consensus targets — skip scanning, analyze the specific market
+    const targetMarket = ctx.delegationTarget ?? ctx.consensusTarget;
+    let markets: MarketContext[];
+
+    if (targetMarket) {
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} analyzing delegated market: "${targetMarket.marketQuestion}"`, { pipeline_stage: "delegated_market", marketId: targetMarket.marketId });
+      markets = [{
+        marketId: targetMarket.marketId,
+        question: targetMarket.marketQuestion,
+        outcomes: targetMarket.outcomes ?? [{ name: "Yes", price: 0.5 }, { name: "No", price: 0.5 }],
+        volume: targetMarket.volume ?? 10000,
+        liquidity: ctx.delegationTarget?.liquidity ?? 5000,
+        closesAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      }];
+    } else {
+      // Enhanced pipeline: use MarketEventBus for deduped fetching + market ranking
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
+      markets = await scanMarkets("crypto");
+    }
+
     if (markets.length === 0) {
       fsm.transition("no_markets");
       await saveState();

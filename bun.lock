@@ -31,6 +31,7 @@
         "bullmq": "^5.10.0",
         "drizzle-orm": "^0.33.0",
         "exa-js": "^2.10.2",
+        "google-trends-api": "^4.9.2",
         "hono": "^4.5.0",
         "ioredis": "^5.4.0",
         "nanoid": "^5.0.0",
@@ -54,6 +55,7 @@
         "@expo-google-fonts/inter": "^0.4.2",
         "@expo-google-fonts/jetbrains-mono": "^0.4.1",
         "@expo-google-fonts/orbitron": "^0.4.2",
+        "@expo/vector-icons": "^15.1.1",
         "@privy-io/expo": "^0.63.10",
         "@privy-io/expo-native-extensions": "^0.0.7",
         "@react-navigation/native": "^7.1.8",
@@ -86,7 +88,7 @@
         "react-dom": "19.1.0",
         "react-native": "0.81.5",
         "react-native-get-random-values": "~1.11.0",
-        "react-native-passkeys": "^0.3.3",
+        "react-native-passkeys": "~0.3.3",
         "react-native-reanimated": "~4.1.1",
         "react-native-safe-area-context": "~5.6.2",
         "react-native-screens": "~4.16.0",
@@ -1205,6 +1207,8 @@
     "getenv": ["getenv@2.0.0", "", {}, "sha512-VilgtJj/ALgGY77fiLam5iD336eSWi96Q15JSAG1zi8NRBysm3LXKdGnHb4m5cuyxvOLQQKWpBZAT6ni4FI2iQ=="],
 
     "glob": ["glob@7.2.3", "", { "dependencies": { "fs.realpath": "^1.0.0", "inflight": "^1.0.4", "inherits": "2", "minimatch": "^3.1.1", "once": "^1.3.0", "path-is-absolute": "^1.0.0" } }, "sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q=="],
+
+    "google-trends-api": ["google-trends-api@4.9.2", "", {}, "sha512-gjVSHCM8B7LyAAUpXb4B0/TfnmpwQ2z1w/mQ2bL0AKpr2j3gLS1j2YOnifpfsGJRxAGXB/NoC+nGwC5qSnZIiA=="],
 
     "gopd": ["gopd@1.2.0", "", {}, "sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg=="],
 

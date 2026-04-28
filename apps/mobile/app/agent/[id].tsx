@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert, ActivityIndicator, Clipboard, RefreshControl, Linking } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -98,7 +99,7 @@ export default function AgentDetailScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backIcon}>←</Text>
+            <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
           </Pressable>
           <Text style={styles.headerTitle}>Agent Profile</Text>
         </View>
@@ -185,7 +186,7 @@ export default function AgentDetailScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />}>
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backIcon}>←</Text>
+            <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
           </Pressable>
           <Text style={styles.headerTitle}>Hire Agent</Text>
         </View>
@@ -208,7 +209,12 @@ export default function AgentDetailScreen() {
                 <View style={styles.nameColumn}>
                   <View style={styles.nameRow}>
                     <Text style={styles.agentName}>{agent.name}</Text>
-                    {agent.isVerified && <Text style={styles.verifiedBadge}>✓ Verified</Text>}
+                    {agent.isVerified && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
+                        <Text style={styles.verifiedBadge}>Verified</Text>
+                      </View>
+                    )}
                   </View>
                   <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <View style={[styles.categoryBadge, { backgroundColor: (categoryColor as string) + '22' }]}>
@@ -284,7 +290,7 @@ export default function AgentDetailScreen() {
             {/* Swarm Activity */}
             {swarmProfile && (
               <View style={styles.swarmCard}>
-                <Text style={styles.swarmTitle}>🕸️ Swarm Activity</Text>
+                <Text style={styles.swarmTitle}>Swarm Activity</Text>
                 <View style={styles.swarmStatsRow}>
                   <View style={styles.swarmStat}>
                     <Text style={styles.swarmStatValue}>{swarmProfile.delegations?.total ?? 0}</Text>
@@ -317,7 +323,10 @@ export default function AgentDetailScreen() {
             {agent.assetAddress ? (
               <View style={styles.registryCard}>
                 <View style={styles.registryHeader}>
-                  <Text style={styles.registryTitle}>✓ 8004 Registered</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Ionicons name="checkmark" size={14} color={Colors.success} />
+                    <Text style={styles.registryTitle}>8004 Registered</Text>
+                  </View>
                   <Text style={styles.registrySubtitle}>Solana Agent Registry</Text>
                 </View>
                 <Text style={styles.registryAddr} numberOfLines={1}>{agent.assetAddress}</Text>
@@ -348,9 +357,13 @@ export default function AgentDetailScreen() {
                 return (
                   <View key={label} style={styles.stepItem}>
                     <View style={[styles.stepDot, isActive && styles.stepDotActive, isDone && styles.stepDotDone]}>
-                      <Text style={[styles.stepNum, (isActive || isDone) && styles.stepNumActive]}>
-                        {isDone ? '✓' : i + 1}
-                      </Text>
+                      {isDone ? (
+                        <Ionicons name="checkmark" size={14} color={Colors.textPrimary} />
+                      ) : (
+                        <Text style={[styles.stepNum, (isActive || isDone) && styles.stepNumActive]}>
+                          {i + 1}
+                        </Text>
+                      )}
                     </View>
                     <Text style={[styles.stepLabel, isActive && styles.stepLabelActive]}>{label}</Text>
                   </View>
@@ -387,7 +400,7 @@ export default function AgentDetailScreen() {
             {/* === STEP 2: DONE === */}
             {step === 'done' && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Agent Launched! 🚀</Text>
+                <Text style={styles.sectionTitle}>Agent Launched!</Text>
                 <Text style={styles.sectionDesc}>
                   Your agent is live on devnet with an Agentic Wallet and policy protection.
                 </Text>
@@ -400,7 +413,7 @@ export default function AgentDetailScreen() {
 
                     {explorerLinks.agentAsset && (
                       <Pressable style={styles.explorerLink} onPress={() => Linking.openURL(explorerLinks.agentAsset!)}>
-                        <Text style={styles.explorerLinkIcon}>🆔</Text>
+                        <Ionicons name="id-card" size={18} color={Colors.accent} />
                         <View style={styles.explorerLinkText}>
                           <Text style={styles.explorerLinkLabel}>Agent NFT</Text>
                           <Text style={styles.explorerLinkUrl} numberOfLines={1}>View on Solana Explorer →</Text>
@@ -410,7 +423,7 @@ export default function AgentDetailScreen() {
 
                     {explorerLinks.fundTx && (
                       <Pressable style={styles.explorerLink} onPress={() => Linking.openURL(explorerLinks.fundTx!)}>
-                        <Text style={styles.explorerLinkIcon}>💸</Text>
+                        <Ionicons name="cash" size={18} color={Colors.accent} />
                         <View style={styles.explorerLinkText}>
                           <Text style={styles.explorerLinkLabel}>Wallet Funding</Text>
                           <Text style={styles.explorerLinkUrl} numberOfLines={1}>View on Solana Explorer →</Text>
@@ -420,7 +433,7 @@ export default function AgentDetailScreen() {
 
                     {explorerLinks.agentWallet && (
                       <Pressable style={styles.explorerLink} onPress={() => Linking.openURL(explorerLinks.agentWallet!)}>
-                        <Text style={styles.explorerLinkIcon}>👛</Text>
+                        <Ionicons name="wallet" size={18} color={Colors.accent} />
                         <View style={styles.explorerLinkText}>
                           <Text style={styles.explorerLinkLabel}>Agent Wallet</Text>
                           <Text style={styles.explorerLinkUrl} numberOfLines={1}>View on Solana Explorer →</Text>
@@ -431,7 +444,10 @@ export default function AgentDetailScreen() {
                 )}
 
                 <View style={styles.successBanner}>
-                  <Text style={styles.successBannerText}>✓ Policy Active: ${maxCap}/trade · ${dailyCap}/day</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Ionicons name="checkmark" size={14} color={Colors.success} />
+                    <Text style={styles.successBannerText}>Policy Active: ${maxCap}/trade · ${dailyCap}/day</Text>
+                  </View>
                 </View>
                 <Pressable style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
                   onPress={() => router.push('/(tabs)/profile')}>
@@ -484,7 +500,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: BorderRadius.xl, backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border, justifyContent: 'center', alignItems: 'center',
   },
-  backIcon: { fontSize: 18, color: Colors.textPrimary },
+
   headerTitle: { fontFamily: Fonts.heading, fontSize: 20, fontWeight: '700', color: Colors.textPrimary },
   profileBox: { gap: Spacing.lg },
   paperBadge: {
@@ -689,7 +705,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background, borderRadius: BorderRadius.md,
     padding: Spacing.md, borderWidth: 1, borderColor: Colors.border,
   },
-  explorerLinkIcon: { fontSize: 24 },
+
   explorerLinkText: { flex: 1, gap: 2 },
   explorerLinkLabel: { fontFamily: Fonts.body, fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
   explorerLinkUrl: { fontFamily: Fonts.body, fontSize: 12, color: Colors.accent },

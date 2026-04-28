@@ -79,11 +79,13 @@ export function buildPoliticsAgentConfig(promptOverrides?: {
 For each market:
 1. Identify top 5 factors that would determine the outcome
 2. Use GDELT for global news tone, ACLED for conflict data, FRED for economic indicators, Twitter for sentiment, web_search for breaking developments
-3. Start with the market's implied probability (current price) as baseline prior
-4. For each piece of evidence, estimate P(evidence | Yes) and P(evidence | No)
-5. Apply Bayesian updating to refine your probability estimate
-6. Factor in base rates and historical precedents
-7. Consider time-to-resolution (closer events are more predictable)
+3. Use Reddit for grassroots sentiment: r/politics for US political opinion, r/worldnews for international perspective, r/NeutralPolitics for balanced analysis
+4. Use Google Trends for search interest spikes in election polls, approval ratings, geopolitical keywords (leading indicator 12-48h ahead)
+5. Start with the market's implied probability (current price) as baseline prior
+6. For each piece of evidence, estimate P(evidence | Yes) and P(evidence | No)
+7. Apply Bayesian updating to refine your probability estimate
+8. Factor in base rates and historical precedents
+9. Consider time-to-resolution (closer events are more predictable)
 
 DOMAINS YOU COVER:
 - Elections & referendums (polling, turnout, voter sentiment)
@@ -94,6 +96,8 @@ DOMAINS YOU COVER:
 - Legislative outcomes (vote counts, party dynamics, lobbying)
 - Supreme Court / judicial decisions (legal precedent, judicial philosophy)
 
+SIGNAL RELIABILITY: Official data > polling averages > Reddit sentiment > Google Trends > news reports > social media
+
 OUTPUT: For each market, provide your probability estimate with step-by-step Bayesian reasoning. Be specific about which signals shifted your estimate from the market price.`,
         toolNames: [
           "web_search",
@@ -101,6 +105,8 @@ OUTPUT: For each market, provide your probability estimate with step-by-step Bay
           "acled_search", "acled_conflict_signal", "acled_regional",
           "fred_series", "fred_macro_signal", "fred_all_signals",
           "twitter_search", "twitter_social_signal", "twitter_key_accounts",
+          "reddit_search", "reddit_sentiment", "reddit_category",
+          "google_trends", "google_trends_category", "google_trends_breakout",
         ],
         maxTokens: 6000,
       },
@@ -378,8 +384,24 @@ export async function runPoliticsAgentTick(
   if (fsm.getState() === "SCANNING") {
     await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} scanning political & geopolitical markets (elections, wars, sanctions, treaties)...`, { pipeline_stage: "scanning_start" });
 
-    await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
-    const markets = await scanMarkets("politics");
+    // Handle swarm delegation / consensus targets — skip scanning, analyze the specific market
+    const targetMarket = ctx.delegationTarget ?? ctx.consensusTarget;
+    let markets: MarketContext[];
+
+    if (targetMarket) {
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} analyzing delegated market: "${targetMarket.marketQuestion}"`, { pipeline_stage: "delegated_market", marketId: targetMarket.marketId });
+      markets = [{
+        marketId: targetMarket.marketId,
+        question: targetMarket.marketQuestion,
+        outcomes: targetMarket.outcomes ?? [{ name: "Yes", price: 0.5 }, { name: "No", price: 0.5 }],
+        volume: targetMarket.volume ?? 10000,
+        liquidity: ctx.delegationTarget?.liquidity ?? 5000,
+        closesAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      }];
+    } else {
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
+      markets = await scanMarkets("politics");
+    }
 
     if (markets.length === 0) {
       fsm.transition("no_markets");

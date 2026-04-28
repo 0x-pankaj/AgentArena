@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Clipboard, RefreshControl } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
@@ -123,7 +124,7 @@ export default function ProfileScreen() {
         <View style={styles.header}>
           <Text style={styles.title}>Profile</Text>
           <Pressable style={styles.settingsButton}>
-            <Text style={styles.settingsIcon}>⚙️</Text>
+            <Ionicons name="settings-outline" size={20} color={Colors.textPrimary} />
           </Pressable>
         </View>
 
@@ -278,7 +279,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: BorderRadius.xl, backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border, justifyContent: 'center', alignItems: 'center',
   },
-  settingsIcon: { fontSize: 18 },
+
   walletCard: {
     backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1,
     borderColor: Colors.accent, padding: Spacing.xl, gap: Spacing.lg,

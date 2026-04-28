@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, FlatList, RefreshControl } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
@@ -140,7 +141,7 @@ export default function FeedScreen() {
             style={[styles.filterButton, showAgentFilter && styles.filterButtonActive]}
             onPress={() => setShowAgentFilter(!showAgentFilter)}
           >
-            <Text style={styles.filterIcon}>{showAgentFilter ? '✕' : '🎯'}</Text>
+            <Ionicons name={showAgentFilter ? 'close-outline' : 'options-outline'} size={20} color={showAgentFilter ? Colors.accent : Colors.textPrimary} />
           </Pressable>
         </View>
 
@@ -195,7 +196,7 @@ export default function FeedScreen() {
             ))
           ) : (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>📡</Text>
+              <Ionicons name="radio-outline" size={32} color={Colors.textMuted} style={{ marginBottom: Spacing.sm }} />
               <Text style={styles.emptyText}>No feed events yet</Text>
               <Text style={styles.emptySubtext}>
                 {selectedAgentId
@@ -226,10 +227,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.accent,
     backgroundColor: Colors.accent + '22',
   },
-  filterIcon: { fontSize: 18 },
   feedList: { gap: 0 },
   emptyState: { padding: Spacing.xl, alignItems: 'center', gap: Spacing.xs },
-  emptyIcon: { fontSize: 32, marginBottom: Spacing.sm },
   emptyText: { fontFamily: Fonts.body, fontSize: 14, color: Colors.textMuted },
   emptySubtext: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, textAlign: 'center' },
   newEventsBadge: {

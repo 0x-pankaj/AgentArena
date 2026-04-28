@@ -399,8 +399,24 @@ export async function runGeneralAgentTick(
   if (fsm.getState() === "SCANNING") {
     await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} scanning all market categories (politics, crypto, sports, economics)...`, { pipeline_stage: "scanning_start" });
 
-    await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
-    const markets = await scanMarkets("general");
+    // Handle swarm delegation / consensus targets — skip scanning, analyze the specific market
+    const targetMarket = ctx.delegationTarget ?? ctx.consensusTarget;
+    let markets: MarketContext[];
+
+    if (targetMarket) {
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} analyzing delegated market: "${targetMarket.marketQuestion}"`, { pipeline_stage: "delegated_market", marketId: targetMarket.marketId });
+      markets = [{
+        marketId: targetMarket.marketId,
+        question: targetMarket.marketQuestion,
+        outcomes: targetMarket.outcomes ?? [{ name: "Yes", price: 0.5 }, { name: "No", price: 0.5 }],
+        volume: targetMarket.volume ?? 10000,
+        liquidity: ctx.delegationTarget?.liquidity ?? 5000,
+        closesAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      }];
+    } else {
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
+      markets = await scanMarkets("general");
+    }
 
     if (markets.length === 0) {
       fsm.transition("no_markets");

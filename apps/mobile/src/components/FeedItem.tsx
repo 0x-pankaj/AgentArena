@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -49,16 +50,16 @@ interface FeedItemProps {
   onReact?: (eventId: string, emoji: string) => void;
 }
 
-const categoryIcons: Record<string, string> = {
-  analysis: '🔍',
-  trade: '💳',
-  decision: '🎯',
-  position_update: '📊',
-  reasoning: '🧠',
-  scanning: '📡',
-  thinking: '⚙️',
-  signal_update: '📊',
-  edge_detected: '💡',
+const categoryIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
+  analysis: 'search',
+  trade: 'swap-horizontal',
+  decision: 'git-branch',
+  position_update: 'bar-chart',
+  reasoning: 'bulb',
+  scanning: 'scan',
+  thinking: 'cog',
+  signal_update: 'bar-chart',
+  edge_detected: 'flash',
 };
 
 const categoryLabels: Record<string, string> = {
@@ -79,7 +80,12 @@ const severityColors: Record<string, string> = {
   critical: Colors.danger,
 };
 
-const REACTIONS = ['🔥', '📈', '🤔', '💎'];
+const REACTIONS: Array<{ name: keyof typeof Ionicons.glyphMap; label: string }> = [
+  { name: 'flame', label: 'fire' },
+  { name: 'trending-up', label: 'up' },
+  { name: 'help-circle', label: 'think' },
+  { name: 'diamond', label: 'gem' },
+];
 
 // ─── Sub-components ───────────────────────────────────────────
 
@@ -152,30 +158,30 @@ function ReactionBar({ eventId, onReact }: { eventId?: string; onReact?: (eventI
   const [userReactions, setUserReactions] = useState<Record<string, number>>({});
 
   const handlePress = useCallback(
-    (emoji: string) => {
+    (label: string) => {
       if (!eventId) return;
       setUserReactions((prev) => ({
         ...prev,
-        [emoji]: (prev[emoji] || 0) + 1,
+        [label]: (prev[label] || 0) + 1,
       }));
-      onReact?.(eventId, emoji);
+      onReact?.(eventId, label);
     },
     [eventId, onReact]
   );
 
   return (
     <View style={styles.reactionBar}>
-      {REACTIONS.map((emoji) => {
-        const count = userReactions[emoji] || 0;
+      {REACTIONS.map((reaction) => {
+        const count = userReactions[reaction.label] || 0;
         const isActive = count > 0;
         return (
           <Pressable
-            key={emoji}
+            key={reaction.label}
             style={[styles.reactionBtn, isActive && styles.reactionBtnActive]}
-            onPress={() => handlePress(emoji)}
+            onPress={() => handlePress(reaction.label)}
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
           >
-            <Text style={styles.reactionEmoji}>{emoji}</Text>
+            <Ionicons name={reaction.name} size={14} color={isActive ? Colors.accent : Colors.textSecondary} />
             {isActive && <Text style={styles.reactionCount}>{count}</Text>}
           </Pressable>
         );
@@ -189,7 +195,7 @@ function ReactionBar({ eventId, onReact }: { eventId?: string; onReact?: (eventI
 export function FeedItem({ event, onAgentPress, isActive, index = 0, onReact }: FeedItemProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const icon = categoryIcons[event.category ?? ''] || '📋';
+  const iconName = categoryIcons[event.category ?? ''] ?? 'document-text';
   const categoryLabel = categoryLabels[event.category ?? ''] || 'ACTIVITY';
   const severityColor = severityColors[event.severity ?? 'info'] || Colors.textSecondary;
   const agentName = event.agent_display_name ?? event.agentName ?? 'Agent';
@@ -245,7 +251,7 @@ export function FeedItem({ event, onAgentPress, isActive, index = 0, onReact }: 
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <View style={[styles.iconCircle, { backgroundColor: severityColor + '18' }]}>
-              <Text style={styles.icon}>{icon}</Text>
+              <Ionicons name={iconName} size={14} color={severityColor} />
             </View>
             <Pressable
               onPress={() => agentId && onAgentPress?.(agentId)}
@@ -419,9 +425,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  icon: {
-    fontSize: 14,
   },
   agentName: {
     fontFamily: Fonts.body,
@@ -650,9 +653,6 @@ const styles = StyleSheet.create({
   reactionBtnActive: {
     backgroundColor: Colors.accent + '18',
     borderColor: Colors.accent + '44',
-  },
-  reactionEmoji: {
-    fontSize: 14,
   },
   reactionCount: {
     fontFamily: Fonts.mono,

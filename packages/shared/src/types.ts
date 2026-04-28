@@ -112,6 +112,7 @@ export const FeedEvent = z.object({
     approved: z.boolean().optional(),
     marketQuestion: z.string().optional(),
     direction: z.string().optional(),
+    adjustedConfidence: z.number().optional(),
   }),
   display_message: z.string(),
   is_public: z.boolean(),

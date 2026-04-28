@@ -1,13 +1,14 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  TouchableOpacity,
+  RefreshControl,
   Dimensions,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
 import {
@@ -20,35 +21,45 @@ import {
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function SwarmScreen() {
-  const { data: stats, isLoading: statsLoading } = useSwarmStats(30);
-  const { data: density, isLoading: densityLoading } = useNetworkDensity();
-  const { data: reputation, isLoading: repLoading } = useReputationDistribution();
-  const { data: leaderboard, isLoading: lbLoading } = useSwarmLeaderboard(10);
+  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useSwarmStats(30);
+  const { data: density, isLoading: densityLoading, refetch: refetchDensity } = useNetworkDensity();
+  const { data: reputation, isLoading: repLoading, refetch: refetchReputation } = useReputationDistribution();
+  const { data: leaderboard, isLoading: lbLoading, refetch: refetchLeaderboard } = useSwarmLeaderboard(10);
 
   const isLoading = statsLoading || densityLoading || repLoading || lbLoading;
 
-  if (isLoading) {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.header}>
-          <Text style={styles.title}>🕸️ Swarm Network</Text>
-          <Text style={styles.subtitle}>Agent-to-agent interaction graph</Text>
-        </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.accent} />
-          <Text style={styles.loadingText}>Loading swarm data...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([
+      refetchStats(),
+      refetchDensity(),
+      refetchReputation(),
+      refetchLeaderboard(),
+    ]);
+    setRefreshing(false);
+  }, [refetchStats, refetchDensity, refetchReputation, refetchLeaderboard]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} colors={[Colors.accent]} />
+        }
+      >
         <View style={styles.header}>
-          <Text style={styles.title}>🕸️ Swarm Network</Text>
+          <Text style={styles.title}>Swarm Network</Text>
           <Text style={styles.subtitle}>Real-time agent interaction graph</Text>
         </View>
+
+        {isLoading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Colors.accent} />
+            <Text style={styles.loadingText}>Loading swarm data...</Text>
+          </View>
+        )}
 
         {/* Network Stats Cards */}
         <View style={styles.statsGrid}>
@@ -77,7 +88,7 @@ export default function SwarmScreen() {
         {/* Review Authenticity */}
         <View style={styles.authenticityCard}>
           <View style={styles.authenticityHeader}>
-            <Text style={styles.authenticityTitle}>🔒 Review Authenticity</Text>
+            <Text style={styles.authenticityTitle}>Review Authenticity</Text>
             <Text style={styles.authenticityScore}>
               {stats?.reviewAuthenticityRate?.toFixed?.(1) ?? 0}%
             </Text>
@@ -105,9 +116,11 @@ export default function SwarmScreen() {
               {Object.entries(stats.byType).map(([type, count]) => (
                 <View key={type} style={styles.typeRow}>
                   <View style={styles.typeDot}>
-                    <Text style={styles.typeEmoji}>
-                      {type === 'delegation' ? '🔗' : type === 'rating' ? '⭐' : type === 'consensus' ? '🗳️' : '📋'}
-                    </Text>
+                    <Ionicons
+                      name={type === 'delegation' ? 'link' : type === 'rating' ? 'star' : type === 'consensus' ? 'people' : 'document-text'}
+                      size={14}
+                      color={Colors.accent}
+                    />
                   </View>
                   <Text style={styles.typeName}>{type.charAt(0).toUpperCase() + type.slice(1)}</Text>
                   <Text style={styles.typeCount}>{count as number}</Text>
@@ -148,7 +161,7 @@ export default function SwarmScreen() {
         {/* Swarm Leaderboard */}
         {leaderboard && leaderboard.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🏆 Swarm Score Leaderboard</Text>
+            <Text style={styles.sectionTitle}>Swarm Score Leaderboard</Text>
             <View style={styles.leaderboardCard}>
               {leaderboard.map((agent: any, index: number) => (
                 <View key={agent.id} style={styles.leaderboardRow}>
@@ -203,7 +216,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: Fonts.heading,
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
     color: Colors.textPrimary,
   },
@@ -240,7 +253,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   statValue: {
-    fontFamily: Fonts.heading,
+    fontFamily: Fonts.body,
     fontSize: 24,
     fontWeight: '700',
   },
@@ -266,13 +279,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   authenticityTitle: {
-    fontFamily: Fonts.heading,
+    fontFamily: Fonts.body,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: Colors.textPrimary,
   },
   authenticityScore: {
-    fontFamily: Fonts.heading,
+    fontFamily: Fonts.body,
     fontSize: 20,
     fontWeight: '700',
     color: Colors.success,
@@ -299,9 +312,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
   },
   sectionTitle: {
-    fontFamily: Fonts.heading,
-    fontSize: 18,
-    fontWeight: '600',
+    fontFamily: Fonts.body,
+    fontSize: 16,
+    fontWeight: '700',
     color: Colors.textPrimary,
     marginBottom: Spacing.md,
   },
@@ -325,7 +338,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   detailValue: {
-    fontFamily: Fonts.heading,
+    fontFamily: Fonts.body,
     fontSize: 14,
     fontWeight: '600',
     color: Colors.textPrimary,
@@ -353,9 +366,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: Spacing.md,
   },
-  typeEmoji: {
-    fontSize: 14,
-  },
   typeName: {
     fontFamily: Fonts.body,
     fontSize: 14,
@@ -363,7 +373,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   typeCount: {
-    fontFamily: Fonts.heading,
+    fontFamily: Fonts.body,
     fontSize: 14,
     fontWeight: '600',
     color: Colors.accent,
@@ -383,7 +393,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border + '44',
   },
   leaderboardRank: {
-    fontFamily: Fonts.heading,
+    fontFamily: Fonts.body,
     fontSize: 14,
     fontWeight: '700',
     color: Colors.accent,
@@ -408,7 +418,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   leaderboardScore: {
-    fontFamily: Fonts.heading,
+    fontFamily: Fonts.body,
     fontSize: 16,
     fontWeight: '700',
     color: Colors.accent,

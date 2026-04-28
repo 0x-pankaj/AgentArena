@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Data Sources Test — Tests all web search and signal data sources
- * 
+ *
  * Tests:
  * 1. Exa Web Search (primary)
  * 2. GDELT (news tone)
@@ -11,7 +11,9 @@
  * 6. ACLED (conflict data)
  * 7. NASA FIRMS (satellite fire data)
  * 8. Sports Odds (if API key configured)
- * 9. Twitter/X (if bearer token configured)
+ * 9. Reddit (free, no auth)
+ * 10. Google Trends (free, no auth)
+ * 11. Shared Signals (Agent-Aware Cache)
  */
 
 import { webSearch } from "./src/services/web-search";
@@ -22,6 +24,8 @@ import { getKeyMacroSignals } from "./src/data-sources/fred";
 import { getRegionalConflictSignals } from "./src/data-sources/acled";
 import { getAllRegionalFireSignals } from "./src/data-sources/nasa-firms";
 import { getSportsSignals } from "./src/data-sources/sports-odds";
+import { getRedditSignals, getSubredditSentiment } from "./src/data-sources/reddit";
+import { getGoogleTrendsSignals, getKeywordSignal } from "./src/data-sources/google-trends";
 import { getSharedSignals } from "./src/services/signal-cache";
 
 let passed = 0;
@@ -280,12 +284,76 @@ async function testSportsOdds() {
 }
 
 // ============================================================
-// 9. Shared Signals (Agent-Aware Cache)
+// 9. Reddit (Free, No Auth)
+// ============================================================
+async function testReddit() {
+  await section("9. Reddit — Free Social Sentiment");
+
+  for (const category of ["crypto", "politics", "sports"]) {
+    try {
+      const signals = await getRedditSignals(category as "crypto" | "politics" | "sports");
+      const keys = Object.keys(signals);
+      if (keys.length > 0) {
+        pass(`Reddit ${category}`, `${keys.length} subreddits`);
+        for (const [sub, signal] of Object.entries(signals).slice(0, 2)) {
+          console.log(`     r/${sub}: ${signal.sentiment} | posts=${signal.postCount} | score=${signal.totalScore}`);
+        }
+      } else {
+        skip(`Reddit ${category}`, "No subreddits fetched");
+      }
+    } catch (err) {
+      fail(`Reddit ${category}`, err);
+    }
+  }
+
+  // Test individual subreddit
+  try {
+    const signal = await getSubredditSentiment("cryptocurrency");
+    pass(`Reddit r/cryptocurrency`, `${signal.sentiment} | ${signal.postCount} posts`);
+  } catch (err) {
+    fail(`Reddit r/cryptocurrency`, err);
+  }
+}
+
+// ============================================================
+// 10. Google Trends (Free, No Auth)
+// ============================================================
+async function testGoogleTrends() {
+  await section("10. Google Trends — Search Interest Signals");
+
+  for (const category of ["crypto", "politics"]) {
+    try {
+      const signals = await getGoogleTrendsSignals(category as "crypto" | "politics");
+      const keys = Object.keys(signals);
+      if (keys.length > 0) {
+        pass(`Trends ${category}`, `${keys.length} keywords`);
+        for (const [kw, signal] of Object.entries(signals).slice(0, 3)) {
+          console.log(`     "${kw}": interest=${signal.currentInterest} | 7d=${signal.change7d.toFixed(1)}% | ${signal.trendDirection}`);
+        }
+      } else {
+        skip(`Trends ${category}`, "No keywords fetched");
+      }
+    } catch (err) {
+      fail(`Trends ${category}`, err);
+    }
+  }
+
+  // Test single keyword
+  try {
+    const signal = await getKeywordSignal("bitcoin");
+    pass(`Trends "bitcoin"`, `interest=${signal.currentInterest} | ${signal.trendDirection}`);
+  } catch (err) {
+    fail(`Trends "bitcoin"`, err);
+  }
+}
+
+// ============================================================
+// 11. Shared Signals (Agent-Aware Cache)
 // ============================================================
 async function testSharedSignals() {
-  await section("9. Shared Signals — Agent-Aware Cache");
+  await section("11. Shared Signals — Agent-Aware Cache");
 
-  for (const agentType of ["general", "crypto", "politics"]) {
+  for (const agentType of ["crypto", "politics", "sports"]) {
     try {
       const signals = await getSharedSignals(agentType);
       const sources: string[] = [];
@@ -295,6 +363,8 @@ async function testSharedSignals() {
       if (Object.keys(signals.fires).length > 0) sources.push("fires");
       if (signals.crypto) sources.push("crypto");
       if (signals.sports) sources.push("sports");
+      if (signals.reddit) sources.push("reddit");
+      if (signals.googleTrends) sources.push("trends");
 
       if (sources.length > 0) {
         pass(`${agentType} signals`, `${sources.join(", ")}`);
@@ -324,6 +394,8 @@ async function main() {
   await testAcled();
   await testNasaFirms();
   await testSportsOdds();
+  await testReddit();
+  await testGoogleTrends();
   await testSharedSignals();
 
   console.log(`\n${"═".repeat(60)}`);

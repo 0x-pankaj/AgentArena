@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, Fonts, BorderRadius, Spacing } from '../../constants/Colors';
 import { AtomBadge } from './AtomBadge';
 
@@ -60,7 +61,7 @@ export function AgentCard({ agent, onPress }: AgentCardProps) {
             <View style={styles.nameRow}>
               <Text style={styles.name}>{agent.name}</Text>
               {agent.isVerified && (
-                <Text style={styles.verifiedBadge}>✓</Text>
+                <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
               )}
             </View>
             <View style={styles.badgeRow}>
