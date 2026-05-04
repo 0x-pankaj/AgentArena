@@ -8,7 +8,7 @@ import { getSolanaConnection } from '../../src/lib/solana';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
 import { SkeletonCard, SkeletonLoader } from '../../src/components/SkeletonLoader';
 import { FeedItem } from '../../src/components/FeedItem';
-import { useAgentGet, useFeedByAgent, useJobCreate, useJobFund, useJobResume, useJobWalletBalance, useAgentGetReputation, useAgentSwarmProfile } from '../../src/lib/api';
+import { useAgentGet, useFeedByAgent, useJobCreate, useJobFund, useJobResume, useJobWalletBalance, useAgentGetReputation, useAgentSwarmProfile, usePaperBalance, usePlacePaperBet, useEventBets, useReactionsForEvents, useToggleReaction } from '../../src/lib/api';
 import { useLiveFeed } from '../../src/hooks/useLiveFeed';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useEmbeddedSolanaWallet } from '@privy-io/expo';
@@ -19,6 +19,184 @@ let transact: any = null;
 try { transact = require('@solana-mobile/mobile-wallet-adapter-protocol').transact; } catch {}
 
 type HireStep = 'config' | 'done';
+
+// ─── Agent Activity Section with Paper Betting ─────────────────
+
+function AgentActivitySection({
+  agent,
+  agentFeed,
+  wsStatus,
+  categoryColor,
+  paperBalance,
+  onPlaceBet,
+  isBetting,
+}: {
+  agent: any;
+  agentFeed: any[];
+  wsStatus: string;
+  categoryColor: string;
+  paperBalance: number;
+  onPlaceBet: (eventId: string, direction: 'buy' | 'sell' | 'pass', amount: number) => void;
+  isBetting: boolean;
+}) {
+  const [bettingEventId, setBettingEventId] = useState<string | null>(null);
+  const [betDirection, setBetDirection] = useState<'buy' | 'sell' | 'pass'>('buy');
+  const [betAmount, setBetAmount] = useState('50');
+  const { data: eventBets } = useEventBets(bettingEventId ?? '');
+
+  const visibleEventIds = agentFeed.filter((e) => e.event_id).map((e) => e.event_id);
+  const { data: reactionsData } = useReactionsForEvents(visibleEventIds);
+  const toggleReaction = useToggleReaction();
+
+  const isBettableEvent = (event: any) => {
+    return event.category === 'reasoning' || event.category === 'thinking' || event.category === 'decision';
+  };
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.activityHeader}>
+        <Text style={styles.sectionTitle}>{agent.name} Activity</Text>
+        <View style={[styles.categoryBadgeSmall, { backgroundColor: categoryColor + '22' }]}>
+          <Text style={[styles.categoryTextSmall, { color: categoryColor }]}>
+            {agent.category.toUpperCase()}
+          </Text>
+        </View>
+        {wsStatus === 'connected' && (
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>LIVE</Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.sectionSubtitle}>Only this agent's decisions and trades</Text>
+      {agentFeed.length > 0 ? (
+        <View style={styles.feedList}>
+          {agentFeed.map((event: any, index: number) => {
+            const eventReactions = reactionsData?.reactions?.[event.event_id] ?? {};
+            const myReactions = reactionsData?.myReactions?.[event.event_id] ?? [];
+            const canBet = isBettableEvent(event);
+
+            return (
+              <View key={event.event_id ?? `event-${index}`}>
+                <FeedItem
+                  event={event}
+                  reactions={eventReactions}
+                  myReactions={myReactions}
+                  onToggleReaction={(eventId, type) => toggleReaction.mutate({ eventId, reactionType: type })}
+                />
+
+                {/* Back This Play — only for reasoning/thinking/decision events */}
+                {canBet && (
+                  <View style={styles.betSection}>
+                    {bettingEventId === event.event_id ? (
+                      <View style={styles.betForm}>
+                        <Text style={styles.betTitle}>Back This Play</Text>
+                        <Text style={styles.betBalance}>Balance: {paperBalance.toFixed(0)} pts</Text>
+
+                        <View style={styles.betDirectionRow}>
+                          {(['buy', 'sell', 'pass'] as const).map((dir) => (
+                            <Pressable
+                              key={dir}
+                              style={[
+                                styles.betDirectionBtn,
+                                betDirection === dir && styles.betDirectionBtnActive,
+                                dir === 'buy' && betDirection === dir && { borderColor: Colors.success },
+                                dir === 'sell' && betDirection === dir && { borderColor: Colors.danger },
+                              ]}
+                              onPress={() => setBetDirection(dir)}
+                            >
+                              <Text style={[
+                                styles.betDirectionText,
+                                betDirection === dir && styles.betDirectionTextActive,
+                                dir === 'buy' && betDirection === dir && { color: Colors.success },
+                                dir === 'sell' && betDirection === dir && { color: Colors.danger },
+                              ]}>
+                                {dir.toUpperCase()}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+
+                        <View style={styles.betAmountRow}>
+                          {['10', '25', '50', '100'].map((amt) => (
+                            <Pressable
+                              key={amt}
+                              style={[styles.betAmountChip, betAmount === amt && styles.betAmountChipActive]}
+                              onPress={() => setBetAmount(amt)}
+                            >
+                              <Text style={[styles.betAmountText, betAmount === amt && styles.betAmountTextActive]}>
+                                {amt}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+
+                        <View style={styles.betActionRow}>
+                          <Pressable
+                            style={styles.betCancelBtn}
+                            onPress={() => setBettingEventId(null)}
+                          >
+                            <Text style={styles.betCancelText}>Cancel</Text>
+                          </Pressable>
+                          <Pressable
+                            style={[
+                              styles.betConfirmBtn,
+                              (isBetting || Number(betAmount) > paperBalance) && styles.betConfirmBtnDisabled,
+                            ]}
+                            onPress={() => {
+                              const amount = Number(betAmount);
+                              if (amount > paperBalance) {
+                                Alert.alert('Insufficient Balance', `You only have ${paperBalance} paper points`);
+                                return;
+                              }
+                              onPlaceBet(event.event_id, betDirection, amount);
+                            }}
+                            disabled={isBetting || Number(betAmount) > paperBalance}
+                          >
+                            {isBetting ? (
+                              <ActivityIndicator size="small" color={Colors.textPrimary} />
+                            ) : (
+                              <Text style={styles.betConfirmText}>Stake {betAmount} pts</Text>
+                            )}
+                          </Pressable>
+                        </View>
+
+                        {/* Community sentiment */}
+                        {eventBets && eventBets.totals && (
+                          <View style={styles.sentimentRow}>
+                            <Text style={styles.sentimentText}>
+                              Community: {eventBets.totals.buy > 0 && `${eventBets.totals.buy} on BUY `}
+                              {eventBets.totals.sell > 0 && `${eventBets.totals.sell} on SELL `}
+                              {eventBets.totals.pass > 0 && `${eventBets.totals.pass} on PASS`}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    ) : (
+                      <Pressable
+                        style={styles.backThisPlayBtn}
+                        onPress={() => {
+                          setBettingEventId(event.event_id);
+                          setBetAmount('50');
+                          setBetDirection('buy');
+                        }}
+                      >
+                        <Ionicons name="flash" size={14} color={Colors.accent} />
+                        <Text style={styles.backThisPlayText}>Back This Play</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      ) : (
+        <View style={styles.skeletonList}><SkeletonCard /><SkeletonCard /></View>
+      )}
+    </View>
+  );
+}
 
 export default function AgentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -61,6 +239,12 @@ export default function AgentDetailScreen() {
   const fundJob = useJobFund();
   const resumeJob = useJobResume();
 
+  // Paper betting
+  const { data: paperBalanceData } = usePaperBalance();
+  const placeBet = usePlacePaperBet();
+  const [bettingEventId, setBettingEventId] = useState<string | null>(null);
+  const [betDirection, setBetDirection] = useState<'buy' | 'sell' | 'pass'>('buy');
+  const [betAmount, setBetAmount] = useState('50');
 
   const [step, setStep] = useState<HireStep>('config');
   const [jobId, setJobId] = useState<string | null>(null);
@@ -245,6 +429,15 @@ export default function AgentDetailScreen() {
             {/* Stats */}
             <View style={styles.statsRow}>
               <View style={styles.stat}>
+                <Text style={styles.statValue}>{agent.hireCount ?? 0}</Text>
+                <Text style={styles.statLabel}>
+                  Hires
+                  {(agent.activeHireCount ?? 0) > 0 && (
+                    <Text style={{ color: Colors.success }}> · {agent.activeHireCount} live</Text>
+                  )}
+                </Text>
+              </View>
+              <View style={styles.stat}>
                 <Text style={styles.statValue}>{(performance.winRate * 100).toFixed(0)}%</Text>
                 <Text style={styles.statLabel}>Win Rate</Text>
               </View>
@@ -258,6 +451,16 @@ export default function AgentDetailScreen() {
                 <Text style={styles.statValue}>{performance.totalTrades}</Text>
                 <Text style={styles.statLabel}>Trades</Text>
               </View>
+            </View>
+
+            {/* Paper Points Balance */}
+            <View style={styles.paperPointsCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                <Ionicons name="trophy" size={18} color={Colors.accent} />
+                <Text style={styles.paperPointsLabel}>Paper Points</Text>
+              </View>
+              <Text style={styles.paperPointsValue}>{(paperBalanceData?.balance ?? 1000).toFixed(0)}</Text>
+              <Text style={styles.paperPointsSub}>Use points to bet on this agent's decisions</Text>
             </View>
 
             {/* ATOM Reputation Card */}
@@ -460,32 +663,28 @@ export default function AgentDetailScreen() {
         )}
 
         {/* Agent Activity */}
-        <View style={styles.section}>
-          <View style={styles.activityHeader}>
-            <Text style={styles.sectionTitle}>{agent.name} Activity</Text>
-            <View style={[styles.categoryBadgeSmall, { backgroundColor: (categoryColor as string) + '22' }]}>
-              <Text style={[styles.categoryTextSmall, { color: categoryColor as string }]}>
-                {agent.category.toUpperCase()}
-              </Text>
-            </View>
-            {wsStatus === 'connected' && (
-              <View style={styles.liveBadge}>
-                <View style={styles.liveDot} />
-                <Text style={styles.liveText}>LIVE</Text>
-              </View>
-            )}
-          </View>
-          <Text style={styles.sectionSubtitle}>Only this agent's decisions and trades</Text>
-          {agentFeed.length > 0 ? (
-            <View style={styles.feedList}>
-              {agentFeed.map((event: any, index: number) => (
-                <FeedItem key={event.event_id ?? `event-${index}`} event={event} />
-              ))}
-            </View>
-          ) : (
-            <View style={styles.skeletonList}><SkeletonCard /><SkeletonCard /></View>
-          )}
-        </View>
+        <AgentActivitySection
+          agent={agent}
+          agentFeed={agentFeed}
+          wsStatus={wsStatus}
+          categoryColor={categoryColor}
+          paperBalance={paperBalanceData?.balance ?? 1000}
+          onPlaceBet={(eventId, direction, amount) => {
+            placeBet.mutate(
+              { eventId, agentId: agent.id, direction, amount },
+              {
+                onSuccess: () => {
+                  Alert.alert('Bet Placed!', `You staked ${amount} paper points on ${direction.toUpperCase()}`);
+                  setBettingEventId(null);
+                },
+                onError: (err: any) => {
+                  Alert.alert('Bet Failed', err?.message ?? 'Could not place bet');
+                },
+              }
+            );
+          }}
+          isBetting={placeBet.isPending}
+        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -729,4 +928,158 @@ const styles = StyleSheet.create({
   swarmScoreFill: { height: '100%', backgroundColor: Colors.success, borderRadius: 4 },
   swarmScoreText: { fontFamily: Fonts.mono, fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   swarmSubtitle: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, marginTop: Spacing.xs },
+
+  // Paper Points Card
+  paperPointsCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.accent + '33',
+    padding: Spacing.lg,
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  paperPointsLabel: { fontFamily: Fonts.body, fontSize: 12, fontWeight: '600', color: Colors.accent },
+  paperPointsValue: { fontFamily: Fonts.mono, fontSize: 24, fontWeight: '700', color: Colors.textPrimary },
+  paperPointsSub: { fontFamily: Fonts.body, fontSize: 11, color: Colors.textMuted },
+
+  // Back This Play
+  betSection: {
+    marginHorizontal: Spacing.screenPadding,
+    marginTop: -Spacing.sm,
+    marginBottom: Spacing.md,
+    padding: Spacing.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderBottomLeftRadius: BorderRadius.md,
+    borderBottomRightRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: Colors.accent + '22',
+  },
+  backThisPlayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.accent + '15',
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+  },
+  backThisPlayText: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.accent,
+  },
+  betForm: {
+    gap: Spacing.md,
+  },
+  betTitle: {
+    fontFamily: Fonts.heading,
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  betBalance: {
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+    color: Colors.textMuted,
+  },
+  betDirectionRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  betDirectionBtn: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+  },
+  betDirectionBtnActive: {
+    backgroundColor: Colors.accent + '15',
+    borderColor: Colors.accent,
+  },
+  betDirectionText: {
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  betDirectionTextActive: {
+    color: Colors.accent,
+  },
+  betAmountRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  betAmountChip: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: Spacing.xs,
+    alignItems: 'center',
+  },
+  betAmountChipActive: {
+    backgroundColor: Colors.accent + '18',
+    borderColor: Colors.accent + '55',
+  },
+  betAmountText: {
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  betAmountTextActive: {
+    color: Colors.accent,
+    fontWeight: '700',
+  },
+  betActionRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  betCancelBtn: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+  },
+  betCancelText: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textMuted,
+  },
+  betConfirmBtn: {
+    flex: 2,
+    backgroundColor: Colors.accent,
+    borderRadius: BorderRadius.sm,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+  },
+  betConfirmBtnDisabled: {
+    opacity: 0.5,
+  },
+  betConfirmText: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  sentimentRow: {
+    marginTop: Spacing.xs,
+  },
+  sentimentText: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontStyle: 'italic',
+  },
 });

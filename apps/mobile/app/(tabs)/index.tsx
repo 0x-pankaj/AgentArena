@@ -10,7 +10,7 @@ import { SkeletonCard, SkeletonLoader } from '../../src/components/SkeletonLoade
 import { useAuthStore } from '../../src/stores/authStore';
 import { useAgentList, useTrendingAgents } from '../../src/lib/api';
 
-const categories = ['All', 'Geo', 'Politics', 'Sports', 'Crypto', 'General'];
+const categories = ['All', 'Politics', 'Sports', 'Crypto'];
 
 export default function HomeScreen() {
   const router = useRouter();

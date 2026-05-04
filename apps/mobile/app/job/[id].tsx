@@ -179,7 +179,45 @@ export default function JobDetailScreen() {
               </View>
             )}
 
-            {/* Trades History */}
+            {/* Open Positions — populated as the agent buys */}
+            {job.positions && job.positions.filter((p: any) => p.status === 'open').length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>
+                  Open Positions ({job.positions.filter((p: any) => p.status === 'open').length})
+                </Text>
+                <View style={styles.tradesList}>
+                  {job.positions
+                    .filter((p: any) => p.status === 'open')
+                    .map((pos: any) => {
+                      const entry = Number(pos.entryPrice);
+                      const current = Number(pos.currentPrice ?? pos.entryPrice);
+                      const amount = Number(pos.amount);
+                      const unrealizedPnl = pos.side === 'yes'
+                        ? (current - entry) * amount
+                        : (entry - current) * amount;
+                      const cost = entry * amount;
+                      return (
+                        <View key={pos.id} style={styles.tradeCard}>
+                          <View style={styles.tradeHeader}>
+                            <Text style={styles.tradeMarket}>{pos.marketQuestion}</Text>
+                            <Text style={[styles.tradePnl, { color: unrealizedPnl >= 0 ? Colors.success : Colors.danger }]}>
+                              {unrealizedPnl >= 0 ? '+' : ''}${unrealizedPnl.toFixed(2)}
+                            </Text>
+                          </View>
+                          <View style={styles.tradeFooter}>
+                            <Text style={styles.tradeSide}>
+                              {pos.side.toUpperCase()} {amount.toFixed(0)} @ ${entry.toFixed(3)} · cost ${cost.toFixed(2)}
+                            </Text>
+                            <Text style={styles.tradeSide}>open</Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                </View>
+              </View>
+            )}
+
+            {/* Trades History — populated when positions close */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Recent Trades</Text>
               {job.trades && job.trades.length > 0 ? (
@@ -205,7 +243,9 @@ export default function JobDetailScreen() {
                 </View>
               ) : (
                 <View style={styles.emptyTrades}>
-                  <Text style={styles.emptyTradesText}>No completed trades yet.</Text>
+                  <Text style={styles.emptyTradesText}>
+                    No closed trades yet. Trades show up here once positions hit take-profit, stop-loss, expiry, or market resolution.
+                  </Text>
                 </View>
               )}
             </View>

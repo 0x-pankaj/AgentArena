@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, FlatList, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -8,19 +8,21 @@ import { FeedItem } from '../../src/components/FeedItem';
 import { SkeletonCard } from '../../src/components/SkeletonLoader';
 import { FeedFilterBar } from '../../src/components/FeedFilterBar';
 import { AgentSelector } from '../../src/components/AgentSelector';
-import { useFeedRecent, useFeedByCategory, useAgentList, useGlobalStats } from '../../src/lib/api';
+import { useFeedRecent, useFeedByCategory, useAgentList, useGlobalStats, useReactionsForEvents, useToggleReaction } from '../../src/lib/api';
 import { useLiveFeed } from '../../src/hooks/useLiveFeed';
 import { GlobalStatsBanner } from '../../src/components/GlobalStatsBanner';
+import { useAuthStore } from '../../src/stores/authStore';
 
 export default function FeedScreen() {
   const router = useRouter();
+  const { walletAddress } = useAuthStore();
   const [activeCategory, setActiveCategory] = useState('all');
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [showAgentFilter, setShowAgentFilter] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
-  // REST data hooks — MUST be at top level (Rules of Hooks)
+  // REST data hooks
   const { data: recentData, isLoading: recentLoading, refetch: refetchRecent } = useFeedRecent(50);
   const { data: categoryData, isLoading: categoryLoading, refetch: refetchCategory } = useFeedByCategory(
     activeCategory !== 'all' ? activeCategory : '',
@@ -36,7 +38,7 @@ export default function FeedScreen() {
       ? `feed:category:${activeCategory}`
       : 'feed';
 
-  // Fallback polling function — uses refetch from top-level hook calls
+  // Fallback polling function
   const fallbackPollFn = useCallback(async () => {
     if (selectedAgentId) {
       return { events: [] as any[] };
@@ -49,7 +51,7 @@ export default function FeedScreen() {
     return result.data ?? { events: [] };
   }, [selectedAgentId, activeCategory, refetchRecent, refetchCategory]);
 
-  const { events: wsEvents, status, newCount, resetNewCount, setAtBottom } = useLiveFeed({
+  const { events: wsEvents, status, newCount, resetNewCount, setAtBottom, viewerCount, reactionUpdates } = useLiveFeed({
     channel: wsChannel,
     fallbackPollFn,
   });
@@ -73,24 +75,66 @@ export default function FeedScreen() {
   let isLoading: boolean;
 
   if (wsEvents.length > 0) {
-    // Merge WS events with REST data, deduplicate by event_id
     const restIds = new Set(restEvents.map((e: any) => e.event_id));
-    const wsOnly = wsEvents.filter((e: any) => !restIds.has(e.event_id));
-    // Filter WS events by agent/category if applicable
     const filteredWs = selectedAgentId
       ? wsEvents.filter((e: any) => e.agent_id === selectedAgentId)
       : activeCategory !== 'all'
         ? wsEvents
         : wsEvents;
-    // Combine and sort by timestamp (newest first)
     displayEvents = [...filteredWs, ...restEvents.filter((e: any) => !wsEvents.some((w: any) => w.event_id === e.event_id))]
       .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     isLoading = false;
   } else {
-    // No WS events — show REST data
     displayEvents = restEvents;
     isLoading = recentLoading || (activeCategory !== 'all' && categoryLoading);
   }
+
+  // Batch fetch reactions for visible events
+  const visibleEventIds = useMemo(() =>
+    displayEvents.filter((e: any) => e.event_id).map((e: any) => e.event_id),
+    [displayEvents]
+  );
+
+  const { data: reactionsData } = useReactionsForEvents(visibleEventIds, walletAddress);
+  const toggleReaction = useToggleReaction();
+
+  // Merge REST reactions with live WS reaction updates
+  const mergedReactions = useMemo(() => {
+    const base = reactionsData?.reactions ?? {};
+    const myBase = reactionsData?.myReactions ?? {};
+
+    const result: Record<string, { counts: Record<string, number>; myReactions: string[] }> = {};
+
+    for (const eventId of visibleEventIds) {
+      const counts = { ...(base[eventId] ?? {}) };
+      const myReacts = [...(myBase[eventId] ?? [])];
+
+      // Apply WS updates
+      const wsUpdate = reactionUpdates[eventId];
+      if (wsUpdate) {
+        for (const [type, count] of Object.entries(wsUpdate.counts)) {
+          counts[type] = count;
+        }
+        // Rebuild myReactions from WS update
+        const myWsReacts = wsUpdate.userReactions
+          .filter((r: any) => r.userWallet === walletAddress)
+          .map((r: any) => r.reactionType);
+        // Replace my reactions with server truth
+        if (myWsReacts.length > 0) {
+          result[eventId] = { counts, myReactions: myWsReacts };
+          continue;
+        }
+      }
+
+      result[eventId] = { counts, myReactions: myReacts };
+    }
+
+    return result;
+  }, [reactionsData, reactionUpdates, visibleEventIds, walletAddress]);
+
+  const handleToggleReaction = useCallback((eventId: string, reactionType: 'fire' | 'up' | 'think' | 'gem') => {
+    toggleReaction.mutate({ eventId, reactionType });
+  }, [toggleReaction]);
 
   // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {
@@ -137,12 +181,20 @@ export default function FeedScreen() {
       >
         <View style={styles.header}>
           <Text style={styles.title}>Live Feed</Text>
-          <Pressable
-            style={[styles.filterButton, showAgentFilter && styles.filterButtonActive]}
-            onPress={() => setShowAgentFilter(!showAgentFilter)}
-          >
-            <Ionicons name={showAgentFilter ? 'close-outline' : 'options-outline'} size={20} color={showAgentFilter ? Colors.accent : Colors.textPrimary} />
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+            {viewerCount > 0 && (
+              <View style={styles.viewerBadge}>
+                <View style={styles.liveDot} />
+                <Text style={styles.viewerText}>{viewerCount} watching</Text>
+              </View>
+            )}
+            <Pressable
+              style={[styles.filterButton, showAgentFilter && styles.filterButtonActive]}
+              onPress={() => setShowAgentFilter(!showAgentFilter)}
+            >
+              <Ionicons name={showAgentFilter ? 'close-outline' : 'options-outline'} size={20} color={showAgentFilter ? Colors.accent : Colors.textPrimary} />
+            </Pressable>
+          </View>
         </View>
 
         {/* Live arena stats */}
@@ -185,15 +237,21 @@ export default function FeedScreen() {
               <SkeletonCard />
             </>
           ) : displayEvents.length > 0 ? (
-            displayEvents.map((event: any, index: number) => (
-              <FeedItem
-                key={event.event_id ?? `event-${index}`}
-                event={event}
-                isActive={index === 0}
-                index={index}
-                onAgentPress={(agentId) => router.push(`/agent/${agentId}`)}
-              />
-            ))
+            displayEvents.map((event: any, index: number) => {
+              const eventReactions = mergedReactions[event.event_id] ?? { counts: {}, myReactions: [] };
+              return (
+                <FeedItem
+                  key={event.event_id ?? `event-${index}`}
+                  event={event}
+                  isActive={index === 0}
+                  index={index}
+                  onAgentPress={(agentId) => router.push(`/agent/${agentId}`)}
+                  reactions={eventReactions.counts}
+                  myReactions={eventReactions.myReactions}
+                  onToggleReaction={handleToggleReaction}
+                />
+              );
+            })
           ) : (
             <View style={styles.emptyState}>
               <Ionicons name="radio-outline" size={32} color={Colors.textMuted} style={{ marginBottom: Spacing.sm }} />
@@ -226,6 +284,23 @@ const styles = StyleSheet.create({
   filterButtonActive: {
     borderColor: Colors.accent,
     backgroundColor: Colors.accent + '22',
+  },
+  viewerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.success + '18',
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderWidth: 1,
+    borderColor: Colors.success + '33',
+  },
+  viewerText: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.success,
   },
   feedList: { gap: 0 },
   emptyState: { padding: Spacing.xl, alignItems: 'center', gap: Spacing.xs },

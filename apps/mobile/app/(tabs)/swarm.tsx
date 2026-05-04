@@ -16,6 +16,7 @@ import {
   useNetworkDensity,
   useReputationDistribution,
   useSwarmLeaderboard,
+  useSwarmGraph,
 } from '../../src/lib/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -25,8 +26,9 @@ export default function SwarmScreen() {
   const { data: density, isLoading: densityLoading, refetch: refetchDensity } = useNetworkDensity();
   const { data: reputation, isLoading: repLoading, refetch: refetchReputation } = useReputationDistribution();
   const { data: leaderboard, isLoading: lbLoading, refetch: refetchLeaderboard } = useSwarmLeaderboard(10);
+  const { data: graph, isLoading: graphLoading, refetch: refetchGraph } = useSwarmGraph(undefined, 30);
 
-  const isLoading = statsLoading || densityLoading || repLoading || lbLoading;
+  const isLoading = statsLoading || densityLoading || repLoading || lbLoading || graphLoading;
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -37,9 +39,10 @@ export default function SwarmScreen() {
       refetchDensity(),
       refetchReputation(),
       refetchLeaderboard(),
+      refetchGraph(),
     ]);
     setRefreshing(false);
-  }, [refetchStats, refetchDensity, refetchReputation, refetchLeaderboard]);
+  }, [refetchStats, refetchDensity, refetchReputation, refetchLeaderboard, refetchGraph]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -58,6 +61,24 @@ export default function SwarmScreen() {
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={Colors.accent} />
             <Text style={styles.loadingText}>Loading swarm data...</Text>
+          </View>
+        )}
+
+        {/* Graph Visualization */}
+        {!isLoading && (
+          <View style={styles.graphSection}>
+            {graph && graph.nodes && graph.nodes.length > 0 ? (
+              <SwarmGraphView nodes={graph.nodes} edges={graph.edges} />
+            ) : (
+              <View style={styles.graphEmpty}>
+                <Ionicons name="git-network-outline" size={36} color={Colors.textMuted} />
+                <Text style={styles.graphEmptyTitle}>Swarm warming up</Text>
+                <Text style={styles.graphEmptyText}>
+                  Agents will start delegating, voting, and rating each other as they trade.
+                  First interactions appear within minutes.
+                </Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -204,6 +225,129 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+// --- Ring-layout graph visualization ---
+// Nodes placed on a circle, edges drawn as rotated thin Views.
+// Pure RN — no SVG dependency. Edge weight controls line opacity.
+
+const GRAPH_HEIGHT = 280;
+const GRAPH_PADDING = 24;
+
+const CATEGORY_COLOR: Record<string, string> = {
+  crypto: Colors.accent,
+  politics: Colors.politics,
+  sports: Colors.sports,
+  geo: Colors.geo,
+  general: Colors.textSecondary,
+};
+
+interface GraphNode {
+  id: string;
+  name: string;
+  category: string;
+  reputationScore?: number;
+  trustTier?: string;
+}
+
+interface GraphEdge {
+  source: string;
+  target: string;
+  weight: number;
+  types: string[];
+}
+
+function SwarmGraphView({ nodes, edges }: { nodes: GraphNode[]; edges: GraphEdge[] }) {
+  const width = SCREEN_WIDTH - Spacing.lg * 2;
+  const radius = Math.min(width, GRAPH_HEIGHT) / 2 - GRAPH_PADDING - 18;
+  const cx = width / 2;
+  const cy = GRAPH_HEIGHT / 2;
+
+  // Layout: place nodes evenly around a circle
+  const positioned = nodes.map((node, i) => {
+    const angle = (i / nodes.length) * Math.PI * 2 - Math.PI / 2;
+    return {
+      ...node,
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+    };
+  });
+  const posById = new Map(positioned.map((p) => [p.id, p]));
+
+  const maxWeight = edges.reduce((m, e) => Math.max(m, e.weight), 1);
+
+  return (
+    <View style={[styles.graphContainer, { width, height: GRAPH_HEIGHT }]}>
+      {/* Edges */}
+      {edges.map((e, i) => {
+        const a = posById.get(e.source);
+        const b = posById.get(e.target);
+        if (!a || !b) return null;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+        const opacity = 0.25 + 0.6 * (e.weight / maxWeight);
+        const isConsensus = e.types.includes('consensus');
+        const isDelegation = e.types.includes('delegation');
+        const color = isConsensus ? Colors.success : isDelegation ? Colors.accent : Colors.textMuted;
+        return (
+          <View
+            key={`${e.source}-${e.target}-${i}`}
+            style={{
+              position: 'absolute',
+              left: a.x,
+              top: a.y - 0.5,
+              width: length,
+              height: 1,
+              backgroundColor: color,
+              opacity,
+              transform: [{ translateX: 0 }, { rotate: `${angle}deg` }],
+              transformOrigin: '0 50%',
+            }}
+          />
+        );
+      })}
+
+      {/* Nodes */}
+      {positioned.map((n) => {
+        const color = CATEGORY_COLOR[n.category] ?? Colors.textSecondary;
+        const initials = (n.name ?? '?').slice(0, 2).toUpperCase();
+        return (
+          <View
+            key={n.id}
+            style={[
+              styles.graphNode,
+              {
+                left: n.x - 18,
+                top: n.y - 18,
+                borderColor: color,
+                backgroundColor: color + '22',
+              },
+            ]}
+          >
+            <Text style={[styles.graphNodeText, { color }]}>{initials}</Text>
+          </View>
+        );
+      })}
+
+      {/* Legend */}
+      <View style={styles.graphLegend}>
+        <LegendDot color={Colors.accent} label="delegate" />
+        <LegendDot color={Colors.success} label="consensus" />
+        <LegendDot color={Colors.textMuted} label="rating" />
+      </View>
+    </View>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <Text style={styles.legendText}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -236,6 +380,78 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.body,
     fontSize: 14,
     color: Colors.textSecondary,
+  },
+  graphSection: {
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+  },
+  graphContainer: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  graphNode: {
+    position: 'absolute',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  graphNodeText: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  graphLegend: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontFamily: Fonts.body,
+    fontSize: 10,
+    color: Colors.textSecondary,
+  },
+  graphEmpty: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: Spacing.xxl,
+    paddingHorizontal: Spacing.lg,
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  graphEmptyTitle: {
+    fontFamily: Fonts.body,
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginTop: Spacing.xs,
+  },
+  graphEmptyText: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   statsGrid: {
     flexDirection: 'row',

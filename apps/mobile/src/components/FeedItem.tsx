@@ -8,8 +8,6 @@ import Animated, {
   withTiming,
   withSpring,
   withDelay,
-  interpolate,
-  Extrapolation,
 } from 'react-native-reanimated';
 import { Colors, Fonts, BorderRadius, Spacing } from '../../constants/Colors';
 
@@ -47,7 +45,9 @@ interface FeedItemProps {
   onAgentPress?: (agentId: string) => void;
   isActive?: boolean;
   index?: number;
-  onReact?: (eventId: string, emoji: string) => void;
+  reactions?: Record<string, number>;
+  myReactions?: string[];
+  onToggleReaction?: (eventId: string, reactionType: 'fire' | 'up' | 'think' | 'gem') => void;
 }
 
 const categoryIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -154,26 +154,30 @@ function TimeAgo({ timestamp }: { timestamp: string }) {
   return <Text style={styles.time}>{display}</Text>;
 }
 
-function ReactionBar({ eventId, onReact }: { eventId?: string; onReact?: (eventId: string, emoji: string) => void }) {
-  const [userReactions, setUserReactions] = useState<Record<string, number>>({});
-
+function ReactionBar({
+  eventId,
+  reactions = {},
+  myReactions = [],
+  onToggleReaction,
+}: {
+  eventId?: string;
+  reactions?: Record<string, number>;
+  myReactions?: string[];
+  onToggleReaction?: (eventId: string, reactionType: 'fire' | 'up' | 'think' | 'gem') => void;
+}) {
   const handlePress = useCallback(
     (label: string) => {
-      if (!eventId) return;
-      setUserReactions((prev) => ({
-        ...prev,
-        [label]: (prev[label] || 0) + 1,
-      }));
-      onReact?.(eventId, label);
+      if (!eventId || !onToggleReaction) return;
+      onToggleReaction(eventId, label as any);
     },
-    [eventId, onReact]
+    [eventId, onToggleReaction]
   );
 
   return (
     <View style={styles.reactionBar}>
       {REACTIONS.map((reaction) => {
-        const count = userReactions[reaction.label] || 0;
-        const isActive = count > 0;
+        const count = reactions[reaction.label] || 0;
+        const isActive = myReactions.includes(reaction.label);
         return (
           <Pressable
             key={reaction.label}
@@ -182,7 +186,7 @@ function ReactionBar({ eventId, onReact }: { eventId?: string; onReact?: (eventI
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
           >
             <Ionicons name={reaction.name} size={14} color={isActive ? Colors.accent : Colors.textSecondary} />
-            {isActive && <Text style={styles.reactionCount}>{count}</Text>}
+            {count > 0 && <Text style={styles.reactionCount}>{count}</Text>}
           </Pressable>
         );
       })}
@@ -192,7 +196,15 @@ function ReactionBar({ eventId, onReact }: { eventId?: string; onReact?: (eventI
 
 // ─── Main Component ───────────────────────────────────────────
 
-export function FeedItem({ event, onAgentPress, isActive, index = 0, onReact }: FeedItemProps) {
+export function FeedItem({
+  event,
+  onAgentPress,
+  isActive,
+  index = 0,
+  reactions = {},
+  myReactions = [],
+  onToggleReaction,
+}: FeedItemProps) {
   const [expanded, setExpanded] = useState(false);
 
   const iconName = categoryIcons[event.category ?? ''] ?? 'document-text';
@@ -372,7 +384,12 @@ export function FeedItem({ event, onAgentPress, isActive, index = 0, onReact }: 
         )}
 
         {/* Reactions */}
-        <ReactionBar eventId={event.event_id} onReact={onReact} />
+        <ReactionBar
+          eventId={event.event_id}
+          reactions={reactions}
+          myReactions={myReactions}
+          onToggleReaction={onToggleReaction}
+        />
       </Pressable>
     </Animated.View>
   );

@@ -6,7 +6,10 @@ type WSMessage =
   | { type: 'leaderboard_update'; data: any }
   | { type: 'position_update'; data: any }
   | { type: 'price_update'; data: any }
-  | { type: 'agent_decision'; data: any };
+  | { type: 'agent_decision'; data: any }
+  | { type: 'viewer_count'; data: Record<string, number> }
+  | { type: 'reaction_update'; data: any }
+  | { type: 'pong' };
 
 type WSListener = (message: WSMessage) => void;
 
