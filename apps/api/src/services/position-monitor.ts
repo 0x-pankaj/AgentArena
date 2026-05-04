@@ -33,6 +33,26 @@ export interface PositionMonitorConfig {
   takeProfitPercent: number;
 }
 
+// --- Trailing-stop tunables ---
+// These supersede the flat take-profit field on the positions row. The TP
+// column is still respected as the *arming* threshold so per-position TP
+// overrides keep working: once unrealized profit % crosses the row's TP
+// (default 20%), the trailing rule takes over and protects gains.
+const TRAILING_GIVEUP_FROM_PEAK = 0.10;   // close once profit retraces 10pp from peak
+const TIME_TIGHTEN_HOURS = 24;            // within 24h of close, lock-in winners
+const TIME_TIGHTEN_LOCK_IN = 0.15;        // at +15% profit, take it (don't trail)
+
+// --- Pure profit/loss helpers (direction-agnostic) ---
+
+function computeProfitPct(entryPrice: number, currentPrice: number, side: string): number {
+  if (side === "yes") return (currentPrice - entryPrice) / entryPrice;
+  return (entryPrice - currentPrice) / entryPrice;
+}
+
+function computeLossPct(entryPrice: number, currentPrice: number, side: string): number {
+  return -computeProfitPct(entryPrice, currentPrice, side);
+}
+
 // --- Check all exit conditions for a single position ---
 
 export function checkPositionExit(
@@ -44,6 +64,12 @@ export function checkPositionExit(
     takeProfitPercent: number;
     openedAt: Date;
     expiresAt: Date | null;
+    /**
+     * Highest unrealized profit % observed for this position so far. Caller
+     * tracks this in Redis across monitor ticks; we only use it (we don't
+     * mutate). Pass 0 for a freshly opened position.
+     */
+    peakProfitPct?: number;
   },
   marketData?: {
     status?: string;
@@ -62,14 +88,11 @@ export function checkPositionExit(
     return { shouldExit: false, reasons: [], exitType: null };
   }
 
-  // 1. Stop-Loss Check
-  let lossPct: number;
-  if (side === "yes") {
-    lossPct = (entryPrice - currentPrice) / entryPrice;
-  } else {
-    lossPct = (currentPrice - entryPrice) / entryPrice;
-  }
+  const lossPct = computeLossPct(entryPrice, currentPrice, side);
+  const profitPct = computeProfitPct(entryPrice, currentPrice, side);
+  const peakProfitPct = Math.max(position.peakProfitPct ?? 0, profitPct);
 
+  // 1. Hard stop-loss (unchanged disaster floor)
   if (lossPct >= position.stopLossPercent) {
     reasons.push(
       `Stop-loss triggered: ${(lossPct * 100).toFixed(1)}% loss on ${side.toUpperCase()} (limit: ${(position.stopLossPercent * 100).toFixed(0)}%)`
@@ -77,27 +100,43 @@ export function checkPositionExit(
     exitTypes.push("stop_loss");
   }
 
-  // 2. Take-Profit Check
-  let profitPct: number;
-  if (side === "yes") {
-    profitPct = (currentPrice - entryPrice) / entryPrice;
-  } else {
-    profitPct = (entryPrice - currentPrice) / entryPrice;
-  }
+  // 2. Time-tightened lock-in: within TIME_TIGHTEN_HOURS of market close,
+  // any profit ≥ TIME_TIGHTEN_LOCK_IN should be banked rather than trailed.
+  // Prediction markets converge to 0/1 sharply near resolution; trailing
+  // can give back hard-won gains in the final hours.
+  const marketCloseTime = marketData?.closeTime
+    ? (typeof marketData.closeTime === "number" ? marketData.closeTime * 1000 : new Date(marketData.closeTime).getTime())
+    : null;
+  const hoursToClose = marketCloseTime
+    ? (marketCloseTime - Date.now()) / 3_600_000
+    : Infinity;
+  const inTighteningWindow = hoursToClose <= TIME_TIGHTEN_HOURS;
 
-  if (profitPct >= position.takeProfitPercent) {
+  if (inTighteningWindow && profitPct >= TIME_TIGHTEN_LOCK_IN) {
     reasons.push(
-      `Take-profit triggered: ${(profitPct * 100).toFixed(1)}% gain on ${side.toUpperCase()} (target: ${(position.takeProfitPercent * 100).toFixed(0)}%)`
+      `Lock-in: ${(profitPct * 100).toFixed(1)}% gain banked (market closes in ${hoursToClose.toFixed(1)}h, threshold ${(TIME_TIGHTEN_LOCK_IN * 100).toFixed(0)}%)`
     );
     exitTypes.push("take_profit");
   }
 
-  // 3. Market Expiry Check
+  // 3. Trailing take-profit. Arms once peak profit crosses the row's TP
+  // threshold (default 20%); fires when current profit retraces by
+  // TRAILING_GIVEUP_FROM_PEAK from that peak. This lets winners run while
+  // protecting against full give-back.
+  const trailingArmed = peakProfitPct >= position.takeProfitPercent;
+  if (trailingArmed) {
+    const giveUp = peakProfitPct - profitPct;
+    if (giveUp >= TRAILING_GIVEUP_FROM_PEAK) {
+      reasons.push(
+        `Trailing stop: peak +${(peakProfitPct * 100).toFixed(1)}% → now +${(profitPct * 100).toFixed(1)}% (gave up ${(giveUp * 100).toFixed(1)}pp)`
+      );
+      exitTypes.push("take_profit");
+    }
+  }
+
+  // 4. Market expiry
   const now = Date.now();
   const posExpiresAt = position.expiresAt ? new Date(position.expiresAt).getTime() : null;
-  const marketCloseTime = marketData?.closeTime
-    ? (typeof marketData.closeTime === "number" ? marketData.closeTime * 1000 : new Date(marketData.closeTime).getTime())
-    : null;
 
   if (posExpiresAt && now > posExpiresAt) {
     reasons.push(`Position expiry reached`);
@@ -109,7 +148,7 @@ export function checkPositionExit(
     exitTypes.push("market_expiry");
   }
 
-  // 4. Market Resolution Check
+  // 5. Market resolution
   const result = marketData?.result;
   if (result && (result === "yes" || result === "no" || result === "cancelled")) {
     reasons.push(`Market resolved: ${result.toUpperCase()}`);
@@ -124,6 +163,28 @@ export function checkPositionExit(
     exitPrice: currentPrice,
     exitType: shouldExit ? exitTypes[0] : null,
   };
+}
+
+// --- Peak profit tracking (Redis, per position) ---
+// Independent of the positions table so we don't need a schema migration.
+// TTL is generous so a sleepy position doesn't lose its peak between ticks.
+
+const PEAK_KEY_PREFIX = "monitor:peak_profit_pct:";
+const PEAK_TTL_SECONDS = 14 * 24 * 3600; // 14 days
+
+async function loadPeakProfitPct(positionId: string): Promise<number> {
+  const raw = await redis.get(`${PEAK_KEY_PREFIX}${positionId}`);
+  if (!raw) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+async function savePeakProfitPct(positionId: string, peakProfitPct: number): Promise<void> {
+  await redis.setex(`${PEAK_KEY_PREFIX}${positionId}`, PEAK_TTL_SECONDS, String(peakProfitPct));
+}
+
+async function clearPeakProfitPct(positionId: string): Promise<void> {
+  await redis.del(`${PEAK_KEY_PREFIX}${positionId}`);
 }
 
 // --- Monitor all open positions for a job ---
@@ -178,15 +239,28 @@ export async function monitorJobPositions(params: {
 
       const currentPrice = pos.currentPrice ? Number(pos.currentPrice) : Number(pos.entryPrice);
 
+      // Load the high-water mark for this position, then advance it if the
+      // current tick set a new peak. checkPositionExit reads peakProfitPct
+      // to decide whether the trailing rule has armed and whether the
+      // current price is a give-back from peak.
+      const entryPrice = Number(pos.entryPrice);
+      const profitPct = computeProfitPct(entryPrice, currentPrice, pos.side);
+      const previousPeak = await loadPeakProfitPct(pos.id);
+      const peakProfitPct = Math.max(previousPeak, profitPct);
+      if (peakProfitPct > previousPeak) {
+        await savePeakProfitPct(pos.id, peakProfitPct);
+      }
+
       const exitCheck = checkPositionExit(
         {
-          entryPrice: Number(pos.entryPrice),
+          entryPrice,
           currentPrice,
           side: pos.side,
           stopLossPercent: Number(pos.stopLossPercent ?? 0.15),
           takeProfitPercent: Number(pos.takeProfitPercent ?? 0.20),
           openedAt: pos.openedAt ?? new Date(),
           expiresAt: pos.expiresAt,
+          peakProfitPct,
         },
         {
           status: marketData.status ?? undefined,
@@ -198,6 +272,10 @@ export async function monitorJobPositions(params: {
       checked++;
 
       if (!exitCheck.shouldExit) continue;
+
+      // Position is about to close — drop the peak entry so a stale value
+      // can't bleed into a future re-opened position with the same id.
+      await clearPeakProfitPct(pos.id);
 
       // Handle the exit based on type
       const isResolution = exitCheck.exitType === "market_resolution";
