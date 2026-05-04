@@ -5,6 +5,7 @@ import { getWalletBalance } from "../utils/privy";
 import { requestDevnetAirdrop } from "../utils/devnet-helpers";
 import { IS_DEVNET } from "@agent-arena/shared";
 import { z } from "zod";
+import { getOrInitPaperBalance } from "./paper-bets";
 
 export const userRouter = router({
   get: protectedProcedure.query(async ({ ctx }) => {
@@ -20,8 +21,13 @@ export const userRouter = router({
         .insert(schema.users)
         .values({ walletAddress: ctx.walletAddress })
         .returning();
+      // Initialize paper balance for new user
+      await getOrInitPaperBalance(ctx.walletAddress);
       return created;
     }
+
+    // Ensure paper balance exists for existing users
+    await getOrInitPaperBalance(ctx.walletAddress);
 
     return user;
   }),

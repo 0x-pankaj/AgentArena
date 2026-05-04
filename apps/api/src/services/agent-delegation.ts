@@ -7,7 +7,7 @@
 import { eq, and, desc, sql } from "drizzle-orm";
 import { db, schema } from "../db";
 import { redis } from "../utils/redis";
-import { REDIS_KEYS } from "@agent-arena/shared";
+import { REDIS_KEYS, IS_SIMULATED } from "@agent-arena/shared";
 import { submitAtomFeedback, AtomTag } from "../utils/atom-reputation";
 import { runAgentTick } from "../agents/registry";
 import type { AgentRuntimeContext } from "../ai/types";
@@ -98,7 +98,28 @@ export function detectDelegationOpportunity(
     }
   }
 
-  // Threshold: require at least 2 keyword matches or score > 0.3
+  // Threshold: require at least 2 keyword matches or score > 0.3.
+  // Paper-traction relaxes to any single match (bestMatch !== null with score > 0).
+  // For markets with no keyword overlap at all, paper-mode still delegates ~50%
+  // of the time via a deterministic hash so the swarm graph populates for the demo.
+  if (IS_SIMULATED) {
+    if (bestMatch) return bestMatch;
+    const targets = DELEGATION_TARGETS[agentCategory] ?? [];
+    if (targets.length === 0) return null;
+    let hash = 0;
+    for (let i = 0; i < marketQuestion.length; i++) {
+      hash = (hash * 31 + marketQuestion.charCodeAt(i)) | 0;
+    }
+    if (Math.abs(hash) % 2 !== 0) return null;
+    const targetCategory = targets[Math.abs(hash) % targets.length];
+    return {
+      marketId: "",
+      marketQuestion,
+      sourceCategory: agentCategory,
+      targetCategory,
+      overlapScore: 0,
+    };
+  }
   if (bestMatch && (bestScore >= 0.3 || lowerQuestion.split(" ").some(w => {
     const targets = DELEGATION_TARGETS[agentCategory] ?? [];
     return targets.some(tc => CATEGORY_KEYWORDS[tc]?.some(kw => w.toLowerCase().includes(kw.toLowerCase())));
@@ -140,10 +161,12 @@ export async function requestPeerAnalysis(
     const targetAgent = targetAgents[0];
     const registryId = CATEGORY_TO_REGISTRY_ID[toCategory] ?? CATEGORY_TO_REGISTRY_ID.general;
 
-    // Build ephemeral context for the target agent tick
+    // Build ephemeral context for the target agent tick. Reuse the initiating
+    // job's UUID so DB queries keyed on jobId remain valid; the peer tick is
+    // bounded to read-only analysis via delegationTarget.
     const ephemeralCtx: AgentRuntimeContext = {
       agentId: targetAgent.id,
-      jobId: `delegation-${fromCtx.jobId}-${Date.now()}`,
+      jobId: fromCtx.jobId,
       agentWalletId: fromCtx.agentWalletId,
       agentWalletAddress: fromCtx.agentWalletAddress,
       ownerPubkey: fromCtx.ownerPubkey,

@@ -44,6 +44,94 @@ export interface UserLeaderboardEntry {
   bestAgent: { id: string; name: string; pnl: number };
 }
 
+// --- Recompute agent performance from trades after a close/claim ---
+//
+// Aggregates the trades table (joined to positions for paper/live filtering),
+// upserts the agent_performance row, then refreshes Redis ZSETs and broadcasts.
+// Call this from every close/claim path so the leaderboard stays in sync.
+
+export async function recomputeAgentPerformance(
+  agentId: string,
+  isPaperTrading: boolean = true
+): Promise<void> {
+  const [agg] = await db
+    .select({
+      totalTrades: sql<number>`COUNT(${schema.trades.id})`,
+      winningTrades: sql<number>`COUNT(*) FILTER (WHERE ${schema.trades.outcome} = 'win')`,
+      totalPnl: sql<number>`COALESCE(SUM(CAST(${schema.trades.profitLoss} AS NUMERIC)), 0)`,
+      totalVolume: sql<number>`COALESCE(SUM(CAST(${schema.trades.amount} AS NUMERIC) * CAST(${schema.trades.entryPrice} AS NUMERIC)), 0)`,
+    })
+    .from(schema.trades)
+    .innerJoin(schema.positions, eq(schema.trades.txSignature, schema.positions.txSignature))
+    .where(
+      and(
+        eq(schema.trades.agentId, agentId),
+        eq(schema.positions.isPaperTrade, isPaperTrading)
+      )
+    );
+
+  const totalTrades = Number(agg?.totalTrades ?? 0);
+  const winningTrades = Number(agg?.winningTrades ?? 0);
+  const totalPnl = Number(agg?.totalPnl ?? 0);
+  const totalVolume = Number(agg?.totalVolume ?? 0);
+  const winRate = totalTrades > 0 ? winningTrades / totalTrades : 0;
+
+  // Upsert agent_performance (no unique constraint exists, so do select-then-update/insert)
+  const existing = await db
+    .select({ agentId: schema.agentPerformance.agentId })
+    .from(schema.agentPerformance)
+    .where(
+      and(
+        eq(schema.agentPerformance.agentId, agentId),
+        eq(schema.agentPerformance.isPaperTrading, isPaperTrading)
+      )
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    await db
+      .update(schema.agentPerformance)
+      .set({
+        totalTrades,
+        winningTrades,
+        totalPnl: String(totalPnl),
+        winRate: String(winRate),
+        totalVolume: String(totalVolume),
+        lastUpdated: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.agentPerformance.agentId, agentId),
+          eq(schema.agentPerformance.isPaperTrading, isPaperTrading)
+        )
+      );
+  } else {
+    await db.insert(schema.agentPerformance).values({
+      agentId,
+      isPaperTrading,
+      totalTrades,
+      winningTrades,
+      totalPnl: String(totalPnl),
+      winRate: String(winRate),
+      totalVolume: String(totalVolume),
+    });
+  }
+
+  // Refresh Redis ZSETs (all-time, daily, category, user) + broadcast
+  await updateAgentStats(
+    agentId,
+    {
+      totalPnl,
+      winRate,
+      totalTrades,
+      maxDrawdown: 0,
+      sharpeRatio: 0,
+      totalVolume,
+    },
+    isPaperTrading
+  );
+}
+
 // --- Update agent stats in Redis ---
 
 export async function updateAgentStats(
@@ -623,13 +711,22 @@ export async function getTrendingAgents(
           .limit(1);
 
         if (agent) {
-          const stats = await redis.hgetall(`${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}`);
+          const [perf] = await db
+            .select({ totalPnl: schema.agentPerformance.totalPnl })
+            .from(schema.agentPerformance)
+            .where(
+              and(
+                eq(schema.agentPerformance.agentId, agentId),
+                eq(schema.agentPerformance.isPaperTrading, true),
+              ),
+            )
+            .limit(1);
           agents.push({
             id: agentId,
             name: agent.name,
             category: agent.category,
             lastEvent: activity.lastEvent,
-            pnl: Number(stats.totalPnl ?? 0),
+            pnl: Number(perf?.totalPnl ?? 0),
           });
         }
       } catch (err) {

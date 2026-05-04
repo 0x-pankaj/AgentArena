@@ -59,21 +59,32 @@ export const CATEGORY_SUBREDDITS: Record<string, string[]> = {
 
 // --- Raw fetch helper ---
 
+function isTimeoutError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "TimeoutError";
+}
+
 async function redditFetch<T>(path: string): Promise<T> {
   const url = `${REDDIT_BASE}${path}`;
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      Accept: "application/json",
-    },
-    signal: AbortSignal.timeout(10_000),
-  });
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(8_000),
+    });
 
-  if (!res.ok) {
-    throw new Error(`Reddit API error ${res.status}: ${await res.text()}`);
+    if (!res.ok) {
+      throw new Error(`Reddit API error ${res.status}`);
+    }
+
+    return res.json() as Promise<T>;
+  } catch (err) {
+    if (isTimeoutError(err)) {
+      throw new Error("Timeout");
+    }
+    throw err;
   }
-
-  return res.json() as Promise<T>;
 }
 
 // --- Parse Reddit listing response ---
@@ -119,7 +130,8 @@ export async function searchReddit(
     const data = await redditFetch<any>(path);
     return parseListing(data);
   } catch (err) {
-    console.error(`[Reddit] Search failed for "${query}":`, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[Reddit] Search failed for "${query}": ${msg}`);
     return [];
   }
 }
@@ -138,7 +150,8 @@ export async function getSubredditPosts(
       const data = await redditFetch<any>(`/r/${subreddit}/${sort}.json?limit=${limit}`);
       return parseListing(data);
     } catch (err) {
-      console.error(`[Reddit] Failed to fetch r/${subreddit}:`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Reddit] Failed to fetch r/${subreddit}: ${msg}`);
       return [];
     }
   });
@@ -232,7 +245,8 @@ export async function getRedditSignals(
       try {
         return await getSubredditSentiment(sub);
       } catch (err) {
-        console.error(`[Reddit] Failed r/${sub}:`, err);
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[Reddit] Failed r/${sub}: ${msg}`);
         return null;
       }
     })

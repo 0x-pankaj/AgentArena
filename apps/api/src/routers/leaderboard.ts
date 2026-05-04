@@ -9,6 +9,9 @@ import {
   getUserLeaderboard,
   getTrendingAgents,
 } from "../leaderboard";
+import { getPredictorLeaderboard } from "./paper-bets";
+import { db, schema } from "../db";
+import { eq, sql, desc, gte } from "drizzle-orm";
 
 export const leaderboardRouter = router({
   getAllTime: publicProcedure
@@ -101,5 +104,37 @@ export const leaderboardRouter = router({
           .sort((a, b) => (b.reputationScore ?? 0) - (a.reputationScore ?? 0))
           .slice(0, input.limit),
       };
+    }),
+
+  // --- Paper Predictor Leaderboard ---
+  getPredictors: publicProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+    }))
+    .query(async ({ input }) => {
+      return getPredictorLeaderboard(input.limit);
+    }),
+
+  // --- Reaction Leaderboard (most hyped events) ---
+  getTopReactedEvents: publicProcedure
+    .input(z.object({
+      hours: z.number().min(1).max(168).default(24),
+      limit: z.number().min(1).max(50).default(10),
+    }))
+    .query(async ({ input }) => {
+      const since = new Date(Date.now() - input.hours * 60 * 60 * 1000);
+
+      const rows = await db
+        .select({
+          eventId: schema.feedReactions.eventId,
+          totalReactions: sql<number>`count(*)`,
+        })
+        .from(schema.feedReactions)
+        .where(gte(schema.feedReactions.createdAt, since))
+        .groupBy(schema.feedReactions.eventId)
+        .orderBy(desc(sql`count(*)`))
+        .limit(input.limit);
+
+      return { events: rows };
     }),
 });

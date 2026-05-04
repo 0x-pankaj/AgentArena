@@ -360,3 +360,56 @@ export const microstructureChecks = pgTable("microstructure_checks", {
 }, (table) => ({
   marketIdx: index("micro_market_idx").on(table.marketId),
 }));
+
+// ============================================================
+// Phase 1 + 2: Social Proof & Paper Betting
+// ============================================================
+
+export const feedReactions = pgTable("feed_reactions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  eventId: varchar("event_id", { length: 100 }).notNull(),
+  userWallet: varchar("user_wallet", { length: 44 }).notNull(),
+  reactionType: varchar("reaction_type", { length: 20 }).notNull(), // "fire" | "up" | "think" | "gem"
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  eventIdx: index("feed_reactions_event_idx").on(table.eventId),
+  userIdx: index("feed_reactions_user_idx").on(table.userWallet),
+  uniqueReaction: index("feed_reactions_unique_idx").on(table.eventId, table.userWallet, table.reactionType),
+}));
+
+export const paperBalances = pgTable("paper_balances", {
+  userWallet: varchar("user_wallet", { length: 44 }).primaryKey(),
+  balance: decimal("balance", { precision: 18, scale: 6 }).default("1000").notNull(),
+  totalEarned: decimal("total_earned", { precision: 18, scale: 6 }).default("0").notNull(),
+  totalLost: decimal("total_lost", { precision: 18, scale: 6 }).default("0").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const paperBets = pgTable("paper_bets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  eventId: varchar("event_id", { length: 100 }).notNull(),
+  userWallet: varchar("user_wallet", { length: 44 }).notNull(),
+  agentId: varchar("agent_id", { length: 100 }).notNull(),
+  direction: varchar("direction", { length: 10 }).notNull(), // "buy" | "sell" | "pass"
+  amount: decimal("amount", { precision: 18, scale: 6 }).notNull(),
+  status: varchar("status", { length: 20 }).default("pending").notNull(), // "pending" | "won" | "lost" | "cancelled"
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  eventIdx: index("paper_bets_event_idx").on(table.eventId),
+  userIdx: index("paper_bets_user_idx").on(table.userWallet),
+  agentIdx: index("paper_bets_agent_idx").on(table.agentId),
+  statusIdx: index("paper_bets_status_idx").on(table.status),
+}));
+
+export const userAgentFollows = pgTable("user_agent_follows", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userWallet: varchar("user_wallet", { length: 44 }).notNull(),
+  agentId: varchar("agent_id", { length: 100 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  userIdx: index("follows_user_idx").on(table.userWallet),
+  agentIdx: index("follows_agent_idx").on(table.agentId),
+  uniqueFollow: index("follows_unique_idx").on(table.userWallet, table.agentId),
+}));

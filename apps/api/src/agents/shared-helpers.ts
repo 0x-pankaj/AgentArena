@@ -2,9 +2,10 @@
 // Extracted to prevent code duplication and ensure consistency.
 
 import { redis } from "../utils/redis";
-import { REDIS_KEYS } from "@agent-arena/shared";
+import { REDIS_KEYS, AGENT_LIMITS } from "@agent-arena/shared";
 import { publishFeedEvent, buildFeedEvent } from "../feed";
 import { getMarket } from "../services/market-service";
+import { setPendingReasoningEvent } from "../routers/paper-bets";
 
 // --- Bayesian probability estimation (clamped, safe) ---
 
@@ -89,7 +90,7 @@ export function calculateEdge(
       direction: "yes",
       rawEdge: Math.round(rawEdgeYes * 10000) / 10000,
       netEdge: Math.round(netEdgeYes * 10000) / 10000,
-      shouldTrade: netEdgeYes > 0.05,
+      shouldTrade: netEdgeYes > AGENT_LIMITS.MIN_EDGE,
     };
   } else if (netEdgeNo > 0) {
     return {
@@ -149,6 +150,13 @@ export async function publishFeedStep(
       displayMessage: message,
     });
     await publishFeedEvent(feedEvent);
+
+    // Cache event for paper betting resolution if this is an action announcement
+    const action = content.action as string | undefined;
+    const marketId = (content.marketId as string) || (content.market_analyzed as string);
+    if (action && marketId && (action === "buy" || action === "sell")) {
+      setPendingReasoningEvent(agentId, marketId, feedEvent.event_id);
+    }
   } catch {
     // feed errors should not break the pipeline
   }

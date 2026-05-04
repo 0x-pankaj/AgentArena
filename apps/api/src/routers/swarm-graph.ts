@@ -263,8 +263,21 @@ export const swarmGraphRouter = router({
         .where(eq(schema.agents.id, input.agentId))
         .limit(1);
 
+      // Hardcoded agents (e.g., "politics-agent") don't exist in DB — return empty profile
       if (!agent) {
-        throw new Error("Agent not found");
+        return {
+          agent: {
+            id: input.agentId,
+            name: input.agentId,
+            category: "general",
+            reputationScore: 0,
+            trustTier: "Unknown",
+            swarmScore: 0,
+          },
+          delegations: { total: 0, history: [] },
+          ratings: { count: 0, averageReceived: 0, history: [] },
+          consensus: [],
+        };
       }
 
       const delegations = await getDelegationHistory(input.agentId);

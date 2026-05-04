@@ -8,6 +8,7 @@ import {
 import { getMarket, getTrendingMarkets } from "../services/market-service";
 import { getMarketsForAgent } from "../services/market-event-bus";
 import { publishFeedEvent, buildFeedEvent } from "../feed";
+import { setPendingReasoningEvent, getPendingReasoningEvent, clearPendingReasoningEvent, resolveBetsForEvent } from "../routers/paper-bets";
 import { monitorJobPositions } from "../services/position-monitor";
 import { getPaperBalance, getPaperPortfolio } from "../services/paper-trading";
 import type { LLMDecision, MarketContext, AgentPosition } from "./strategy-engine";
@@ -115,6 +116,7 @@ export async function scanMarkets(
           ? (new Date(m.closesAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
           : Infinity;
         if (daysUntilClose > AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION) continue;
+        if (daysUntilClose < 0) continue; // skip markets that already closed
 
         const outcomes = Array.isArray(m.outcomes)
           ? (m.outcomes as Array<{ name: string; price?: number }>)
@@ -197,8 +199,15 @@ export async function scanMarketsWithResearch(
             ? (new Date(typeof market.closeTime === "number" ? market.closeTime * 1000 : market.closeTime).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
             : Infinity;
           if (daysUntilClose > AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION) continue;
+          if (daysUntilClose < 0) continue; // skip markets that already closed
 
-          const question = market.metadata?.rulesPrimary?.slice(0, 200) ?? market.metadata?.title ?? event.metadata?.title ?? "Unknown market";
+          const question =
+            (market.metadata as any)?.question?.slice(0, 200) ??
+            market.metadata?.rulesPrimary?.slice(0, 200) ??
+            market.metadata?.title ??
+            event.metadata?.title ??
+            (event.metadata as any)?.subtitle ??
+            `Market ${market.marketId}`;
           const closesAt = market.closeTime
             ? new Date(typeof market.closeTime === "number" ? market.closeTime * 1000 : market.closeTime).toISOString()
             : null;
@@ -349,8 +358,15 @@ export async function scanAndRankMarkets(
             ? (new Date(typeof market.closeTime === "number" ? market.closeTime * 1000 : market.closeTime).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
             : Infinity;
           if (daysUntilClose > AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION) continue;
+          if (daysUntilClose < 0) continue; // skip markets that already closed
 
-          const question = market.metadata?.rulesPrimary?.slice(0, 200) ?? market.metadata?.title ?? event.metadata?.title ?? "Unknown market";
+          const question =
+            (market.metadata as any)?.question?.slice(0, 200) ??
+            market.metadata?.rulesPrimary?.slice(0, 200) ??
+            market.metadata?.title ??
+            event.metadata?.title ??
+            (event.metadata as any)?.subtitle ??
+            `Market ${market.marketId}`;
           const closesAt = market.closeTime
             ? new Date(typeof market.closeTime === "number" ? market.closeTime * 1000 : market.closeTime).toISOString()
             : null;
@@ -441,8 +457,16 @@ export async function executeBuy(
     return { success: false, error: "Invalid amount" };
   }
 
-  // Devnet safety guard — log decision but don't execute
-  if (!EXECUTE_TRADES) {
+  // Determine trading mode for this job — paper trades flow through regardless of EXECUTE_TRADES.
+  const [jobMode] = await db
+    .select({ tradingMode: schema.jobs.tradingMode })
+    .from(schema.jobs)
+    .where(eq(schema.jobs.id, jobId))
+    .limit(1);
+  const tradingMode = (jobMode?.tradingMode as "paper" | "live") ?? "paper";
+
+  // Live trading still requires EXECUTE_TRADES; paper traction simulates against real Jupiter pricing.
+  if (tradingMode === "live" && !EXECUTE_TRADES) {
     const feedEvent = buildFeedEvent({
       agentId,
       agentName,
@@ -458,10 +482,10 @@ export async function executeBuy(
         reasoning_snippet: decision.reasoning.slice(0, 200),
         confidence: decision.confidence,
       },
-      displayMessage: `${agentName} decided: BUY ${decision.isYes ? "YES" : "NO"}, $${amount} USDC on "${decision.marketQuestion ?? market.question}" (devnet — not executed)`,
+      displayMessage: `${agentName} decided: BUY ${decision.isYes ? "YES" : "NO"}, $${amount} USDC on "${decision.marketQuestion ?? market.question}" (live disabled — not executed)`,
     });
     await publishFeedEvent(feedEvent);
-    return { success: false, error: "Trade execution disabled (devnet mode)" };
+    return { success: false, error: "Live trading disabled — set DEPLOY_PHASE=production and EXECUTE_TRADES=true" };
   }
 
   // Execute via trade service (includes risk checks)
@@ -507,6 +531,20 @@ export async function executeBuy(
       displayMessage: `${agentName} placed order: BUY ${decision.isYes ? "YES" : "NO"}, $${amount} USDC on "${decision.marketQuestion ?? market.question}"`,
     });
     await publishFeedEvent(feedEvent);
+
+    // Resolve paper bets for this agent+market
+    if (decision.marketId) {
+      const reasoningEventId = getPendingReasoningEvent(agentId, decision.marketId);
+      if (reasoningEventId) {
+        try {
+          const resolution = await resolveBetsForEvent(reasoningEventId, "buy");
+          console.log(`[PaperBets] Resolved ${resolution.winners} winners, ${resolution.losers} losers for event ${reasoningEventId}`);
+        } catch (err) {
+          console.error("[PaperBets] Failed to resolve bets:", err);
+        }
+        clearPendingReasoningEvent(agentId, decision.marketId);
+      }
+    }
 
     return { success: true, positionId: result.position.id };
   }
@@ -721,4 +759,9 @@ export async function publishReasoningEvent(
     displayMessage: `${agentName} decided: ${decision.action.toUpperCase()} ${decision.isYes ? "YES" : "NO"} on "${decision.marketQuestion ?? "N/A"}" | Confidence: ${(decision.confidence * 100).toFixed(0)}%`,
   });
   await publishFeedEvent(feedEvent);
+
+  // Cache this reasoning event for paper betting resolution
+  if (decision.marketId) {
+    setPendingReasoningEvent(agentId, decision.marketId, feedEvent.event_id);
+  }
 }

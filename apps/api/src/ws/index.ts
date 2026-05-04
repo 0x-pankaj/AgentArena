@@ -8,8 +8,9 @@ const FEED_CATEGORY_PREFIX = "feed:category:";
 
 interface WsClient {
   ws: WebSocket;
-  subscriptions: Set<string>; // channels: "feed", "leaderboard", "positions", "prices", "feed:agent:{id}", "feed:category:{cat}"
+  subscriptions: Set<string>;
   id: string;
+  lastActivity: number;
 }
 
 const clients = new Map<string, WsClient>();
@@ -17,6 +18,7 @@ const subscribedChannels = new Set<string>();
 const clientPongs = new Map<string, number>();
 let wss: WebSocketServer | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+let viewerCountInterval: ReturnType<typeof setInterval> | null = null;
 
 // --- Start WebSocket server ---
 
@@ -32,8 +34,9 @@ export function startWebSocketServer(port: number = 3002): WebSocketServer {
     const clientId = crypto.randomUUID();
     const client: WsClient = {
       ws,
-      subscriptions: new Set(["feed"]), // subscribe to feed by default
+      subscriptions: new Set(["feed"]),
       id: clientId,
+      lastActivity: Date.now(),
     };
     clients.set(clientId, client);
 
@@ -48,15 +51,17 @@ export function startWebSocketServer(port: number = 3002): WebSocketServer {
       })
     );
 
-    // Handle messages (subscribe/unsubscribe)
+    // Handle messages (subscribe/unsubscribe/heartbeat)
     ws.on("message", (raw) => {
       try {
         const msg = JSON.parse(raw.toString()) as {
-          action: "subscribe" | "unsubscribe";
-          channel: string;
+          action: "subscribe" | "unsubscribe" | "heartbeat";
+          channel?: string;
         };
 
-        if (msg.action === "subscribe") {
+        client.lastActivity = Date.now();
+
+        if (msg.action === "subscribe" && msg.channel) {
           client.subscriptions.add(msg.channel);
           ensureRedisSubscription(msg.channel);
           ws.send(
@@ -65,7 +70,9 @@ export function startWebSocketServer(port: number = 3002): WebSocketServer {
               channel: msg.channel,
             })
           );
-        } else if (msg.action === "unsubscribe") {
+          // Broadcast updated viewer counts
+          broadcastViewerCounts();
+        } else if (msg.action === "unsubscribe" && msg.channel) {
           client.subscriptions.delete(msg.channel);
           ws.send(
             JSON.stringify({
@@ -74,6 +81,9 @@ export function startWebSocketServer(port: number = 3002): WebSocketServer {
             })
           );
           pruneUnusedRedisSubscriptions();
+          broadcastViewerCounts();
+        } else if (msg.action === "heartbeat") {
+          ws.send(JSON.stringify({ type: "pong" }));
         }
       } catch {
         // ignore invalid messages
@@ -88,6 +98,7 @@ export function startWebSocketServer(port: number = 3002): WebSocketServer {
       clients.delete(clientId);
       clientPongs.delete(clientId);
       pruneUnusedRedisSubscriptions();
+      broadcastViewerCounts();
       console.log(
         `[WS] Client disconnected: ${clientId} (total: ${clients.size})`
       );
@@ -96,6 +107,7 @@ export function startWebSocketServer(port: number = 3002): WebSocketServer {
     ws.on("error", () => {
       clients.delete(clientId);
       clientPongs.delete(clientId);
+      broadcastViewerCounts();
     });
   });
 
@@ -124,8 +136,53 @@ export function startWebSocketServer(port: number = 3002): WebSocketServer {
     pruneUnusedRedisSubscriptions();
   }, 30_000);
 
+  // Periodically broadcast viewer counts (every 10s)
+  viewerCountInterval = setInterval(() => {
+    broadcastViewerCounts();
+  }, 10_000);
+
   console.log(`[WS] WebSocket server started on port ${port}`);
   return wss;
+}
+
+// --- Viewer count tracking ---
+
+function getViewerCounts(): Record<string, number> {
+  const counts: Record<string, number> = {};
+
+  for (const client of clients.values()) {
+    for (const channel of client.subscriptions) {
+      counts[channel] = (counts[channel] ?? 0) + 1;
+    }
+  }
+
+  return counts;
+}
+
+function broadcastViewerCounts(): void {
+  const counts = getViewerCounts();
+  const payload = JSON.stringify({
+    type: "viewer_count",
+    data: counts,
+  });
+
+  for (const client of clients.values()) {
+    if (client.ws.readyState === WebSocket.OPEN) {
+      try {
+        client.ws.send(payload);
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+export function getChannelViewerCount(channel: string): number {
+  let count = 0;
+  for (const client of clients.values()) {
+    if (client.subscriptions.has(channel)) count++;
+  }
+  return count;
 }
 
 // --- Ensure Redis subscription for a channel ---
@@ -183,8 +240,18 @@ function subscribeToRedis(): void {
 
   redisSub.on("message", (channel, message) => {
     if (channel === FEED_CHANNEL) {
+      let parsed: any;
+      try { parsed = JSON.parse(message); } catch { return; }
+
+      // Handle reaction_update broadcast from API
+      if (parsed.type === "reaction_update") {
+        broadcast("feed", parsed);
+        return;
+      }
+
+      // Regular feed event
       let data: FeedEvent;
-      try { data = JSON.parse(message) as FeedEvent; } catch { return; }
+      try { data = parsed as FeedEvent; } catch { return; }
       broadcast("feed", {
         type: "feed_event",
         data,
@@ -262,6 +329,10 @@ export async function stopWebSocketServer(): Promise<void> {
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval);
     heartbeatInterval = null;
+  }
+  if (viewerCountInterval) {
+    clearInterval(viewerCountInterval);
+    viewerCountInterval = null;
   }
   if (wss) {
     for (const client of clients.values()) {

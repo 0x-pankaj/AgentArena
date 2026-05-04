@@ -267,10 +267,12 @@ function mapJupiterMarketToDb(
 
   // Question comes from event title + market rules
   const question =
+    (market.metadata as any)?.question?.slice(0, 200) ??
     market.metadata?.rulesPrimary?.slice(0, 200) ??
     market.metadata?.title ??
     market.eventTitle ??
-    "Unknown market";
+    (market as any).eventSubtitle ??
+    `Market ${market.marketId}`;
 
   const closeTime = market.closeTime
     ? typeof market.closeTime === "number"

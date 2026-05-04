@@ -7,7 +7,7 @@
 import { eq, and, desc } from "drizzle-orm";
 import { db, schema } from "../db";
 import { redis } from "../utils/redis";
-import { REDIS_KEYS } from "@agent-arena/shared";
+import { REDIS_KEYS, IS_SIMULATED } from "@agent-arena/shared";
 import { submitAtomFeedback, AtomTag } from "../utils/atom-reputation";
 import { runAgentTick } from "../agents/registry";
 import type { AgentRuntimeContext } from "../ai/types";
@@ -52,7 +52,19 @@ export function shouldTriggerConsensus(
   confidence: number,
   agentCategory: string
 ): boolean {
-  // Always trigger for high-confidence cross-domain markets
+  // Paper-traction: fire consensus on a stable subset of trades so the swarm
+  // graph populates for the demo. We bucket by market question hash so the
+  // same market always triggers (or doesn't) consistently across ticks.
+  if (IS_SIMULATED) {
+    if (confidence < 40) return false;
+    let hash = 0;
+    for (let i = 0; i < marketQuestion.length; i++) {
+      hash = (hash * 31 + marketQuestion.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash) % 3 === 0; // ~33% of markets
+  }
+
+  // Production: only trigger for high-confidence cross-domain markets
   if (confidence < 70) return false;
 
   const crossDomainKeywords: Record<string, string[]> = {
@@ -99,10 +111,13 @@ export async function collectSwarmVotes(
       const agent = agents[0];
       const registryId = CATEGORY_TO_REGISTRY_ID[category] ?? CATEGORY_TO_REGISTRY_ID.general;
 
-      // Run a targeted tick on this agent
+      // Run a targeted tick on this agent. We reuse the initiating job's UUID
+      // so DB queries (positions, feed events) keyed on jobId stay valid; the
+      // peer tick is bounded to read-only analysis via consensusTarget so it
+      // won't write trades against the initiating job.
       const ephemeralCtx: AgentRuntimeContext = {
         agentId: agent.id,
-        jobId: `consensus-${initiatingCtx.jobId}-${Date.now()}`,
+        jobId: initiatingCtx.jobId,
         agentWalletId: initiatingCtx.agentWalletId,
         agentWalletAddress: initiatingCtx.agentWalletAddress,
         ownerPubkey: initiatingCtx.ownerPubkey,

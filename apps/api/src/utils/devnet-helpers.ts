@@ -10,7 +10,7 @@ import { SOLANA_RPC_URL, SOLANA_COMMITMENT, IS_DEVNET } from "@agent-arena/share
 // Devnet Helpers — Backend payer keypair, airdrops, balance checks
 // ═══════════════════════════════════════════════════════════════
 
-const connection = new Connection(
+export const connection = new Connection(
   SOLANA_RPC_URL || "https://api.devnet.solana.com",
   SOLANA_COMMITMENT
 );

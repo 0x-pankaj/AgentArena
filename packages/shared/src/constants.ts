@@ -56,6 +56,7 @@ export const TEST_WALLET_BALANCE_SOL = Number(process.env.TEST_WALLET_BALANCE_SO
 // Emergency kill switch: if "true", all agent loops pause immediately
 export const EMERGENCY_STOP = process.env.EMERGENCY_STOP === "true";
 
+// Paper-traction phase loosens gates so agents trade visibly. Production keeps strict bars.
 export const AGENT_LIMITS = {
   MAX_PORTFOLIO_PERCENT_PER_MARKET: 0.1,
   MAX_CATEGORY_EXPOSURE: 0.25,
@@ -63,9 +64,10 @@ export const AGENT_LIMITS = {
   MAX_CONCURRENT_POSITIONS: 3,
   COOLDOWN_MINUTES: 5,
   DAILY_LOSS_LIMIT_PERCENT: 0.05,
-  MIN_MARKET_VOLUME: 10_000,
-  MAX_MARKET_DAYS_TO_RESOLUTION: 7,
-  MIN_CONFIDENCE: 0.7,
+  MIN_MARKET_VOLUME: IS_SIMULATED ? 2_000 : 10_000,
+  MAX_MARKET_DAYS_TO_RESOLUTION: IS_SIMULATED ? 30 : 7,
+  MIN_CONFIDENCE: IS_SIMULATED ? 0.4 : 0.7,
+  MIN_EDGE: IS_SIMULATED ? 0.005 : 0.05,
   HUMAN_APPROVAL_THRESHOLD: 500,
 } as const;
 

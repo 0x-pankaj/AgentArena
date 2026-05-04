@@ -130,7 +130,7 @@ RULES:
 - Only trade markets settling within ${profile.maxMarketDays} days
 - Only trade markets with >$${profile.minVolume.toLocaleString()} volume
 - If uncertain, choose "hold"
-- Only trade when edge (your probability - market price) exceeds 5% after fees (~2%)
+- Only trade when edge (your probability - market price) exceeds ${(AGENT_LIMITS.MIN_EDGE * 100).toFixed(1)}% after fees (~2%)
 ${EXECUTE_TRADES ? "" : "- NOTE: Running in decision-only mode (devnet). Log decisions but flag as analysis only."}
 
 EDGE DETECTION:
@@ -359,6 +359,11 @@ export async function runGeneralAgentTick(
     }
   }
 
+  // Self-heal: if a previous tick wedged the FSM, reset it.
+  fsm.recoverIfStuck("SCANNING", 10 * 60 * 1000);
+  fsm.recoverIfStuck("ANALYZING", 15 * 60 * 1000);
+  fsm.recoverIfStuck("EXECUTING", 5 * 60 * 1000);
+
   // Always force scan on first tick after resume (markets cache may be stale/missing)
   const marketsCacheKey = `${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`;
   const marketsCacheExists = await redis.exists(marketsCacheKey);
@@ -464,7 +469,7 @@ export async function runGeneralAgentTick(
       // ===== SWARM HOOKS: Delegation + Consensus =====
       const swarmResult = await runSwarmHooks(ctx, ctx.agentId, "general", decision);
       if (!swarmResult.proceed) {
-        fsm.transition("no_edge");
+        fsm.abortToScanning();
         await saveState();
         return {
           state: fsm.getState() as any,
@@ -477,14 +482,18 @@ export async function runGeneralAgentTick(
       decision = swarmResult.decision ?? decision;
 
       if (decision.action === "buy" && decision.marketId) {
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", marketId: decision.marketId, market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
         const buyResult = await executeBuy(
-          decision, AGENT_ID, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "general"
+          decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "general"
         );
         if (buyResult.success) {
           fsm.transition("order_placed");
           await saveState();
           return { state: fsm.getState() as any, action: "executed" as any, detail: `Bought on "${decision.marketQuestion}"`, decision, tokensUsed: pipelineResult.tokensUsed };
         }
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ❌ Order failed — ${buyResult.error ?? "unknown"}`, { pipeline_stage: "execution_failed", error: buyResult.error ?? "unknown" }, "critical");
+        try { fsm.transition("order_failed"); } catch {}
+        await saveState();
       }
 
       return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, decision: pipelineResult.decision, tokensUsed: pipelineResult.tokensUsed };
@@ -578,7 +587,7 @@ export async function runGeneralAgentTick(
         }
       }
 
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", marketId: decision.marketId, market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
 
       const result = await executeBuy(decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "general");
       if (result.success) {

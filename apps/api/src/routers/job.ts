@@ -1,6 +1,6 @@
 import { router, protectedProcedure } from "../utils/trpc";
 import { z } from "zod";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { db, schema } from "../db";
 import { hireAgent, fundJob, cancelJob, approveJob, pauseAgentLoop, resumeJob } from "../agents/supervisor";
 import { getEffectiveBalance } from "../utils/balance";
@@ -151,17 +151,47 @@ export const jobRouter = router({
       if (!job) return null;
 
       // Get positions for this job
-      const positions = await db
+      const positionsRaw = await db
         .select()
         .from(schema.positions)
         .where(eq(schema.positions.jobId, input.id));
 
       // Get trades for this job
-      const trades = await db
+      const tradesRaw = await db
         .select()
         .from(schema.trades)
         .where(eq(schema.trades.jobId, input.id))
         .orderBy(desc(schema.trades.executedAt));
+
+      // Replace placeholder market questions ("Market POLY-…") with whatever
+      // the latest market_data row has, so the UI can show real questions
+      // once the scanner picks them up — without rewriting historical rows.
+      const marketIds = Array.from(
+        new Set([
+          ...positionsRaw.map((p) => p.marketId),
+          ...tradesRaw.map((t) => t.marketId),
+        ]),
+      );
+      const marketRows = marketIds.length
+        ? await db
+            .select({ marketId: schema.marketData.marketId, question: schema.marketData.question })
+            .from(schema.marketData)
+            .where(inArray(schema.marketData.marketId, marketIds))
+        : [];
+      const marketQuestionById = new Map(
+        marketRows
+          .filter((m) => m.question && !m.question.startsWith("Market "))
+          .map((m) => [m.marketId, m.question] as const),
+      );
+      const overrideQuestion = (row: { marketId: string; marketQuestion: string | null }) => {
+        const better = marketQuestionById.get(row.marketId);
+        if (better && (!row.marketQuestion || row.marketQuestion.startsWith("Market "))) {
+          return { ...row, marketQuestion: better };
+        }
+        return row;
+      };
+      const positions = positionsRaw.map(overrideQuestion);
+      const trades = tradesRaw.map(overrideQuestion);
 
       // Get paper balance if applicable
       let paperBalance = null;

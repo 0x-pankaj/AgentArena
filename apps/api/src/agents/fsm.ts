@@ -160,6 +160,31 @@ export class AgentFSM {
     this.context.consecutiveFailures = 0;
     this.context.paused = false;
     this.context.pauseReason = null;
+    this.context.lastTransition = Date.now();
+  }
+
+  // Best-effort transition. If `event` isn't valid from the current state,
+  // try the next valid transition that lands in the same target — otherwise
+  // reset to IDLE. Used when a guard (swarm rejection, scenario gate) needs
+  // to abort but doesn't know which state the pipeline left the FSM in.
+  abortToScanning(): void {
+    if (this.state === "ANALYZING") this.transition("no_edge");
+    else if (this.state === "EXECUTING") this.transition("order_failed");
+    else if (this.state === "SCANNING") return; // already where we want
+    else this.reset(); // IDLE / MONITORING / CLOSING / SETTLING
+  }
+
+  // Force-recover from a wedged non-terminal state. If the FSM has been sitting
+  // in `state` for longer than `staleMs`, reset to IDLE so the next tick
+  // re-runs the SCANNING -> ANALYZING flow. Returns true if a reset happened.
+  recoverIfStuck(state: AgentState, staleMs: number = 10 * 60 * 1000): boolean {
+    if (this.state !== state) return false;
+    if (this.timeInState() < staleMs) return false;
+    console.warn(
+      `[FSM ${this.context.agentId}] Stuck in ${state} for ${Math.round(this.timeInState() / 1000)}s — auto-resetting to IDLE`
+    );
+    this.reset();
+    return true;
   }
 
   // Restore state from persisted snapshot (e.g., Redis/DB)
