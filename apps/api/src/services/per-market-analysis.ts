@@ -738,7 +738,11 @@ export async function analyzeMarketsInBatch(
   agentId: string,
   agentName: string,
   categoryArg: string,
-  maxPerBatch: number = 2,
+  // 4 markets per LLM call: with ~6 fresh markets/tick this is 2 calls
+  // instead of 3 — same prompt + portfolio + signals context amortized
+  // across more output. findAnalysisForMarket + buildFallbackReasoning
+  // make the parser robust to the occasional misaligned JSON entry.
+  maxPerBatch: number = 4,
 ): Promise<PerMarketAnalysisResult[]> {
   const startTime = Date.now();
   const results: PerMarketAnalysisResult[] = [];
