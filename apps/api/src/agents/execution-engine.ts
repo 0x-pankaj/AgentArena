@@ -261,13 +261,20 @@ export async function scanMarketsWithResearch(
           if (daysUntilClose > AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION) continue;
           if (daysUntilClose < 0) continue; // skip markets that already closed
 
+          // Drop markets with no readable question — Jupiter occasionally
+          // returns sparse entries with no metadata.title / question /
+          // rulesPrimary / event title. Trading those (or even ranking them)
+          // is pointless because the LLM has nothing to reason about and the
+          // UI shows the bare market ID. Rather than persist a "Market POLY-…"
+          // placeholder onto the position row, skip the market entirely.
           const question =
             (market.metadata as any)?.question?.slice(0, 200) ??
             market.metadata?.rulesPrimary?.slice(0, 200) ??
             market.metadata?.title ??
             event.metadata?.title ??
             (event.metadata as any)?.subtitle ??
-            `Market ${market.marketId}`;
+            null;
+          if (!question) continue;
           const closesAt = market.closeTime
             ? new Date(typeof market.closeTime === "number" ? market.closeTime * 1000 : market.closeTime).toISOString()
             : null;
@@ -422,13 +429,17 @@ export async function scanAndRankMarkets(
           if (daysUntilClose > AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION) continue;
           if (daysUntilClose < 0) continue; // skip markets that already closed
 
+          // Same drop-on-missing-question rule as scanMarkets above: avoid
+          // pushing "Market POLY-…" placeholders downstream into research,
+          // analysis, and (critically) onto persisted position rows.
           const question =
             (market.metadata as any)?.question?.slice(0, 200) ??
             market.metadata?.rulesPrimary?.slice(0, 200) ??
             market.metadata?.title ??
             event.metadata?.title ??
             (event.metadata as any)?.subtitle ??
-            `Market ${market.marketId}`;
+            null;
+          if (!question) continue;
           const closesAt = market.closeTime
             ? new Date(typeof market.closeTime === "number" ? market.closeTime * 1000 : market.closeTime).toISOString()
             : null;

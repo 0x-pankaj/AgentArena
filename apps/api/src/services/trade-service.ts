@@ -96,7 +96,7 @@ export async function listPositions(params: {
     .limit(limit)
     .offset(offset);
 
-  return { positions, total: positions.length };
+  return { positions: positions.map(patchPositionDisplay), total: positions.length };
 }
 
 // --- Get active positions ---
@@ -111,7 +111,33 @@ export async function getActivePositions(
       and(eq(schema.positions.jobId, jobId), eq(schema.positions.status, "open"))
     );
 
-  return { positions };
+  return { positions: positions.map(patchPositionDisplay) };
+}
+
+// Display-time patch: legacy rows may carry a placeholder marketQuestion
+// (`Market POLY-…`) from before the scan-time drop landed. Show something
+// readable instead of the raw ID.
+function patchPositionDisplay<T extends { marketQuestion: string | null }>(p: T): T {
+  if (!isPlaceholderMarketQuestion(p.marketQuestion)) return p;
+  return { ...p, marketQuestion: displayMarketQuestion(p.marketQuestion) };
+}
+
+// Detect the `Market <id>` placeholder we used to fall back to when Jupiter
+// returned a market with no readable question/title. Any string matching this
+// is a sign the upstream scan should have dropped the market — keep it as a
+// guard so a regression can't silently land a placeholder onto a position row.
+const PLACEHOLDER_QUESTION_RE = /^Market\s+[A-Z0-9_-]+$/i;
+
+export function isPlaceholderMarketQuestion(question: string | null | undefined): boolean {
+  const q = (question ?? "").trim();
+  return q.length === 0 || PLACEHOLDER_QUESTION_RE.test(q);
+}
+
+// Display-time fallback for legacy positions that already carry the placeholder.
+// Cheap & deterministic — never goes back to Jupiter from a hot read path.
+export function displayMarketQuestion(question: string | null | undefined): string {
+  if (!isPlaceholderMarketQuestion(question)) return (question ?? "").trim();
+  return "Untitled prediction market";
 }
 
 // Last-line guard: replace any leaked placeholder/error reasoning that would
@@ -153,6 +179,13 @@ export async function executeBuyOrder(params: {
   position?: typeof schema.positions.$inferSelect;
   error?: string;
 }> {
+  // 0. Refuse trades on placeholder-titled markets. With the scan-time drop
+  // in place this should never fire — but defense-in-depth keeps a future
+  // regression from persisting "Market POLY-…" onto a position row.
+  if (isPlaceholderMarketQuestion(params.marketQuestion)) {
+    return { success: false, error: `Market has no readable title (got "${params.marketQuestion}") — refusing to trade` };
+  }
+
   // 1. Run risk checks
   const riskResult = runPreTradeChecks(
     params.amount,
