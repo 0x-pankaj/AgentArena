@@ -493,6 +493,22 @@ export function useReputationDistribution() {
   });
 }
 
+export function useEdgeDetails(
+  fromAgentId: string | undefined,
+  toAgentId: string | undefined,
+  days: number = 30,
+) {
+  return useQuery({
+    queryKey: ['swarm', 'edge', fromAgentId, toAgentId, days],
+    queryFn: () => {
+      const input = JSON.stringify({ fromAgentId, toAgentId, days });
+      return fetchFromAPI(`swarmGraph.getEdgeDetails?input=${encodeURIComponent(input)}`);
+    },
+    enabled: !!fromAgentId && !!toAgentId,
+    staleTime: 30_000,
+  });
+}
+
 export function useAgentSwarmProfile(agentId: string) {
   return useQuery({
     queryKey: ['swarm', 'profile', agentId],

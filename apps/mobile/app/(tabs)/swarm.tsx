@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   Dimensions,
+  Pressable,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +19,7 @@ import {
   useReputationDistribution,
   useSwarmLeaderboard,
   useSwarmGraph,
+  useEdgeDetails,
 } from '../../src/lib/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -31,6 +34,8 @@ export default function SwarmScreen() {
   const isLoading = statsLoading || densityLoading || repLoading || lbLoading || graphLoading;
 
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -68,7 +73,17 @@ export default function SwarmScreen() {
         {!isLoading && (
           <View style={styles.graphSection}>
             {graph && graph.nodes && graph.nodes.length > 0 ? (
-              <SwarmGraphView nodes={graph.nodes} edges={graph.edges} />
+              <>
+                <SwarmGraphView
+                  nodes={graph.nodes}
+                  edges={graph.edges}
+                  onNodeTap={setSelectedNode}
+                  onEdgeTap={setSelectedEdge}
+                />
+                <Text style={styles.graphHint}>
+                  Tap a node or edge for details
+                </Text>
+              </>
             ) : (
               <View style={styles.graphEmpty}>
                 <Ionicons name="git-network-outline" size={36} color={Colors.textMuted} />
@@ -203,6 +218,22 @@ export default function SwarmScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {selectedNode && (
+        <NodeDetailsModal
+          node={selectedNode}
+          allNodes={graph?.nodes ?? []}
+          edges={graph?.edges ?? []}
+          onClose={() => setSelectedNode(null)}
+        />
+      )}
+      {selectedEdge && (
+        <EdgeDetailsModal
+          edge={selectedEdge}
+          nodes={graph?.nodes ?? []}
+          onClose={() => setSelectedEdge(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -246,6 +277,12 @@ interface GraphNode {
   category: string;
   reputationScore?: number;
   trustTier?: string;
+  degree?: {
+    out: Record<string, number>;
+    in: Record<string, number>;
+    totalOut: number;
+    totalIn: number;
+  };
 }
 
 interface GraphEdge {
@@ -253,9 +290,27 @@ interface GraphEdge {
   target: string;
   weight: number;
   types: string[];
+  byType?: Record<string, number>;
+  lastInteractionAt?: string | null;
+  recentMarkets?: Array<{
+    marketId: string | null;
+    marketQuestion: string | null;
+    type: string;
+    at: string | null;
+  }>;
 }
 
-function SwarmGraphView({ nodes, edges }: { nodes: GraphNode[]; edges: GraphEdge[] }) {
+function SwarmGraphView({
+  nodes,
+  edges,
+  onNodeTap,
+  onEdgeTap,
+}: {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  onNodeTap: (n: GraphNode) => void;
+  onEdgeTap: (e: GraphEdge) => void;
+}) {
   const width = SCREEN_WIDTH - Spacing.lg * 2;
   const radius = Math.min(width, GRAPH_HEIGHT) / 2 - GRAPH_PADDING - 18;
   const cx = width / 2;
@@ -273,10 +328,15 @@ function SwarmGraphView({ nodes, edges }: { nodes: GraphNode[]; edges: GraphEdge
   const posById = new Map(positioned.map((p) => [p.id, p]));
 
   const maxWeight = edges.reduce((m, e) => Math.max(m, e.weight), 1);
+  // Scale node radius with total degree so heavy hubs read as bigger.
+  const maxDegree = nodes.reduce(
+    (m, n) => Math.max(m, (n.degree?.totalOut ?? 0) + (n.degree?.totalIn ?? 0)),
+    1,
+  );
 
   return (
     <View style={[styles.graphContainer, { width, height: GRAPH_HEIGHT }]}>
-      {/* Edges */}
+      {/* Edges — wrapped in Pressable with a tall hit area */}
       {edges.map((e, i) => {
         const a = posById.get(e.source);
         const b = posById.get(e.target);
@@ -285,47 +345,101 @@ function SwarmGraphView({ nodes, edges }: { nodes: GraphNode[]; edges: GraphEdge
         const dy = b.y - a.y;
         const length = Math.sqrt(dx * dx + dy * dy);
         const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-        const opacity = 0.25 + 0.6 * (e.weight / maxWeight);
+        const opacity = 0.35 + 0.55 * (e.weight / maxWeight);
         const isConsensus = e.types.includes('consensus');
         const isDelegation = e.types.includes('delegation');
         const color = isConsensus ? Colors.success : isDelegation ? Colors.accent : Colors.textMuted;
+        // Edge thickness scales with weight (1–3 px). Hit area stays ~14 px.
+        const thickness = Math.min(3, 1 + Math.floor((e.weight / maxWeight) * 2));
+        const HIT = 14;
         return (
-          <View
+          <Pressable
             key={`${e.source}-${e.target}-${i}`}
+            onPress={() => onEdgeTap(e)}
             style={{
               position: 'absolute',
               left: a.x,
-              top: a.y - 0.5,
+              top: a.y - HIT / 2,
               width: length,
-              height: 1,
-              backgroundColor: color,
-              opacity,
+              height: HIT,
               transform: [{ translateX: 0 }, { rotate: `${angle}deg` }],
               transformOrigin: '0 50%',
+              justifyContent: 'center',
             }}
-          />
+          >
+            <View
+              style={{
+                width: '100%',
+                height: thickness,
+                backgroundColor: color,
+                opacity,
+                borderRadius: thickness / 2,
+              }}
+            />
+            {/* Direction arrow at midpoint, oriented along the edge. */}
+            <View
+              style={{
+                position: 'absolute',
+                left: length / 2 - 4,
+                top: HIT / 2 - 4,
+                width: 0,
+                height: 0,
+                borderTopWidth: 4,
+                borderBottomWidth: 4,
+                borderLeftWidth: 6,
+                borderTopColor: 'transparent',
+                borderBottomColor: 'transparent',
+                borderLeftColor: color,
+                opacity,
+              }}
+            />
+            {e.weight > 1 && (
+              <View
+                style={{
+                  position: 'absolute',
+                  left: length / 2 - 10,
+                  top: -2,
+                  backgroundColor: Colors.background,
+                  paddingHorizontal: 4,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: color,
+                  // Counter-rotate so the label stays upright relative to screen.
+                  transform: [{ rotate: `${-angle}deg` }],
+                }}
+              >
+                <Text style={{ fontSize: 9, color, fontWeight: '700' }}>{e.weight}</Text>
+              </View>
+            )}
+          </Pressable>
         );
       })}
 
-      {/* Nodes */}
+      {/* Nodes — pressable, scaled by total degree */}
       {positioned.map((n) => {
         const color = CATEGORY_COLOR[n.category] ?? Colors.textSecondary;
         const initials = (n.name ?? '?').slice(0, 2).toUpperCase();
+        const total = (n.degree?.totalOut ?? 0) + (n.degree?.totalIn ?? 0);
+        const size = 30 + Math.round(14 * (total / maxDegree));
         return (
-          <View
+          <Pressable
             key={n.id}
+            onPress={() => onNodeTap(n)}
             style={[
               styles.graphNode,
               {
-                left: n.x - 18,
-                top: n.y - 18,
+                left: n.x - size / 2,
+                top: n.y - size / 2,
+                width: size,
+                height: size,
+                borderRadius: size / 2,
                 borderColor: color,
                 backgroundColor: color + '22',
               },
             ]}
           >
             <Text style={[styles.graphNodeText, { color }]}>{initials}</Text>
-          </View>
+          </Pressable>
         );
       })}
 
@@ -335,6 +449,195 @@ function SwarmGraphView({ nodes, edges }: { nodes: GraphNode[]; edges: GraphEdge
         <LegendDot color={Colors.success} label="consensus" />
         <LegendDot color={Colors.textMuted} label="rating" />
       </View>
+    </View>
+  );
+}
+
+// --- Tap-node modal: in/out delegation breakdown + top peers ---
+
+function NodeDetailsModal({
+  node,
+  allNodes,
+  edges,
+  onClose,
+}: {
+  node: GraphNode | null;
+  allNodes: GraphNode[];
+  edges: GraphEdge[];
+  onClose: () => void;
+}) {
+  const stats = useMemo(() => {
+    if (!node) return null;
+    const nameById = new Map(allNodes.map((n) => [n.id, n.name]));
+    const outgoing = edges
+      .filter((e) => e.source === node.id)
+      .map((e) => ({ peer: nameById.get(e.target) ?? e.target, ...e }))
+      .sort((a, b) => b.weight - a.weight);
+    const incoming = edges
+      .filter((e) => e.target === node.id)
+      .map((e) => ({ peer: nameById.get(e.source) ?? e.source, ...e }))
+      .sort((a, b) => b.weight - a.weight);
+    return { outgoing, incoming };
+  }, [node, allNodes, edges]);
+
+  if (!node || !stats) return null;
+  const d = node.degree ?? { out: {}, in: {}, totalOut: 0, totalIn: 0 };
+
+  return (
+    <Modal
+      visible
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView style={styles.modalContainer} edges={['top']}>
+        <ScrollView contentContainerStyle={{ padding: Spacing.lg }}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>{node.name}</Text>
+              <Text style={styles.modalSubtitle}>{node.category} agent</Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={10}>
+              <Ionicons name="close" size={24} color={Colors.textPrimary} />
+            </Pressable>
+          </View>
+
+          <View style={styles.modalGrid}>
+            <ModalStat label="Sent" value={d.totalOut} color={Colors.accent} />
+            <ModalStat label="Received" value={d.totalIn} color={Colors.success} />
+            <ModalStat
+              label="Delegations out"
+              value={(d.out.delegation ?? 0) as number}
+              color={Colors.accent}
+            />
+            <ModalStat
+              label="Delegations in"
+              value={(d.in.delegation ?? 0) as number}
+              color={Colors.success}
+            />
+          </View>
+
+          <Text style={styles.modalSectionTitle}>Top peers (sent to)</Text>
+          {stats.outgoing.length === 0 ? (
+            <Text style={styles.modalEmpty}>No outgoing interactions yet.</Text>
+          ) : (
+            stats.outgoing.slice(0, 5).map((p, i) => (
+              <View key={i} style={styles.modalRow}>
+                <Text style={styles.modalRowName}>{p.peer}</Text>
+                <Text style={styles.modalRowMeta}>{p.weight} · {p.types.join(', ')}</Text>
+              </View>
+            ))
+          )}
+
+          <Text style={styles.modalSectionTitle}>Top peers (received from)</Text>
+          {stats.incoming.length === 0 ? (
+            <Text style={styles.modalEmpty}>No incoming interactions yet.</Text>
+          ) : (
+            stats.incoming.slice(0, 5).map((p, i) => (
+              <View key={i} style={styles.modalRow}>
+                <Text style={styles.modalRowName}>{p.peer}</Text>
+                <Text style={styles.modalRowMeta}>{p.weight} · {p.types.join(', ')}</Text>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+// --- Tap-edge modal: per-type counts + recent markets ---
+
+function EdgeDetailsModal({
+  edge,
+  nodes,
+  onClose,
+}: {
+  edge: GraphEdge | null;
+  nodes: GraphNode[];
+  onClose: () => void;
+}) {
+  const fromName = useMemo(
+    () => (edge ? nodes.find((n) => n.id === edge.source)?.name ?? edge.source : ''),
+    [edge, nodes],
+  );
+  const toName = useMemo(
+    () => (edge ? nodes.find((n) => n.id === edge.target)?.name ?? edge.target : ''),
+    [edge, nodes],
+  );
+
+  const { data: details, isLoading } = useEdgeDetails(edge?.source, edge?.target, 30);
+
+  if (!edge) return null;
+
+  return (
+    <Modal
+      visible
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView style={styles.modalContainer} edges={['top']}>
+        <ScrollView contentContainerStyle={{ padding: Spacing.lg }}>
+          <View style={styles.modalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>{fromName} → {toName}</Text>
+              <Text style={styles.modalSubtitle}>
+                {edge.weight} interaction{edge.weight === 1 ? '' : 's'} (last 30d)
+              </Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={10}>
+              <Ionicons name="close" size={24} color={Colors.textPrimary} />
+            </Pressable>
+          </View>
+
+          <View style={styles.modalGrid}>
+            {Object.entries(edge.byType ?? {}).map(([type, count]) => (
+              <ModalStat
+                key={type}
+                label={type}
+                value={count}
+                color={
+                  type === 'delegation' ? Colors.accent
+                  : type === 'consensus' ? Colors.success
+                  : Colors.warning
+                }
+              />
+            ))}
+          </View>
+
+          <Text style={styles.modalSectionTitle}>Recent interactions</Text>
+          {isLoading ? (
+            <ActivityIndicator color={Colors.accent} style={{ marginTop: Spacing.md }} />
+          ) : !details?.interactions || details.interactions.length === 0 ? (
+            <Text style={styles.modalEmpty}>No recent interactions.</Text>
+          ) : (
+            details.interactions.slice(0, 10).map((i: any) => (
+              <View key={i.id} style={styles.modalRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalRowName} numberOfLines={1}>
+                    {i.marketQuestion ?? i.marketId ?? '(no market)'}
+                  </Text>
+                  <Text style={styles.modalRowMeta}>
+                    {i.type} · {i.at ? new Date(i.at).toLocaleString() : ''}
+                    {i.confidence != null ? ` · conf ${i.confidence.toFixed(0)}%` : ''}
+                    {i.onChain ? ' · ⛓ on-chain' : ''}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+function ModalStat({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <View style={[styles.modalStat, { borderLeftColor: color }]}>
+      <Text style={[styles.modalStatValue, { color }]}>{value}</Text>
+      <Text style={styles.modalStatLabel}>{label}</Text>
     </View>
   );
 }
@@ -395,12 +698,102 @@ const styles = StyleSheet.create({
   },
   graphNode: {
     position: 'absolute',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
     borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  graphHint: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: Spacing.sm,
+    fontStyle: 'italic',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: Spacing.lg,
+  },
+  modalTitle: {
+    fontFamily: Fonts.heading,
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  modalSubtitle: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    textTransform: 'capitalize',
+  },
+  modalGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  modalStat: {
+    flexBasis: '47%',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    borderLeftWidth: 3,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modalStatValue: {
+    fontFamily: Fonts.body,
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  modalStatLabel: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    textTransform: 'capitalize',
+  },
+  modalSectionTitle: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  modalEmpty: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    color: Colors.textMuted,
+    fontStyle: 'italic',
+    paddingVertical: Spacing.sm,
+  },
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border + '44',
+  },
+  modalRowName: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: Colors.textPrimary,
+    flex: 1,
+  },
+  modalRowMeta: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 2,
   },
   graphNodeText: {
     fontFamily: Fonts.body,

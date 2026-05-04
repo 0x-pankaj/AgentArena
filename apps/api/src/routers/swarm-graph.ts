@@ -86,16 +86,47 @@ export const swarmGraphRouter = router({
             assetAddress: a.assetAddress,
           }));
 
-        // Build edges with weights
-        const edgeMap = new Map<string, { source: string; target: string; weight: number; types: string[] }>();
+        // Build edges with weights, per-type breakdown, last seen, and a
+        // few recent markets — gives the tap-edge UI enough to render
+        // "Sports → Crypto: 5 delegations on these markets …" inline
+        // without a follow-up query for the common case.
+        type EdgeAcc = {
+          source: string;
+          target: string;
+          weight: number;
+          types: string[];
+          byType: Record<string, number>;
+          lastInteractionAt: string | null;
+          recentMarkets: Array<{
+            marketId: string | null;
+            marketQuestion: string | null;
+            type: string;
+            at: string | null;
+          }>;
+        };
+        const edgeMap = new Map<string, EdgeAcc>();
 
         for (const i of interactions) {
           const key = `${i.fromAgentId}-${i.toAgentId}`;
           const existing = edgeMap.get(key);
+          const at = i.createdAt ? new Date(i.createdAt).toISOString() : null;
+          const recent = {
+            marketId: i.marketId ?? null,
+            marketQuestion: i.marketQuestion ?? null,
+            type: i.interactionType,
+            at,
+          };
           if (existing) {
             existing.weight += 1;
+            existing.byType[i.interactionType] = (existing.byType[i.interactionType] ?? 0) + 1;
             if (!existing.types.includes(i.interactionType)) {
               existing.types.push(i.interactionType);
+            }
+            if (!existing.lastInteractionAt || (at && at > existing.lastInteractionAt)) {
+              existing.lastInteractionAt = at;
+            }
+            if (existing.recentMarkets.length < 3 && recent.marketId) {
+              existing.recentMarkets.push(recent);
             }
           } else {
             edgeMap.set(key, {
@@ -103,17 +134,122 @@ export const swarmGraphRouter = router({
               target: i.toAgentId,
               weight: 1,
               types: [i.interactionType],
+              byType: { [i.interactionType]: 1 },
+              lastInteractionAt: at,
+              recentMarkets: recent.marketId ? [recent] : [],
             });
           }
         }
 
+        // Per-node degree: in/out counts split by interaction type. Lets
+        // the tap-node UI show "Sports sent 5 delegations, received 2".
+        type DegreeAcc = {
+          out: Record<string, number>;
+          in: Record<string, number>;
+          totalOut: number;
+          totalIn: number;
+        };
+        const degreeByAgent = new Map<string, DegreeAcc>();
+        const ensureDegree = (id: string): DegreeAcc => {
+          let d = degreeByAgent.get(id);
+          if (!d) {
+            d = { out: {}, in: {}, totalOut: 0, totalIn: 0 };
+            degreeByAgent.set(id, d);
+          }
+          return d;
+        };
+        for (const i of interactions) {
+          const fromD = ensureDegree(i.fromAgentId);
+          const toD = ensureDegree(i.toAgentId);
+          fromD.out[i.interactionType] = (fromD.out[i.interactionType] ?? 0) + 1;
+          fromD.totalOut++;
+          toD.in[i.interactionType] = (toD.in[i.interactionType] ?? 0) + 1;
+          toD.totalIn++;
+        }
+
+        const nodesWithDegree = nodes.map((n) => ({
+          ...n,
+          degree: degreeByAgent.get(n.id) ?? { out: {}, in: {}, totalOut: 0, totalIn: 0 },
+        }));
+
         return {
-          nodes,
+          nodes: nodesWithDegree,
           edges: Array.from(edgeMap.values()),
           totalInteractions: interactions.length,
           uniqueAgents: nodes.length,
         };
       });
+    }),
+
+  // --- Drill-down: full interaction list for a single from→to edge ---
+  // Powers the tap-edge modal so users can see exactly which markets a
+  // given pair has interacted on, with timestamps + types.
+  getEdgeDetails: publicProcedure
+    .input(
+      z.object({
+        fromAgentId: z.string(),
+        toAgentId: z.string(),
+        days: z.number().min(1).max(90).default(30),
+        limit: z.number().min(1).max(100).default(20),
+      })
+    )
+    .query(async ({ input }) => {
+      const since = new Date(Date.now() - input.days * 86400000);
+
+      const interactions = await db
+        .select({
+          id: schema.agentInteractions.id,
+          interactionType: schema.agentInteractions.interactionType,
+          marketId: schema.agentInteractions.marketId,
+          marketQuestion: schema.agentInteractions.marketQuestion,
+          confidence: schema.agentInteractions.confidence,
+          qualityScore: schema.agentInteractions.qualityScore,
+          txSignature: schema.agentInteractions.txSignature,
+          createdAt: schema.agentInteractions.createdAt,
+        })
+        .from(schema.agentInteractions)
+        .where(
+          and(
+            gte(schema.agentInteractions.createdAt, since),
+            eq(schema.agentInteractions.fromAgentId, input.fromAgentId),
+            eq(schema.agentInteractions.toAgentId, input.toAgentId),
+          )
+        )
+        .orderBy(desc(schema.agentInteractions.createdAt))
+        .limit(input.limit);
+
+      const byType: Record<string, number> = {};
+      for (const i of interactions) {
+        byType[i.interactionType] = (byType[i.interactionType] ?? 0) + 1;
+      }
+
+      const [from] = await db
+        .select({ id: schema.agents.id, name: schema.agents.name, category: schema.agents.category })
+        .from(schema.agents)
+        .where(eq(schema.agents.id, input.fromAgentId))
+        .limit(1);
+      const [to] = await db
+        .select({ id: schema.agents.id, name: schema.agents.name, category: schema.agents.category })
+        .from(schema.agents)
+        .where(eq(schema.agents.id, input.toAgentId))
+        .limit(1);
+
+      return {
+        from: from ?? { id: input.fromAgentId, name: input.fromAgentId, category: null },
+        to: to ?? { id: input.toAgentId, name: input.toAgentId, category: null },
+        total: interactions.length,
+        byType,
+        interactions: interactions.map((i) => ({
+          id: i.id,
+          type: i.interactionType,
+          marketId: i.marketId,
+          marketQuestion: i.marketQuestion,
+          confidence: i.confidence ? Number(i.confidence) : null,
+          qualityScore: i.qualityScore ? Number(i.qualityScore) : null,
+          onChain: !!i.txSignature,
+          at: i.createdAt ? new Date(i.createdAt).toISOString() : null,
+        })),
+      };
     }),
 
   // --- Get interaction stats summary ---
