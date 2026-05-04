@@ -19,13 +19,21 @@
 import { sql } from "drizzle-orm";
 import { db } from "./db";
 
-const PLACEHOLDER_RE = "^Market [A-Za-z0-9_-]+$";
+// Two placeholder shapes have leaked into market_question over time:
+//   1. `Market <id>` — fallback from execution-engine when Jupiter returned
+//      a market with no readable title (now blocked at scan).
+//   2. `Batch analysis partial output ...` / `Batch analysis failed ...` —
+//      the LLM's malformed-batch placeholder leaked into the question
+//      column for a few legacy rows (separate from the reasoning leak
+//      already handled by cleanup-reasoning.ts).
+const ID_PLACEHOLDER_RE = "^Market [A-Za-z0-9_-]+$";
+const BATCH_PLACEHOLDER_RE = "^[Bb]atch analysis";
 const FALLBACK_LABEL = "Untitled prediction market";
 
 async function backfill(table: string, column: string): Promise<number> {
   // Prefer a real question from market_data when available; otherwise the
   // clean fallback label. COALESCE skips market_data rows whose own question
-  // is null OR is itself the placeholder pattern.
+  // is null OR is itself one of the placeholder patterns.
   const res = await db.execute(sql`
     UPDATE ${sql.raw(table)} t
        SET ${sql.raw(column)} = COALESCE(
@@ -33,11 +41,13 @@ async function backfill(table: string, column: string): Promise<number> {
             FROM market_data md
            WHERE md.market_id = t.market_id
              AND md.question IS NOT NULL
-             AND md.question !~ ${PLACEHOLDER_RE}
+             AND md.question !~ ${ID_PLACEHOLDER_RE}
+             AND md.question !~ ${BATCH_PLACEHOLDER_RE}
            LIMIT 1),
          ${FALLBACK_LABEL}
        )
-     WHERE ${sql.raw(column)} ~ ${PLACEHOLDER_RE}
+     WHERE ${sql.raw(column)} ~ ${ID_PLACEHOLDER_RE}
+        OR ${sql.raw(column)} ~ ${BATCH_PLACEHOLDER_RE}
   `);
   return (res as any).rowCount ?? 0;
 }
