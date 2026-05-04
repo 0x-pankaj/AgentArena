@@ -43,6 +43,7 @@ import { recordAgentPrediction } from "../services/outcome-feedback";
 import { runScenarioAnalysis, quickScenarioGate } from "../services/scenario-analysis";
 import { db, schema } from "../db";
 import { runEnhancedPipeline } from "./enhanced-pipeline";
+import { runSwarmHooks } from "./swarm-hooks";
 
 const FAST_PATH_EDGE_THRESHOLD = 0.15;
 const FAST_PATH_CONFIDENCE_THRESHOLD = 0.85;
@@ -129,7 +130,7 @@ RULES:
 - Only trade markets settling within ${profile.maxMarketDays} days
 - Only trade markets with >$${profile.minVolume.toLocaleString()} volume
 - If uncertain, choose "hold"
-- Only trade when edge (your probability - market price) exceeds 5% after fees (~2%)
+- Only trade when edge (your probability - market price) exceeds ${(AGENT_LIMITS.MIN_EDGE * 100).toFixed(1)}% after fees (~2%)
 ${EXECUTE_TRADES ? "" : "- NOTE: Running in decision-only mode (devnet). Log decisions but flag as analysis only."}
 
 EDGE DETECTION:
@@ -358,6 +359,11 @@ export async function runGeneralAgentTick(
     }
   }
 
+  // Self-heal: if a previous tick wedged the FSM, reset it.
+  fsm.recoverIfStuck("SCANNING", 10 * 60 * 1000);
+  fsm.recoverIfStuck("ANALYZING", 15 * 60 * 1000);
+  fsm.recoverIfStuck("EXECUTING", 5 * 60 * 1000);
+
   // Always force scan on first tick after resume (markets cache may be stale/missing)
   const marketsCacheKey = `${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`;
   const marketsCacheExists = await redis.exists(marketsCacheKey);
@@ -398,8 +404,24 @@ export async function runGeneralAgentTick(
   if (fsm.getState() === "SCANNING") {
     await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} scanning all market categories (politics, crypto, sports, economics)...`, { pipeline_stage: "scanning_start" });
 
-    await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
-    const markets = await scanMarkets("general");
+    // Handle swarm delegation / consensus targets — skip scanning, analyze the specific market
+    const targetMarket = ctx.delegationTarget ?? ctx.consensusTarget;
+    let markets: MarketContext[];
+
+    if (targetMarket) {
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} analyzing delegated market: "${targetMarket.marketQuestion}"`, { pipeline_stage: "delegated_market", marketId: targetMarket.marketId });
+      markets = [{
+        marketId: targetMarket.marketId,
+        question: targetMarket.marketQuestion,
+        outcomes: targetMarket.outcomes ?? [{ name: "Yes", price: 0.5 }, { name: "No", price: 0.5 }],
+        volume: targetMarket.volume ?? 10000,
+        liquidity: ctx.delegationTarget?.liquidity ?? 5000,
+        closesAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      }];
+    } else {
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
+      markets = await scanMarkets("general");
+    }
 
     if (markets.length === 0) {
       fsm.transition("no_markets");
@@ -442,17 +464,36 @@ export async function runGeneralAgentTick(
         pnl: Number(p.pnl ?? 0),
       }));
       const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
-      const decision = pipelineResult.decision;
+      let decision = pipelineResult.decision;
+
+      // ===== SWARM HOOKS: Delegation + Consensus =====
+      const swarmResult = await runSwarmHooks(ctx, ctx.agentId, "general", decision);
+      if (!swarmResult.proceed) {
+        fsm.abortToScanning();
+        await saveState();
+        return {
+          state: fsm.getState() as any,
+          action: "skipped",
+          detail: swarmResult.detail,
+          decision,
+          tokensUsed: pipelineResult.tokensUsed,
+        };
+      }
+      decision = swarmResult.decision ?? decision;
 
       if (decision.action === "buy" && decision.marketId) {
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", marketId: decision.marketId, market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
         const buyResult = await executeBuy(
-          decision, AGENT_ID, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "general"
+          decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "general"
         );
         if (buyResult.success) {
           fsm.transition("order_placed");
           await saveState();
           return { state: fsm.getState() as any, action: "executed" as any, detail: `Bought on "${decision.marketQuestion}"`, decision, tokensUsed: pipelineResult.tokensUsed };
         }
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ❌ Order failed — ${buyResult.error ?? "unknown"}`, { pipeline_stage: "execution_failed", error: buyResult.error ?? "unknown" }, "critical");
+        try { fsm.transition("order_failed"); } catch {}
+        await saveState();
       }
 
       return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, decision: pipelineResult.decision, tokensUsed: pipelineResult.tokensUsed };
@@ -546,7 +587,7 @@ export async function runGeneralAgentTick(
         }
       }
 
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", marketId: decision.marketId, market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
 
       const result = await executeBuy(decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "general");
       if (result.success) {

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, Fonts, BorderRadius, Spacing } from '../../constants/Colors';
 import { AtomBadge } from './AtomBadge';
 
@@ -18,6 +19,8 @@ interface AgentCardProps {
       running?: boolean;
       lastRun?: string;
     };
+    hireCount?: number;
+    activeHireCount?: number;
     performance?: {
       totalTrades?: number;
       winningTrades?: number;
@@ -35,7 +38,8 @@ export function AgentCard({ agent, onPress }: AgentCardProps) {
   const perf = agent.performance ?? {};
   const winRate = Number(perf.winRate ?? 0);
   const totalPnl = Number(perf.totalPnl ?? 0);
-  const totalTrades = perf.totalTrades ?? 0;
+  const hireCount = agent.hireCount ?? 0;
+  const activeHireCount = agent.activeHireCount ?? 0;
 
   const runtimeState = agent.runtimeStatus?.state;
   const isActiveAgent = agent.runtimeStatus?.running === true;
@@ -60,7 +64,7 @@ export function AgentCard({ agent, onPress }: AgentCardProps) {
             <View style={styles.nameRow}>
               <Text style={styles.name}>{agent.name}</Text>
               {agent.isVerified && (
-                <Text style={styles.verifiedBadge}>✓</Text>
+                <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
               )}
             </View>
             <View style={styles.badgeRow}>
@@ -118,8 +122,13 @@ export function AgentCard({ agent, onPress }: AgentCardProps) {
           <Text style={styles.statLabel}>PnL</Text>
         </View>
         <View style={styles.stat}>
-          <Text style={styles.statValue}>{totalTrades}</Text>
-          <Text style={styles.statLabel}>Trades</Text>
+          <Text style={styles.statValue}>
+            {hireCount}
+            {activeHireCount > 0 && (
+              <Text style={styles.statValueAccent}> · {activeHireCount} live</Text>
+            )}
+          </Text>
+          <Text style={styles.statLabel}>Hires</Text>
         </View>
       </View>
     </Pressable>
@@ -253,6 +262,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: Colors.textPrimary,
+  },
+  statValueAccent: {
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.success,
   },
   statLabel: {
     fontFamily: Fonts.body,

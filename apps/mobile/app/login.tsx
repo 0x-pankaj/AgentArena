@@ -9,6 +9,7 @@ import {
   TextInput,
   Modal,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Fonts, Spacing, BorderRadius } from '../constants/Colors';
@@ -123,7 +124,7 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <Pressable style={styles.backButton} onPress={() => router.back()}>
-        <Text style={styles.backIcon}>←</Text>
+        <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
       </Pressable>
 
       <View style={styles.content}>
@@ -252,7 +253,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border, justifyContent: 'center', alignItems: 'center',
     marginLeft: Spacing.screenPadding, marginTop: Spacing.md,
   },
-  backIcon: { fontSize: 18, color: Colors.textPrimary },
+
   content: {
     flex: 1, justifyContent: 'center', alignItems: 'center',
     padding: Spacing.screenPadding, gap: Spacing.lg,

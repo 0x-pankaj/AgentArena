@@ -1,7 +1,11 @@
 import { router, publicProcedure, protectedProcedure } from "../utils/trpc";
 import { z } from "zod";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, ne, getTableColumns } from "drizzle-orm";
 import { db, schema } from "../db";
+
+// Subqueries used to enrich agent rows with hire counts.
+const hireCountSql = sql<number>`(SELECT count(*)::int FROM ${schema.jobs} WHERE ${schema.jobs.agentId} = ${schema.agents.id})`;
+const activeHireCountSql = sql<number>`(SELECT count(*)::int FROM ${schema.jobs} WHERE ${schema.jobs.agentId} = ${schema.agents.id} AND ${schema.jobs.status} = 'active')`;
 import { getAgentStatus, listActiveAgents } from "../agents/supervisor";
 import { getEffectiveBalance } from "../utils/balance";
 import {
@@ -17,11 +21,16 @@ import {
   formatTrustTier,
   getAtomStatsPDA,
 } from "../utils/atom-reputation";
+import { fetchAgentNftMetadata } from "../utils/nft-metadata";
 import { PublicKey } from "@solana/web3.js";
+
+// Public marketplace categories (general is internal-only, used for swarm voting).
+const PUBLIC_CATEGORIES = ["politics", "sports", "crypto"] as const;
+const ENABLE_CUSTOM_AGENT_CREATION = process.env.ENABLE_CUSTOM_AGENT_CREATION === "true";
 
 const agentInputSchema = z.object({
   name: z.string().min(1).max(100),
-  category: z.enum(["geo", "politics", "sports", "crypto", "general"]),
+  category: z.enum(["politics", "sports", "crypto"]),
   description: z.string().max(500),
   pricingModel: z.object({
     type: z.enum(["subscription", "per_trade", "profit_share"]),
@@ -36,46 +45,72 @@ const agentInputSchema = z.object({
 export const agentRouter = router({
   list: publicProcedure
     .input(z.object({
-      category: z.enum(["geo", "politics", "sports", "crypto", "general"]).optional(),
+      category: z.enum(["politics", "sports", "crypto"]).optional(),
       limit: z.number().min(1).max(100).default(20),
       offset: z.number().min(0).default(0),
     }))
     .query(async ({ input }) => {
-      const query = input.category
-        ? db
-            .select()
-            .from(schema.agents)
-            .where(
-              and(
-                eq(schema.agents.isActive, true),
-                eq(schema.agents.category, input.category)
-              )
-            )
-            .orderBy(desc(schema.agents.createdAt))
-            .limit(input.limit)
-            .offset(input.offset)
-        : db
-            .select()
-            .from(schema.agents)
-            .where(eq(schema.agents.isActive, true))
-            .orderBy(desc(schema.agents.createdAt))
-            .limit(input.limit)
-            .offset(input.offset);
+      const baseFilter = input.category
+        ? and(
+            eq(schema.agents.isActive, true),
+            eq(schema.agents.category, input.category),
+          )
+        : and(
+            eq(schema.agents.isActive, true),
+            // hide internal-only "general" agent from public marketplace
+            ne(schema.agents.category, "general"),
+          );
 
-      const agents = await query;
+      const rows = await db
+        .select({
+          ...getTableColumns(schema.agents),
+          hireCount: hireCountSql,
+          activeHireCount: activeHireCountSql,
+          totalTrades: schema.agentPerformance.totalTrades,
+          winningTrades: schema.agentPerformance.winningTrades,
+          totalPnl: schema.agentPerformance.totalPnl,
+          winRate: schema.agentPerformance.winRate,
+        })
+        .from(schema.agents)
+        .leftJoin(
+          schema.agentPerformance,
+          and(
+            eq(schema.agentPerformance.agentId, schema.agents.id),
+            eq(schema.agentPerformance.isPaperTrading, true),
+          ),
+        )
+        .where(baseFilter)
+        .orderBy(desc(schema.agents.createdAt))
+        .limit(input.limit)
+        .offset(input.offset);
+
+      const agents = rows.map(({ totalTrades, winningTrades, totalPnl, winRate, ...agent }) => ({
+        ...agent,
+        performance: {
+          totalTrades: totalTrades ?? 0,
+          winningTrades: winningTrades ?? 0,
+          totalPnl: totalPnl ?? "0",
+          winRate: winRate ?? "0",
+        },
+      }));
+
       const [{ count }] = await db
         .select({ count: sql<number>`count(*)` })
         .from(schema.agents)
-        .where(eq(schema.agents.isActive, true));
+        .where(baseFilter);
 
       return { agents, total: Number(count) };
     }),
 
   get: publicProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.string().min(1) }))
     .query(async ({ input }) => {
       const [agent] = await db
-        .select()
+        .select({
+          ...getTableColumns(schema.agents),
+          hireCount: hireCountSql,
+          activeHireCount: activeHireCountSql,
+        })
         .from(schema.agents)
         .where(eq(schema.agents.id, input.id))
         .limit(1);
@@ -275,7 +310,7 @@ export const agentRouter = router({
 
   // Get ATOM reputation for an agent
   getReputation: publicProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.string().min(1) }))
     .query(async ({ input }) => {
       const [agent] = await db
         .select()
@@ -304,6 +339,12 @@ export const agentRouter = router({
       onChainAddress: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      if (!ENABLE_CUSTOM_AGENT_CREATION) {
+        throw new Error(
+          "Custom agent creation is disabled. Set ENABLE_CUSTOM_AGENT_CREATION=true to enable.",
+        );
+      }
+
       const { connectionMethod, onChainAddress, ...agentData } = input;
 
       await db
@@ -412,5 +453,12 @@ export const agentRouter = router({
       }
 
       return getEffectiveBalance(job.privyWalletAddress);
+    }),
+
+  getNftMetadata: publicProcedure
+    .input(z.object({ assetAddress: z.string().min(32) }))
+    .query(async ({ input }) => {
+      const metadata = await fetchAgentNftMetadata(input.assetAddress);
+      return metadata;
     }),
 });

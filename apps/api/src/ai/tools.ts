@@ -30,6 +30,21 @@ import {
 import { webSearch } from "../services/web-search";
 import { getTopCoins, getCoinData, getGlobalMarket, getTrendingCoins, getCryptoSignals } from "../data-sources/coingecko";
 import { getTopProtocols, getChainTVLs, getSolanaTVL, getDeFiSignals } from "../data-sources/defillama";
+import {
+  searchReddit,
+  getSubredditSentiment,
+  getRedditSignals,
+  getRedditSearchSignal,
+} from "../data-sources/reddit";
+import {
+  getGoogleTrendsSignals,
+  getKeywordSignal,
+  getTopBreakoutKeyword,
+} from "../data-sources/google-trends";
+import {
+  getUpcomingEvents,
+  getSportsSignals,
+} from "../data-sources/sports-odds";
 
 // --- Helper to create AgentTool entries ---
 
@@ -317,6 +332,80 @@ export const defillamaProtocolsTool = makeTool({
   },
 });
 
+// --- Reddit tools ---
+
+export const redditSearchTool = makeTool({
+  name: "reddit_search",
+  description: "Search Reddit posts by keyword across all subreddits or a specific one.",
+  schema: z.object({ query: z.string(), subreddit: z.string().optional(), limit: z.number().default(25) }),
+  execute: async ({ query, subreddit, limit }) => {
+    const posts = await searchReddit(String(query), subreddit as string | undefined, Number(limit) || 25);
+    return posts.map(p => ({ title: p.title, subreddit: p.subreddit, score: p.score, upvoteRatio: p.upvoteRatio, numComments: p.numComments, url: p.permalink }));
+  },
+});
+
+export const redditSentimentTool = makeTool({
+  name: "reddit_sentiment",
+  description: "Get aggregated sentiment signal from a subreddit (post count, upvote ratios, comment velocity, bullish/bearish/neutral classification).",
+  schema: z.object({ subreddit: z.string() }),
+  execute: async ({ subreddit }) => getSubredditSentiment(String(subreddit)),
+});
+
+export const redditCategoryTool = makeTool({
+  name: "reddit_category",
+  description: "Get Reddit sentiment signals for all subreddits in a category (crypto, politics, sports, general).",
+  schema: z.object({ category: z.enum(["crypto", "politics", "sports", "general"]) }),
+  execute: async ({ category }) => getRedditSignals(category as "crypto" | "politics" | "sports" | "general"),
+});
+
+// --- Google Trends tools ---
+
+export const googleTrendsTool = makeTool({
+  name: "google_trends",
+  description: "Get Google Trends search interest signal for a keyword (0-100 scale, 7d/30d changes, trend direction, related queries). Leading indicator: search interest often precedes market moves by 12-48 hours.",
+  schema: z.object({ keyword: z.string() }),
+  execute: async ({ keyword }) => getKeywordSignal(String(keyword)),
+});
+
+export const googleTrendsCategoryTool = makeTool({
+  name: "google_trends_category",
+  description: "Get Google Trends signals for all keywords in a category (crypto, politics, sports, general). Returns current interest, changes, and breakout keywords.",
+  schema: z.object({ category: z.enum(["crypto", "politics", "sports", "general"]) }),
+  execute: async ({ category }) => getGoogleTrendsSignals(category as "crypto" | "politics" | "sports" | "general"),
+});
+
+export const googleTrendsBreakoutTool = makeTool({
+  name: "google_trends_breakout",
+  description: "Get the top breakout keyword (highest 7-day search interest increase) for a category.",
+  schema: z.object({ category: z.enum(["crypto", "politics", "sports", "general"]) }),
+  execute: async ({ category }) => getTopBreakoutKeyword(category as "crypto" | "politics" | "sports" | "general"),
+});
+
+// --- Sports Odds tools ---
+
+export const sportsOddsTool = makeTool({
+  name: "sports_odds",
+  description: "Get current betting lines, odds movements, and sharp money indicators for upcoming sports events. Covers NFL, NBA, MLB, soccer, MMA, tennis. Requires ODDS_API_KEY. If unavailable, returns empty data gracefully.",
+  schema: z.object({ sport: z.string().optional(), limit: z.number().default(10) }),
+  execute: async ({ sport, limit }) => {
+    try {
+      const events = await getUpcomingEvents(sport as string | undefined);
+      return events.slice(0, Number(limit) || 10).map(e => ({
+        matchup: `${e.homeTeam} vs ${e.awayTeam}`,
+        commenceTime: e.commenceTime,
+        sport: e.sportTitle,
+        bookmakers: e.bookmakers?.slice(0, 3).map((b: any) => ({
+          name: b.title,
+          lastUpdate: b.lastUpdate,
+          odds: b.markets?.[0]?.outcomes?.map((o: any) => ({ team: o.name, price: o.price })),
+        })),
+      }));
+    } catch {
+      return [];
+    }
+  },
+});
+
 // ============================================================
 // TOOL REGISTRY (all tools as AgentTool)
 // ============================================================
@@ -347,6 +436,13 @@ export const ALL_TOOLS: Record<string, AgentTool> = {
   defillama_tvl: defillamaTvlTool,
   defillama_solana: defillamaSolanaTool,
   defillama_protocols: defillamaProtocolsTool,
+  reddit_search: redditSearchTool,
+  reddit_sentiment: redditSentimentTool,
+  reddit_category: redditCategoryTool,
+  google_trends: googleTrendsTool,
+  google_trends_category: googleTrendsCategoryTool,
+  google_trends_breakout: googleTrendsBreakoutTool,
+  sports_odds: sportsOddsTool,
 };
 
 // --- Convert AgentTool names to record ---
@@ -370,6 +466,8 @@ export const POLITICS_AGENT_TOOLS = [
   "acled_search", "acled_conflict_signal", "acled_regional",
   "fred_series", "fred_macro_signal", "fred_all_signals",
   "twitter_search", "twitter_social_signal", "twitter_key_accounts", "twitter_user_tweets",
+  "reddit_search", "reddit_sentiment", "reddit_category",
+  "google_trends", "google_trends_category", "google_trends_breakout",
   "market_search", "market_trending", "market_detail",
 ];
 
@@ -377,6 +475,9 @@ export const SPORTS_AGENT_TOOLS = [
   "web_search",
   "market_search", "market_trending", "market_detail",
   "twitter_search", "twitter_social_signal",
+  "reddit_search", "reddit_sentiment", "reddit_category",
+  "google_trends", "google_trends_category", "google_trends_breakout",
+  "sports_odds",
 ];
 
 export const CRYPTO_AGENT_TOOLS = [
@@ -386,6 +487,8 @@ export const CRYPTO_AGENT_TOOLS = [
   "twitter_search", "twitter_social_signal",
   "fred_series", "fred_macro_signal",
   "gdelt_search",
+  "reddit_search", "reddit_sentiment", "reddit_category",
+  "google_trends", "google_trends_category", "google_trends_breakout",
   "market_search", "market_trending", "market_detail",
 ];
 

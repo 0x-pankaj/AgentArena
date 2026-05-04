@@ -13,10 +13,16 @@ interface FeedEvent {
   is_public: boolean;
 }
 
+interface ReactionUpdate {
+  eventId: string;
+  counts: Record<string, number>;
+  userReactions: Array<{ userWallet: string; reactionType: string }>;
+}
+
 type ConnectionStatus = 'connected' | 'connecting' | 'disconnected';
 
 interface UseLiveFeedOptions {
-  channel?: string; // 'feed', 'feed:agent:{id}', 'feed:category:{cat}'
+  channel?: string;
   fallbackPollFn?: () => Promise<{ events: FeedEvent[] }>;
   fallbackPollInterval?: number;
 }
@@ -31,6 +37,8 @@ export function useLiveFeed(options: UseLiveFeedOptions = {}) {
   const [events, setEvents] = useState<FeedEvent[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
   const [newCount, setNewCount] = useState(0);
+  const [viewerCount, setViewerCount] = useState(0);
+  const [reactionUpdates, setReactionUpdates] = useState<Record<string, ReactionUpdate>>({});
   const prevChannelRef = useRef(channel);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAtBottomRef = useRef(true);
@@ -61,6 +69,15 @@ export function useLiveFeed(options: UseLiveFeedOptions = {}) {
         if (!isAtBottomRef.current) {
           setNewCount((c) => c + 1);
         }
+      } else if (message.type === 'viewer_count') {
+        const counts = message.data as Record<string, number>;
+        setViewerCount(counts[channel] ?? counts['feed'] ?? 0);
+      } else if (message.type === 'reaction_update') {
+        const update = message.data as ReactionUpdate;
+        setReactionUpdates((prev) => ({
+          ...prev,
+          [update.eventId]: update,
+        }));
       }
     });
 
@@ -72,7 +89,7 @@ export function useLiveFeed(options: UseLiveFeedOptions = {}) {
     return () => {
       unsubscribe();
     };
-  }, [addEvent]);
+  }, [addEvent, channel]);
 
   // Handle channel subscription changes
   useEffect(() => {
@@ -84,6 +101,7 @@ export function useLiveFeed(options: UseLiveFeedOptions = {}) {
     wsClient.subscribe(channel);
     setEvents([]);
     setNewCount(0);
+    setReactionUpdates({});
 
     return () => {
       wsClient.unsubscribe(channel);
@@ -128,6 +146,8 @@ export function useLiveFeed(options: UseLiveFeedOptions = {}) {
     events,
     status,
     newCount,
+    viewerCount,
+    reactionUpdates,
     resetNewCount,
     setAtBottom: (atBottom: boolean) => {
       isAtBottomRef.current = atBottom;

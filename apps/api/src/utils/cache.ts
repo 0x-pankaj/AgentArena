@@ -26,6 +26,8 @@ export const CACHE_NAMESPACES = {
   signals: { prefix: "cache:signals", defaultTtl: 900 },    // 15 min
   markets: { prefix: "cache:markets", defaultTtl: 900 },    // 15 min
   jupiter: { prefix: "cache:jupiter", defaultTtl: 600 },    // 10 min
+  reddit: { prefix: "cache:reddit", defaultTtl: 600 },      // 10 min
+  trends: { prefix: "cache:trends", defaultTtl: 3600 },     // 1 hour
 } as const;
 
 type CacheNamespace = keyof typeof CACHE_NAMESPACES;

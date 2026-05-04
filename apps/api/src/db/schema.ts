@@ -299,6 +299,51 @@ export const consensusResults = pgTable("consensus_results", {
   consensusIdx: index("consensus_consensus_idx").on(table.consensus),
 }));
 
+// --- Agent-to-Agent Interactions (Swarm Canteen) ---
+
+export const agentInteractions = pgTable("agent_interactions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  fromAgentId: uuid("from_agent_id").notNull().references(() => agents.id),
+  toAgentId: uuid("to_agent_id").notNull().references(() => agents.id),
+  jobId: uuid("job_id").references(() => jobs.id),
+  interactionType: varchar("interaction_type", { length: 20 }).notNull(), // "delegation" | "rating" | "consensus" | "referral"
+  marketId: varchar("market_id", { length: 100 }),
+  marketQuestion: text("market_question"),
+  qualityScore: decimal("quality_score", { precision: 5, scale: 2 }), // 0-100
+  confidence: decimal("confidence", { precision: 5, scale: 2 }), // consensus confidence
+  txSignature: varchar("tx_signature", { length: 88 }), // On-chain ATOM proof
+  metadata: jsonb("metadata"), // Extra context: votes, reasoning, etc.
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  fromIdx: index("interactions_from_idx").on(table.fromAgentId),
+  toIdx: index("interactions_to_idx").on(table.toAgentId),
+  typeIdx: index("interactions_type_idx").on(table.interactionType),
+  marketIdx: index("interactions_market_idx").on(table.marketId),
+  jobIdx: index("interactions_job_idx").on(table.jobId),
+}));
+
+// --- Swarm Consensus Results (Agent-level, distinct from model consensus) ---
+
+export const swarmConsensus = pgTable("swarm_consensus", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  marketId: varchar("market_id", { length: 100 }).notNull(),
+  marketQuestion: text("market_question"),
+  initiatingAgentId: uuid("initiating_agent_id").notNull().references(() => agents.id),
+  consensusAction: varchar("consensus_action", { length: 10 }).notNull(), // "buy_yes" | "buy_no" | "skip"
+  adjustedConfidence: decimal("adjusted_confidence", { precision: 5, scale: 2 }),
+  approved: boolean("approved").notNull(),
+  votesFor: integer("votes_for").default(0),
+  votesAgainst: integer("votes_against").default(0),
+  votesAbstain: integer("votes_abstain").default(0),
+  participatingAgents: uuid("participating_agents").array(),
+  details: jsonb("details"), // array of {agentId, vote, confidence, reasoning}
+  executed: boolean("executed").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  marketIdx: index("swarm_consensus_market_idx").on(table.marketId),
+  agentIdx: index("swarm_consensus_agent_idx").on(table.initiatingAgentId),
+}));
+
 // --- Microstructure Check Results ---
 
 export const microstructureChecks = pgTable("microstructure_checks", {
@@ -314,4 +359,57 @@ export const microstructureChecks = pgTable("microstructure_checks", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   marketIdx: index("micro_market_idx").on(table.marketId),
+}));
+
+// ============================================================
+// Phase 1 + 2: Social Proof & Paper Betting
+// ============================================================
+
+export const feedReactions = pgTable("feed_reactions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  eventId: varchar("event_id", { length: 100 }).notNull(),
+  userWallet: varchar("user_wallet", { length: 44 }).notNull(),
+  reactionType: varchar("reaction_type", { length: 20 }).notNull(), // "fire" | "up" | "think" | "gem"
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  eventIdx: index("feed_reactions_event_idx").on(table.eventId),
+  userIdx: index("feed_reactions_user_idx").on(table.userWallet),
+  uniqueReaction: index("feed_reactions_unique_idx").on(table.eventId, table.userWallet, table.reactionType),
+}));
+
+export const paperBalances = pgTable("paper_balances", {
+  userWallet: varchar("user_wallet", { length: 44 }).primaryKey(),
+  balance: decimal("balance", { precision: 18, scale: 6 }).default("1000").notNull(),
+  totalEarned: decimal("total_earned", { precision: 18, scale: 6 }).default("0").notNull(),
+  totalLost: decimal("total_lost", { precision: 18, scale: 6 }).default("0").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const paperBets = pgTable("paper_bets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  eventId: varchar("event_id", { length: 100 }).notNull(),
+  userWallet: varchar("user_wallet", { length: 44 }).notNull(),
+  agentId: varchar("agent_id", { length: 100 }).notNull(),
+  direction: varchar("direction", { length: 10 }).notNull(), // "buy" | "sell" | "pass"
+  amount: decimal("amount", { precision: 18, scale: 6 }).notNull(),
+  status: varchar("status", { length: 20 }).default("pending").notNull(), // "pending" | "won" | "lost" | "cancelled"
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  eventIdx: index("paper_bets_event_idx").on(table.eventId),
+  userIdx: index("paper_bets_user_idx").on(table.userWallet),
+  agentIdx: index("paper_bets_agent_idx").on(table.agentId),
+  statusIdx: index("paper_bets_status_idx").on(table.status),
+}));
+
+export const userAgentFollows = pgTable("user_agent_follows", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userWallet: varchar("user_wallet", { length: 44 }).notNull(),
+  agentId: varchar("agent_id", { length: 100 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  userIdx: index("follows_user_idx").on(table.userWallet),
+  agentIdx: index("follows_agent_idx").on(table.agentId),
+  uniqueFollow: index("follows_unique_idx").on(table.userWallet, table.agentId),
 }));

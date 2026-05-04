@@ -7,6 +7,8 @@ import { getAllRegionalFireSignals, type FireSignal } from "../data-sources/nasa
 import { getSportsSignals, type SportsSignal } from "../data-sources/sports-odds";
 import { getCryptoSignals, getGlobalMarket, type CryptoSignal, type MarketOverview } from "../data-sources/coingecko";
 import { getDeFiSignals, getSolanaTVL, type DeFiSignal } from "../data-sources/defillama";
+import { getRedditSignals, type RedditSignal } from "../data-sources/reddit";
+import { getGoogleTrendsSignals, type GoogleTrendsSignal } from "../data-sources/google-trends";
 import { withCircuitBreaker } from "../utils/circuit-breaker";
 
 // ============================================================
@@ -16,11 +18,15 @@ import { withCircuitBreaker } from "../utils/circuit-breaker";
 const BASE_SIGNALS_KEY = "cache:signals:base";
 const SPORTS_SIGNALS_KEY = "cache:signals:sports";
 const CRYPTO_SIGNALS_KEY = "cache:signals:crypto";
+const REDDIT_SIGNALS_KEY = "cache:signals:reddit";
+const TRENDS_SIGNALS_KEY = "cache:signals:trends";
 
 const SIGNAL_CACHE_TTL: Record<string, number> = {
   base: 5 * 60,
   sports: 3 * 60,
   crypto: 60,
+  reddit: 10 * 60,
+  trends: 60 * 60,
 };
 
 // --- Base signals (shared by politics + general agents) ---
@@ -50,6 +56,10 @@ export interface SharedSignals {
     defi: Awaited<ReturnType<typeof getDeFiSignals>>;
     solana: Awaited<ReturnType<typeof getSolanaTVL>>;
   };
+
+  // Social & trend signals (new)
+  reddit?: Record<string, RedditSignal>;
+  googleTrends?: Record<string, GoogleTrendsSignal>;
 
   fetchedAt: string;
   agentType: string;
@@ -111,6 +121,30 @@ async function fetchCryptoSignals(): Promise<SharedSignals["crypto"]> {
   }
 }
 
+// --- Fetch Reddit signals ---
+
+async function fetchRedditSignals(
+  category: "crypto" | "politics" | "sports" | "general"
+): Promise<Record<string, RedditSignal>> {
+  try {
+    return await getRedditSignals(category);
+  } catch {
+    return {};
+  }
+}
+
+// --- Fetch Google Trends signals ---
+
+async function fetchTrendsSignals(
+  category: "crypto" | "politics" | "sports" | "general"
+): Promise<Record<string, GoogleTrendsSignal>> {
+  try {
+    return await getGoogleTrendsSignals(category);
+  } catch {
+    return {};
+  }
+}
+
 // --- Cache helper ---
 
 async function getCachedOrFetch<T>(
@@ -142,30 +176,63 @@ export async function getSharedSignals(
   };
 
   switch (agentType) {
-    case "sports":
-      signals.sports = await getCachedOrFetch(SPORTS_SIGNALS_KEY, fetchSportsSignals, SIGNAL_CACHE_TTL.sports);
+    case "sports": {
+      const [sports, reddit, trends] = await Promise.all([
+        getCachedOrFetch(SPORTS_SIGNALS_KEY, fetchSportsSignals, SIGNAL_CACHE_TTL.sports),
+        getCachedOrFetch(`${REDDIT_SIGNALS_KEY}:sports`, () => fetchRedditSignals("sports"), SIGNAL_CACHE_TTL.reddit),
+        getCachedOrFetch(`${TRENDS_SIGNALS_KEY}:sports`, () => fetchTrendsSignals("sports"), SIGNAL_CACHE_TTL.trends),
+      ]);
+      signals.sports = sports;
+      signals.reddit = reddit;
+      signals.googleTrends = trends;
       break;
+    }
 
-    case "crypto":
-      signals.crypto = await getCachedOrFetch(CRYPTO_SIGNALS_KEY, fetchCryptoSignals, SIGNAL_CACHE_TTL.crypto);
+    case "crypto": {
+      const [crypto, reddit, trends] = await Promise.all([
+        getCachedOrFetch(CRYPTO_SIGNALS_KEY, fetchCryptoSignals, SIGNAL_CACHE_TTL.crypto),
+        getCachedOrFetch(`${REDDIT_SIGNALS_KEY}:crypto`, () => fetchRedditSignals("crypto"), SIGNAL_CACHE_TTL.reddit),
+        getCachedOrFetch(`${TRENDS_SIGNALS_KEY}:crypto`, () => fetchTrendsSignals("crypto"), SIGNAL_CACHE_TTL.trends),
+      ]);
+      signals.crypto = crypto;
+      signals.reddit = reddit;
+      signals.googleTrends = trends;
       break;
+    }
 
-    case "politics":
+    case "politics": {
+      const [reddit, trends] = await Promise.all([
+        getCachedOrFetch(`${REDDIT_SIGNALS_KEY}:politics`, () => fetchRedditSignals("politics"), SIGNAL_CACHE_TTL.reddit),
+        getCachedOrFetch(`${TRENDS_SIGNALS_KEY}:politics`, () => fetchTrendsSignals("politics"), SIGNAL_CACHE_TTL.trends),
+      ]);
+      signals.reddit = reddit;
+      signals.googleTrends = trends;
       break;
+    }
 
     case "general": {
-      const [sports, crypto] = await Promise.all([
+      const [sports, crypto, reddit, trends] = await Promise.all([
         getCachedOrFetch(SPORTS_SIGNALS_KEY, fetchSportsSignals, SIGNAL_CACHE_TTL.sports),
         getCachedOrFetch(CRYPTO_SIGNALS_KEY, fetchCryptoSignals, SIGNAL_CACHE_TTL.crypto),
+        getCachedOrFetch(`${REDDIT_SIGNALS_KEY}:general`, () => fetchRedditSignals("general"), SIGNAL_CACHE_TTL.reddit),
+        getCachedOrFetch(`${TRENDS_SIGNALS_KEY}:general`, () => fetchTrendsSignals("general"), SIGNAL_CACHE_TTL.trends),
       ]);
       signals.sports = sports;
       signals.crypto = crypto;
+      signals.reddit = reddit;
+      signals.googleTrends = trends;
       break;
     }
   }
 
+  const extraSources: string[] = [];
+  if (signals.sports) extraSources.push("sports");
+  if (signals.crypto) extraSources.push("crypto");
+  if (signals.reddit) extraSources.push("reddit");
+  if (signals.googleTrends) extraSources.push("trends");
+
   console.log(
-    `[Signals] Loaded ${agentType} signals (base + ${agentType === "sports" ? "sports" : agentType === "crypto" ? "crypto" : agentType === "general" ? "all" : "none"})`
+    `[Signals] Loaded ${agentType} signals (base + ${extraSources.join(", ") || "none"})`
   );
 
   return signals;
@@ -179,6 +246,14 @@ export async function refreshSharedSignals(
   await redis.del(BASE_SIGNALS_KEY);
   await redis.del(SPORTS_SIGNALS_KEY);
   await redis.del(CRYPTO_SIGNALS_KEY);
+  await redis.del(`${REDDIT_SIGNALS_KEY}:sports`);
+  await redis.del(`${REDDIT_SIGNALS_KEY}:crypto`);
+  await redis.del(`${REDDIT_SIGNALS_KEY}:politics`);
+  await redis.del(`${REDDIT_SIGNALS_KEY}:general`);
+  await redis.del(`${TRENDS_SIGNALS_KEY}:sports`);
+  await redis.del(`${TRENDS_SIGNALS_KEY}:crypto`);
+  await redis.del(`${TRENDS_SIGNALS_KEY}:politics`);
+  await redis.del(`${TRENDS_SIGNALS_KEY}:general`);
   return getSharedSignals(agentType);
 }
 

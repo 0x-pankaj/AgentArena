@@ -321,16 +321,23 @@ export async function preWarmCategoryCaches(): Promise<void> {
   const startTime = Date.now();
   const categories = Object.keys(CATEGORY_CACHE_CONFIGS);
 
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     categories.map(async (cat) => {
       const config = CATEGORY_CACHE_CONFIGS[cat];
-      try {
-        await fetchAndCacheCategory(cat, config, config.maxEvents);
-      } catch (err) {
-        console.warn(`[JupiterCache] Failed to pre-warm ${cat}:`, err);
-      }
+      const result = await fetchAndCacheCategory(cat, config, config.maxEvents);
+      return { cat, count: result.events.length };
     })
   );
+
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const cat = categories[i];
+    if (r.status === 'fulfilled') {
+      console.log(`[JupiterCache] Pre-warm ${cat}: ${r.value.count} events`);
+    } else {
+      console.error(`[JupiterCache] Pre-warm ${cat} FAILED:`, r.reason);
+    }
+  }
 
   const duration = Date.now() - startTime;
   console.log(`[JupiterCache] Pre-warming complete in ${duration}ms`);

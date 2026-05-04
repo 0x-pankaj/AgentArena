@@ -1,0 +1,647 @@
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  RefreshControl,
+  Dimensions,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
+import {
+  useSwarmStats,
+  useNetworkDensity,
+  useReputationDistribution,
+  useSwarmLeaderboard,
+  useSwarmGraph,
+} from '../../src/lib/api';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+export default function SwarmScreen() {
+  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useSwarmStats(30);
+  const { data: density, isLoading: densityLoading, refetch: refetchDensity } = useNetworkDensity();
+  const { data: reputation, isLoading: repLoading, refetch: refetchReputation } = useReputationDistribution();
+  const { data: leaderboard, isLoading: lbLoading, refetch: refetchLeaderboard } = useSwarmLeaderboard(10);
+  const { data: graph, isLoading: graphLoading, refetch: refetchGraph } = useSwarmGraph(undefined, 30);
+
+  const isLoading = statsLoading || densityLoading || repLoading || lbLoading || graphLoading;
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([
+      refetchStats(),
+      refetchDensity(),
+      refetchReputation(),
+      refetchLeaderboard(),
+      refetchGraph(),
+    ]);
+    setRefreshing(false);
+  }, [refetchStats, refetchDensity, refetchReputation, refetchLeaderboard, refetchGraph]);
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} colors={[Colors.accent]} />
+        }
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>Swarm Network</Text>
+          <Text style={styles.subtitle}>Real-time agent interaction graph</Text>
+        </View>
+
+        {isLoading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Colors.accent} />
+            <Text style={styles.loadingText}>Loading swarm data...</Text>
+          </View>
+        )}
+
+        {/* Graph Visualization */}
+        {!isLoading && (
+          <View style={styles.graphSection}>
+            {graph && graph.nodes && graph.nodes.length > 0 ? (
+              <SwarmGraphView nodes={graph.nodes} edges={graph.edges} />
+            ) : (
+              <View style={styles.graphEmpty}>
+                <Ionicons name="git-network-outline" size={36} color={Colors.textMuted} />
+                <Text style={styles.graphEmptyTitle}>Swarm warming up</Text>
+                <Text style={styles.graphEmptyText}>
+                  Agents will start delegating, voting, and rating each other as they trade.
+                  First interactions appear within minutes.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Network Stats Cards */}
+        <View style={styles.statsGrid}>
+          <StatCard
+            label="Interactions"
+            value={stats?.totalInteractions ?? 0}
+            color={Colors.accent}
+          />
+          <StatCard
+            label="Consensus"
+            value={stats?.consensusRounds ?? 0}
+            color={Colors.success}
+          />
+          <StatCard
+            label="Density"
+            value={density?.density ? `${(density.density * 100).toFixed(1)}%` : '0%'}
+            color={Colors.warning}
+          />
+          <StatCard
+            label="On-Chain"
+            value={stats?.onChainVerified ?? 0}
+            color={Colors.accent}
+          />
+        </View>
+
+        {/* Review Authenticity */}
+        <View style={styles.authenticityCard}>
+          <View style={styles.authenticityHeader}>
+            <Text style={styles.authenticityTitle}>Review Authenticity</Text>
+            <Text style={styles.authenticityScore}>
+              {stats?.reviewAuthenticityRate?.toFixed?.(1) ?? 0}%
+            </Text>
+          </View>
+          <View style={styles.authenticityBar}>
+            <View
+              style={[
+                styles.authenticityFill,
+                {
+                  width: `${Math.min(stats?.reviewAuthenticityRate ?? 0, 100)}%`,
+                },
+              ]}
+            />
+          </View>
+          <Text style={styles.authenticitySubtitle}>
+            {stats?.onChainVerified ?? 0} of {stats?.totalInteractions ?? 0} interactions verified on-chain
+          </Text>
+        </View>
+
+        {/* Interaction Type Breakdown */}
+        {stats?.byType && Object.keys(stats.byType).length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Interaction Types</Text>
+            <View style={styles.typeList}>
+              {Object.entries(stats.byType).map(([type, count]) => (
+                <View key={type} style={styles.typeRow}>
+                  <View style={styles.typeDot}>
+                    <Ionicons
+                      name={type === 'delegation' ? 'link' : type === 'rating' ? 'star' : type === 'consensus' ? 'people' : 'document-text'}
+                      size={14}
+                      color={Colors.accent}
+                    />
+                  </View>
+                  <Text style={styles.typeName}>{type.charAt(0).toUpperCase() + type.slice(1)}</Text>
+                  <Text style={styles.typeCount}>{count as number}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Network Density Detail */}
+        {density && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Network Topology</Text>
+            <View style={styles.detailCard}>
+              <DetailRow label="Agents" value={String(density.agentCount)} />
+              <DetailRow label="Possible Edges" value={String(density.possibleEdges)} />
+              <DetailRow label="Actual Edges" value={String(density.actualEdges)} />
+              <DetailRow label="Density" value={`${(density.density * 100).toFixed(2)}%`} />
+              <DetailRow label="Clustering" value={`${(density.clusteringCoefficient * 100).toFixed(2)}%`} />
+            </View>
+          </View>
+        )}
+
+        {/* Reputation Distribution */}
+        {reputation && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Reputation Distribution</Text>
+            <View style={styles.detailCard}>
+              <DetailRow label="Total Agents" value={String(reputation.totalAgents)} />
+              <DetailRow label="Average Score" value={`${reputation.averageScore}`} />
+              {Object.entries(reputation.byTier).map(([tier, count]) => (
+                <DetailRow key={tier} label={tier} value={String(count)} />
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Swarm Leaderboard */}
+        {leaderboard && leaderboard.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Swarm Score Leaderboard</Text>
+            <View style={styles.leaderboardCard}>
+              {leaderboard.map((agent: any, index: number) => (
+                <View key={agent.id} style={styles.leaderboardRow}>
+                  <Text style={styles.leaderboardRank}>#{index + 1}</Text>
+                  <View style={styles.leaderboardInfo}>
+                    <Text style={styles.leaderboardName}>{agent.name}</Text>
+                    <Text style={styles.leaderboardCategory}>{agent.category}</Text>
+                  </View>
+                  <View style={styles.leaderboardScoreContainer}>
+                    <Text style={styles.leaderboardScore}>{agent.swarmScore?.toFixed?.(1) ?? 0}</Text>
+                    <Text style={styles.leaderboardTier}>{agent.trustTier}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function StatCard({ label, value, color }: { label: string; value: string | number; color: string }) {
+  return (
+    <View style={[styles.statCard, { borderLeftColor: color, borderLeftWidth: 3 }]}>
+      <Text style={[styles.statValue, { color }]}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.detailRow}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value}</Text>
+    </View>
+  );
+}
+
+// --- Ring-layout graph visualization ---
+// Nodes placed on a circle, edges drawn as rotated thin Views.
+// Pure RN — no SVG dependency. Edge weight controls line opacity.
+
+const GRAPH_HEIGHT = 280;
+const GRAPH_PADDING = 24;
+
+const CATEGORY_COLOR: Record<string, string> = {
+  crypto: Colors.accent,
+  politics: Colors.politics,
+  sports: Colors.sports,
+  geo: Colors.geo,
+  general: Colors.textSecondary,
+};
+
+interface GraphNode {
+  id: string;
+  name: string;
+  category: string;
+  reputationScore?: number;
+  trustTier?: string;
+}
+
+interface GraphEdge {
+  source: string;
+  target: string;
+  weight: number;
+  types: string[];
+}
+
+function SwarmGraphView({ nodes, edges }: { nodes: GraphNode[]; edges: GraphEdge[] }) {
+  const width = SCREEN_WIDTH - Spacing.lg * 2;
+  const radius = Math.min(width, GRAPH_HEIGHT) / 2 - GRAPH_PADDING - 18;
+  const cx = width / 2;
+  const cy = GRAPH_HEIGHT / 2;
+
+  // Layout: place nodes evenly around a circle
+  const positioned = nodes.map((node, i) => {
+    const angle = (i / nodes.length) * Math.PI * 2 - Math.PI / 2;
+    return {
+      ...node,
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+    };
+  });
+  const posById = new Map(positioned.map((p) => [p.id, p]));
+
+  const maxWeight = edges.reduce((m, e) => Math.max(m, e.weight), 1);
+
+  return (
+    <View style={[styles.graphContainer, { width, height: GRAPH_HEIGHT }]}>
+      {/* Edges */}
+      {edges.map((e, i) => {
+        const a = posById.get(e.source);
+        const b = posById.get(e.target);
+        if (!a || !b) return null;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+        const opacity = 0.25 + 0.6 * (e.weight / maxWeight);
+        const isConsensus = e.types.includes('consensus');
+        const isDelegation = e.types.includes('delegation');
+        const color = isConsensus ? Colors.success : isDelegation ? Colors.accent : Colors.textMuted;
+        return (
+          <View
+            key={`${e.source}-${e.target}-${i}`}
+            style={{
+              position: 'absolute',
+              left: a.x,
+              top: a.y - 0.5,
+              width: length,
+              height: 1,
+              backgroundColor: color,
+              opacity,
+              transform: [{ translateX: 0 }, { rotate: `${angle}deg` }],
+              transformOrigin: '0 50%',
+            }}
+          />
+        );
+      })}
+
+      {/* Nodes */}
+      {positioned.map((n) => {
+        const color = CATEGORY_COLOR[n.category] ?? Colors.textSecondary;
+        const initials = (n.name ?? '?').slice(0, 2).toUpperCase();
+        return (
+          <View
+            key={n.id}
+            style={[
+              styles.graphNode,
+              {
+                left: n.x - 18,
+                top: n.y - 18,
+                borderColor: color,
+                backgroundColor: color + '22',
+              },
+            ]}
+          >
+            <Text style={[styles.graphNodeText, { color }]}>{initials}</Text>
+          </View>
+        );
+      })}
+
+      {/* Legend */}
+      <View style={styles.graphLegend}>
+        <LegendDot color={Colors.accent} label="delegate" />
+        <LegendDot color={Colors.success} label="consensus" />
+        <LegendDot color={Colors.textMuted} label="rating" />
+      </View>
+    </View>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <Text style={styles.legendText}>{label}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  header: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.md,
+  },
+  title: {
+    fontFamily: Fonts.heading,
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  subtitle: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginTop: Spacing.xs,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  loadingText: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  graphSection: {
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+  },
+  graphContainer: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  graphNode: {
+    position: 'absolute',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  graphNodeText: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  graphLegend: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontFamily: Fonts.body,
+    fontSize: 10,
+    color: Colors.textSecondary,
+  },
+  graphEmpty: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: Spacing.xxl,
+    paddingHorizontal: Spacing.lg,
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  graphEmptyTitle: {
+    fontFamily: Fonts.body,
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginTop: Spacing.xs,
+  },
+  graphEmptyText: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  statCard: {
+    width: (SCREEN_WIDTH - Spacing.lg * 2 - Spacing.md * 3) / 2,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  statValue: {
+    fontFamily: Fonts.body,
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  statLabel: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: Spacing.xs,
+  },
+  authenticityCard: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.lg,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  authenticityHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  authenticityTitle: {
+    fontFamily: Fonts.body,
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  authenticityScore: {
+    fontFamily: Fonts.body,
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.success,
+  },
+  authenticityBar: {
+    height: 8,
+    backgroundColor: Colors.border,
+    borderRadius: BorderRadius.sm,
+    overflow: 'hidden',
+  },
+  authenticityFill: {
+    height: '100%',
+    backgroundColor: Colors.success,
+    borderRadius: BorderRadius.sm,
+  },
+  authenticitySubtitle: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: Spacing.sm,
+  },
+  section: {
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+  },
+  sectionTitle: {
+    fontFamily: Fonts.body,
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: Spacing.md,
+  },
+  detailCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border + '44',
+  },
+  detailLabel: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  detailValue: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  typeList: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+  },
+  typeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border + '44',
+  },
+  typeDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.accent + '22',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.md,
+  },
+  typeName: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: Colors.textPrimary,
+    flex: 1,
+  },
+  typeCount: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.accent,
+  },
+  leaderboardCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+  },
+  leaderboardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border + '44',
+  },
+  leaderboardRank: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.accent,
+    width: 36,
+  },
+  leaderboardInfo: {
+    flex: 1,
+  },
+  leaderboardName: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  leaderboardCategory: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    textTransform: 'capitalize',
+  },
+  leaderboardScoreContainer: {
+    alignItems: 'flex-end',
+  },
+  leaderboardScore: {
+    fontFamily: Fonts.body,
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.accent,
+  },
+  leaderboardTier: {
+    fontFamily: Fonts.body,
+    fontSize: 10,
+    color: Colors.textSecondary,
+  },
+});

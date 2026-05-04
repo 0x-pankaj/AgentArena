@@ -9,13 +9,13 @@ interface AtomBadgeProps {
   showScore?: boolean;
 }
 
-const TIER_CONFIG: Record<string, { emoji: string; color: string; bg: string; label: string }> = {
-  Unknown: { emoji: '⚪', color: '#9CA3AF', bg: '#9CA3AF22', label: 'Unknown' },
-  Bronze: { emoji: '🥉', color: '#CD7F32', bg: '#CD7F3222', label: 'Bronze' },
-  Silver: { emoji: '🥈', color: '#C0C0C0', bg: '#C0C0C022', label: 'Silver' },
-  Gold: { emoji: '🥇', color: '#FFD700', bg: '#FFD70022', label: 'Gold' },
-  Platinum: { emoji: '💎', color: '#E5E4E2', bg: '#E5E4E222', label: 'Platinum' },
-  Legendary: { emoji: '👑', color: '#FF4500', bg: '#FF450022', label: 'Legendary' },
+const TIER_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
+  Unknown: { color: '#9CA3AF', bg: '#9CA3AF22', label: 'Unknown' },
+  Bronze: { color: '#CD7F32', bg: '#CD7F3222', label: 'Bronze' },
+  Silver: { color: '#C0C0C0', bg: '#C0C0C022', label: 'Silver' },
+  Gold: { color: '#FFD700', bg: '#FFD70022', label: 'Gold' },
+  Platinum: { color: '#E5E4E2', bg: '#E5E4E222', label: 'Platinum' },
+  Legendary: { color: '#FF4500', bg: '#FF450022', label: 'Legendary' },
 };
 
 export function AtomBadge({ tier = 'Unknown', score, size = 'md', showScore = false }: AtomBadgeProps) {
@@ -31,7 +31,7 @@ export function AtomBadge({ tier = 'Unknown', score, size = 'md', showScore = fa
 
   return (
     <View style={[styles.container, { backgroundColor: config.bg, paddingHorizontal: s.paddingH, paddingVertical: s.paddingV }]}>
-      <Text style={[styles.emoji, { fontSize: s.fontSize }]}>{config.emoji}</Text>
+      <View style={[styles.dot, { backgroundColor: config.color }]} />
       <Text style={[styles.label, { color: config.color, fontSize: s.fontSize }]}>
         {config.label}
       </Text>
@@ -48,7 +48,7 @@ export function AtomBadgeMini({ tier = 'Unknown' }: { tier?: string }) {
   const config = TIER_CONFIG[tier] ?? TIER_CONFIG.Unknown;
   return (
     <View style={[styles.miniContainer, { backgroundColor: config.bg }]}>
-      <Text style={[styles.miniEmoji, { color: config.color }]}>{config.emoji}</Text>
+      <View style={[styles.miniDot, { backgroundColor: config.color }]} />
     </View>
   );
 }
@@ -61,8 +61,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     alignSelf: 'flex-start',
   },
-  emoji: {
-    fontSize: 10,
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   label: {
     fontFamily: Fonts.body,
@@ -81,7 +83,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  miniEmoji: {
-    fontSize: 12,
+  miniDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
 });

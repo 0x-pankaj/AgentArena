@@ -44,3 +44,10 @@ yarn-error.log*
 
 # Secrets documentation (contains real API keys)
 exa.md
+
+# Graphify regenerable artifacts (keep top-level reports tracked, ignore caches)
+graphify-out/cache/
+apps/api/src/agents/graphify-out/
+
+# Claude Code local settings (user-specific)
+.claude/settings.local.json

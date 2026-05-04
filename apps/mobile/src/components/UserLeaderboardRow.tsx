@@ -32,8 +32,14 @@ export function UserLeaderboardRow({ entry, onPress }: UserLeaderboardRowProps) 
       onPress={onPress}
     >
       <View style={styles.rankCol}>
-        <Text style={[styles.rankText, rank <= 3 && styles.topRank]}>
-          {rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : `#${rank}`}
+        <Text style={[
+          styles.rankText,
+          rank <= 3 && styles.topRank,
+          rank === 1 && { color: '#FFD700' },
+          rank === 2 && { color: '#C0C0C0' },
+          rank === 3 && { color: '#CD7F32' },
+        ]}>
+          #{rank}
         </Text>
       </View>
 

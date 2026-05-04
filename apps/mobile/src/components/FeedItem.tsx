@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -7,8 +8,6 @@ import Animated, {
   withTiming,
   withSpring,
   withDelay,
-  interpolate,
-  Extrapolation,
 } from 'react-native-reanimated';
 import { Colors, Fonts, BorderRadius, Spacing } from '../../constants/Colors';
 
@@ -46,19 +45,21 @@ interface FeedItemProps {
   onAgentPress?: (agentId: string) => void;
   isActive?: boolean;
   index?: number;
-  onReact?: (eventId: string, emoji: string) => void;
+  reactions?: Record<string, number>;
+  myReactions?: string[];
+  onToggleReaction?: (eventId: string, reactionType: 'fire' | 'up' | 'think' | 'gem') => void;
 }
 
-const categoryIcons: Record<string, string> = {
-  analysis: '🔍',
-  trade: '💳',
-  decision: '🎯',
-  position_update: '📊',
-  reasoning: '🧠',
-  scanning: '📡',
-  thinking: '⚙️',
-  signal_update: '📊',
-  edge_detected: '💡',
+const categoryIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
+  analysis: 'search',
+  trade: 'swap-horizontal',
+  decision: 'git-branch',
+  position_update: 'bar-chart',
+  reasoning: 'bulb',
+  scanning: 'scan',
+  thinking: 'cog',
+  signal_update: 'bar-chart',
+  edge_detected: 'flash',
 };
 
 const categoryLabels: Record<string, string> = {
@@ -79,7 +80,12 @@ const severityColors: Record<string, string> = {
   critical: Colors.danger,
 };
 
-const REACTIONS = ['🔥', '📈', '🤔', '💎'];
+const REACTIONS: Array<{ name: keyof typeof Ionicons.glyphMap; label: string }> = [
+  { name: 'flame', label: 'fire' },
+  { name: 'trending-up', label: 'up' },
+  { name: 'help-circle', label: 'think' },
+  { name: 'diamond', label: 'gem' },
+];
 
 // ─── Sub-components ───────────────────────────────────────────
 
@@ -148,35 +154,39 @@ function TimeAgo({ timestamp }: { timestamp: string }) {
   return <Text style={styles.time}>{display}</Text>;
 }
 
-function ReactionBar({ eventId, onReact }: { eventId?: string; onReact?: (eventId: string, emoji: string) => void }) {
-  const [userReactions, setUserReactions] = useState<Record<string, number>>({});
-
+function ReactionBar({
+  eventId,
+  reactions = {},
+  myReactions = [],
+  onToggleReaction,
+}: {
+  eventId?: string;
+  reactions?: Record<string, number>;
+  myReactions?: string[];
+  onToggleReaction?: (eventId: string, reactionType: 'fire' | 'up' | 'think' | 'gem') => void;
+}) {
   const handlePress = useCallback(
-    (emoji: string) => {
-      if (!eventId) return;
-      setUserReactions((prev) => ({
-        ...prev,
-        [emoji]: (prev[emoji] || 0) + 1,
-      }));
-      onReact?.(eventId, emoji);
+    (label: string) => {
+      if (!eventId || !onToggleReaction) return;
+      onToggleReaction(eventId, label as any);
     },
-    [eventId, onReact]
+    [eventId, onToggleReaction]
   );
 
   return (
     <View style={styles.reactionBar}>
-      {REACTIONS.map((emoji) => {
-        const count = userReactions[emoji] || 0;
-        const isActive = count > 0;
+      {REACTIONS.map((reaction) => {
+        const count = reactions[reaction.label] || 0;
+        const isActive = myReactions.includes(reaction.label);
         return (
           <Pressable
-            key={emoji}
+            key={reaction.label}
             style={[styles.reactionBtn, isActive && styles.reactionBtnActive]}
-            onPress={() => handlePress(emoji)}
+            onPress={() => handlePress(reaction.label)}
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
           >
-            <Text style={styles.reactionEmoji}>{emoji}</Text>
-            {isActive && <Text style={styles.reactionCount}>{count}</Text>}
+            <Ionicons name={reaction.name} size={14} color={isActive ? Colors.accent : Colors.textSecondary} />
+            {count > 0 && <Text style={styles.reactionCount}>{count}</Text>}
           </Pressable>
         );
       })}
@@ -186,10 +196,18 @@ function ReactionBar({ eventId, onReact }: { eventId?: string; onReact?: (eventI
 
 // ─── Main Component ───────────────────────────────────────────
 
-export function FeedItem({ event, onAgentPress, isActive, index = 0, onReact }: FeedItemProps) {
+export function FeedItem({
+  event,
+  onAgentPress,
+  isActive,
+  index = 0,
+  reactions = {},
+  myReactions = [],
+  onToggleReaction,
+}: FeedItemProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const icon = categoryIcons[event.category ?? ''] || '📋';
+  const iconName = categoryIcons[event.category ?? ''] ?? 'document-text';
   const categoryLabel = categoryLabels[event.category ?? ''] || 'ACTIVITY';
   const severityColor = severityColors[event.severity ?? 'info'] || Colors.textSecondary;
   const agentName = event.agent_display_name ?? event.agentName ?? 'Agent';
@@ -245,7 +263,7 @@ export function FeedItem({ event, onAgentPress, isActive, index = 0, onReact }: 
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <View style={[styles.iconCircle, { backgroundColor: severityColor + '18' }]}>
-              <Text style={styles.icon}>{icon}</Text>
+              <Ionicons name={iconName} size={14} color={severityColor} />
             </View>
             <Pressable
               onPress={() => agentId && onAgentPress?.(agentId)}
@@ -366,7 +384,12 @@ export function FeedItem({ event, onAgentPress, isActive, index = 0, onReact }: 
         )}
 
         {/* Reactions */}
-        <ReactionBar eventId={event.event_id} onReact={onReact} />
+        <ReactionBar
+          eventId={event.event_id}
+          reactions={reactions}
+          myReactions={myReactions}
+          onToggleReaction={onToggleReaction}
+        />
       </Pressable>
     </Animated.View>
   );
@@ -419,9 +442,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  icon: {
-    fontSize: 14,
   },
   agentName: {
     fontFamily: Fonts.body,
@@ -650,9 +670,6 @@ const styles = StyleSheet.create({
   reactionBtnActive: {
     backgroundColor: Colors.accent + '18',
     borderColor: Colors.accent + '44',
-  },
-  reactionEmoji: {
-    fontSize: 14,
   },
   reactionCount: {
     fontFamily: Fonts.mono,

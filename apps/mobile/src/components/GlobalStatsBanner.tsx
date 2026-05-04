@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
 import { SkeletonLoader } from './SkeletonLoader';
 
@@ -49,25 +50,25 @@ export function GlobalStatsBanner({ stats, isLoading }: GlobalStatsBannerProps) 
     {
       label: 'Total Volume',
       value: formatCurrency(stats.totalVolume),
-      icon: '💰',
+      iconName: 'cash-outline' as const,
       color: Colors.accent,
     },
     {
       label: 'Platform PnL',
       value: stats.totalPnl === 0 ? "—" : `${stats.totalPnl > 0 ? '+' : ''}${formatCurrency(stats.totalPnl)}`,
-      icon: '📈',
+      iconName: 'trending-up-outline' as const,
       color: stats.totalPnl > 0 ? Colors.success : stats.totalPnl < 0 ? Colors.danger : Colors.textPrimary,
     },
     {
       label: 'Active Agents',
       value: String(stats.activeAgents),
-      icon: '🤖',
+      iconName: 'hardware-chip-outline' as const,
       color: Colors.accent,
     },
     {
       label: 'Total Trades',
       value: formatNumber(stats.totalTrades),
-      icon: '⚡',
+      iconName: 'flash-outline' as const,
       color: Colors.textPrimary,
     },
   ];
@@ -80,7 +81,7 @@ export function GlobalStatsBanner({ stats, isLoading }: GlobalStatsBannerProps) 
     >
       {statItems.map((item, index) => (
         <View key={index} style={styles.card}>
-          <Text style={styles.icon}>{item.icon}</Text>
+          <Ionicons name={item.iconName} size={18} color={item.color} />
           <Text style={[styles.value, { color: item.color }]}>{item.value}</Text>
           <Text style={styles.label}>{item.label}</Text>
         </View>
@@ -104,9 +105,6 @@ const styles = StyleSheet.create({
     minWidth: 110,
     alignItems: 'center',
     gap: 4,
-  },
-  icon: {
-    fontSize: 16,
   },
   value: {
     fontFamily: Fonts.mono,

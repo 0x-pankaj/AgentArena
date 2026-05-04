@@ -12,7 +12,7 @@ export const feedRouter = router({
 
   getByAgent: publicProcedure
     .input(z.object({
-      agentId: z.string().uuid(),
+      agentId: z.string().min(1),
       limit: z.number().min(1).max(100).default(50),
     }))
     .query(async ({ input }) => {

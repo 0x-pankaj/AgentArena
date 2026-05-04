@@ -452,3 +452,152 @@ export function useJobSwitchMode() {
     },
   });
 }
+
+// --- Swarm Graph hooks ---
+
+export function useSwarmGraph(agentId?: string, days: number = 30) {
+  return useQuery({
+    queryKey: ['swarm', 'graph', agentId, days],
+    queryFn: () => {
+      const input = JSON.stringify({ agentId, days });
+      return fetchFromAPI(`swarmGraph.getAgentGraph?input=${encodeURIComponent(input)}`);
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function useSwarmStats(days: number = 30) {
+  return useQuery({
+    queryKey: ['swarm', 'stats', days],
+    queryFn: () => {
+      const input = JSON.stringify({ days });
+      return fetchFromAPI(`swarmGraph.getInteractionStats?input=${encodeURIComponent(input)}`);
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function useNetworkDensity() {
+  return useQuery({
+    queryKey: ['swarm', 'density'],
+    queryFn: () => fetchFromAPI('swarmGraph.getNetworkDensity'),
+    staleTime: 60_000,
+  });
+}
+
+export function useReputationDistribution() {
+  return useQuery({
+    queryKey: ['swarm', 'reputationDistribution'],
+    queryFn: () => fetchFromAPI('swarmGraph.getReputationDistribution'),
+    staleTime: 60_000,
+  });
+}
+
+export function useAgentSwarmProfile(agentId: string) {
+  return useQuery({
+    queryKey: ['swarm', 'profile', agentId],
+    queryFn: () => {
+      const input = JSON.stringify({ agentId });
+      return fetchFromAPI(`swarmGraph.getAgentSwarmProfile?input=${encodeURIComponent(input)}`);
+    },
+    enabled: !!agentId,
+    staleTime: 30_000,
+  });
+}
+
+export function useSwarmLeaderboard(limit: number = 20, category?: string) {
+  return useQuery({
+    queryKey: ['swarm', 'leaderboard', limit, category],
+    queryFn: () => {
+      const input = JSON.stringify({ limit, category });
+      return fetchFromAPI(`swarmGraph.getSwarmLeaderboard?input=${encodeURIComponent(input)}`);
+    },
+    staleTime: 30_000,
+  });
+}
+
+// --- Reaction hooks ---
+
+export function useReactionsForEvents(eventIds: string[], userWallet?: string | null) {
+  return useQuery({
+    queryKey: ['reactions', 'events', eventIds, userWallet],
+    queryFn: () => {
+      const input = JSON.stringify({ eventIds, userWallet });
+      return fetchFromAPI(`reaction.getForEvents?input=${encodeURIComponent(input)}`);
+    },
+    enabled: eventIds.length > 0,
+    staleTime: 5_000,
+  });
+}
+
+export function useToggleReaction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { eventId: string; reactionType: 'fire' | 'up' | 'think' | 'gem' }) =>
+      fetchFromAPI('reaction.toggle', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reactions'] });
+    },
+  });
+}
+
+// --- Paper Betting hooks ---
+
+export function usePaperBalance() {
+  return useQuery({
+    queryKey: ['paperBets', 'balance'],
+    queryFn: () => fetchFromAPI('paperBets.getBalance'),
+    staleTime: 10_000,
+  });
+}
+
+export function usePlacePaperBet() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { eventId: string; agentId: string; direction: 'buy' | 'sell' | 'pass'; amount: number }) =>
+      fetchFromAPI('paperBets.place', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['paperBets'] });
+    },
+  });
+}
+
+export function useEventBets(eventId: string) {
+  return useQuery({
+    queryKey: ['paperBets', 'event', eventId],
+    queryFn: () => {
+      const input = JSON.stringify({ eventId });
+      return fetchFromAPI(`paperBets.getByEvent?input=${encodeURIComponent(input)}`);
+    },
+    enabled: !!eventId,
+    staleTime: 10_000,
+  });
+}
+
+export function useMyBets(status: 'pending' | 'won' | 'lost' | 'all' = 'all', limit: number = 50) {
+  return useQuery({
+    queryKey: ['paperBets', 'myBets', status, limit],
+    queryFn: () => {
+      const input = JSON.stringify({ status, limit });
+      return fetchFromAPI(`paperBets.getMyBets?input=${encodeURIComponent(input)}`);
+    },
+    staleTime: 10_000,
+  });
+}
+
+export function usePredictorLeaderboard(limit: number = 50) {
+  return useQuery({
+    queryKey: ['leaderboard', 'predictors', limit],
+    queryFn: () => {
+      const input = JSON.stringify({ limit });
+      return fetchFromAPI(`leaderboard.getPredictors?input=${encodeURIComponent(input)}`);
+    },
+    staleTime: 30_000,
+  });
+}

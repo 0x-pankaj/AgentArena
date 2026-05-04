@@ -5,11 +5,104 @@
 // only the execution layer changes — everything else stays identical.
 // ============================================================
 
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { db, schema } from "../db";
 import { redis } from "../utils/redis";
 import { jupiterPredict, type JupiterMarket } from "../plugins/polymarket-plugin";
 import { DEFAULT_TAKE_PROFIT_PERCENT, DEFAULT_STOP_LOSS_PERCENT, DEFAULT_PAPER_BALANCE_USDC } from "@agent-arena/shared";
+import { recomputeAgentPerformance } from "../leaderboard";
+import {
+  submitAtomFeedback,
+  getAtomSummary,
+  computeReputationScore,
+  AtomTag,
+} from "../utils/atom-reputation";
+
+// Heuristic tier from win-rate, used as a UX fallback when on-chain ATOM
+// feedback is unavailable. The real on-chain tier overwrites this whenever
+// getAtomSummary() succeeds.
+function heuristicTierFromPerformance(winRate: number, totalTrades: number): string {
+  if (totalTrades < 1) return "Unknown";
+  if (winRate >= 0.7 && totalTrades >= 5) return "Gold";
+  if (winRate >= 0.55 && totalTrades >= 3) return "Silver";
+  return "Bronze";
+}
+
+// Submit ATOM feedback for a closed paper trade and refresh the agent's
+// DB-side trust tier. Non-blocking: failures fall back to a local heuristic
+// so the marketplace UI moves off "Unknown" even when on-chain submission
+// fails (e.g., the deployed ATOM program rejects our discriminator).
+async function reportTradeOutcomeToAtom(
+  agentId: string,
+  clientAddress: string,
+  pnl: number,
+  costBasis: number,
+): Promise<void> {
+  try {
+    const [agent] = await db
+      .select({ assetAddress: schema.agents.assetAddress })
+      .from(schema.agents)
+      .where(eq(schema.agents.id, agentId))
+      .limit(1);
+
+    if (!agent?.assetAddress) return;
+
+    let onChainSucceeded = false;
+    try {
+      const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+      const result = await submitAtomFeedback({
+        agentAsset: agent.assetAddress,
+        value: Math.abs(pnlPercent).toFixed(2),
+        tag1: pnl >= 0 ? AtomTag.profit : AtomTag.loss,
+        tag2: AtomTag.day,
+        reviewerAddress: clientAddress,
+      });
+
+      if (result) {
+        const summary = await getAtomSummary(agent.assetAddress);
+        if (summary) {
+          await db
+            .update(schema.agents)
+            .set({
+              trustTier: summary.trustTier,
+              reputationScore: String(computeReputationScore(summary)),
+            })
+            .where(eq(schema.agents.id, agentId));
+          onChainSucceeded = true;
+        }
+      }
+    } catch (err) {
+      console.warn(
+        `[PaperTrading] ATOM on-chain feedback failed for agent ${agentId}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    if (!onChainSucceeded) {
+      const [perf] = await db
+        .select()
+        .from(schema.agentPerformance)
+        .where(eq(schema.agentPerformance.agentId, agentId))
+        .limit(1);
+      if (perf) {
+        const winRate = Number(perf.winRate ?? 0);
+        const totalTrades = Number(perf.totalTrades ?? 0);
+        await db
+          .update(schema.agents)
+          .set({
+            trustTier: heuristicTierFromPerformance(winRate, totalTrades),
+            reputationScore: String(Math.round(winRate * 100)),
+          })
+          .where(eq(schema.agents.id, agentId));
+      }
+    }
+  } catch (err) {
+    console.warn(
+      `[PaperTrading] reportTradeOutcomeToAtom failed for agent ${agentId}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
 
 // --- Redis keys ---
 
@@ -169,13 +262,14 @@ export async function paperBuyOrder(params: {
   // 3. Calculate contracts (with simulated slippage based on orderbook depth)
   let contracts = depositAmount / fillPrice;
 
-  // Try to get orderbook for realistic depth-based fill simulation
+  // Try to get orderbook for realistic depth-based fill simulation.
+  // If no orderbook depth is reported (sparse / newly listed market), fall back
+  // to the full estimated fill — the original logic zeroed contracts here.
   try {
     const orderbook = await jupiterPredict.getOrderbook(marketId);
     const side = isYes ? "yes" : "no";
     const depth = (orderbook as any)[side] as Array<[number, number]> | undefined;
-    if (depth && Array.isArray(depth)) {
-      // Sum available depth at prices near fill
+    if (depth && Array.isArray(depth) && depth.length > 0) {
       let availableContracts = 0;
       for (const [priceCents, qty] of depth) {
         const price = priceCents / 100;
@@ -183,9 +277,10 @@ export async function paperBuyOrder(params: {
           availableContracts += qty;
         }
       }
-      // If not enough depth, partial fill
-      if (availableContracts < contracts) {
-        contracts = availableContracts * 0.95; // 95% of available depth
+      // Only apply partial fill when there *is* depth but it's < requested.
+      // Zero depth means the orderbook API returned nothing useful — keep the estimate.
+      if (availableContracts > 0 && availableContracts < contracts) {
+        contracts = availableContracts * 0.95;
       }
     }
   } catch {
@@ -203,11 +298,15 @@ export async function paperBuyOrder(params: {
   // 4. Deduct balance
   await setPaperBalance(jobId, balance - actualDeposit);
 
-  // 5. Generate simulated on-chain identifiers
+  // 5. Generate simulated on-chain identifiers.
+  // positions.position_pubkey + trades.tx_signature are sized to fit Solana
+  // base58-encoded values (44 / 88 chars). Paper rows must fit those columns,
+  // so we use a short random suffix instead of jobId+timestamp.
   const timestamp = Date.now();
+  const shortId = Math.random().toString(36).slice(2, 10) + timestamp.toString(36);
   const orderPubkey = `paper-order-${jobId}-${timestamp}`;
-  const positionPubkey = `paper-pos-${jobId}-${timestamp}`;
-  const txSignature = `paper-tx-${jobId}-${timestamp}`;
+  const positionPubkey = `paper-pos-${shortId}`;
+  const txSignature = `paper-tx-${shortId}`;
 
   // 6. Determine expiry (market close time or default 30 days)
   const expiresAt = marketClosesAt
@@ -348,10 +447,32 @@ export async function paperClosePosition(params: {
     txSignature: position.txSignature,
   });
 
+  // 7. Update job-level realized PnL so profile/UI reflect cumulative profit.
+  const [updatedJob] = await db
+    .update(schema.jobs)
+    .set({
+      totalProfit: sql`${schema.jobs.totalProfit} + ${String(pnl)}`,
+    })
+    .where(eq(schema.jobs.id, jobId))
+    .returning({ clientAddress: schema.jobs.clientAddress });
+
   console.log(
     `[PaperTrading] CLOSE ${position.side.toUpperCase()} ${contracts.toFixed(2)} contracts ` +
     `@ $${exitPrice.toFixed(4)} (entry: $${entryPrice.toFixed(4)}) | PnL: $${pnl.toFixed(2)} | Reason: ${reason.slice(0, 80)}`
   );
+
+  try {
+    await recomputeAgentPerformance(params.agentId, true);
+  } catch (err) {
+    console.error("[PaperTrading] recomputeAgentPerformance failed:", err);
+  }
+
+  // Push ATOM feedback so on-chain reputation moves off "Unknown" without
+  // waiting for the whole job to complete.
+  if (updatedJob?.clientAddress) {
+    const costBasis = contracts * entryPrice;
+    reportTradeOutcomeToAtom(params.agentId, updatedJob.clientAddress, pnl, costBasis).catch(() => {});
+  }
 
   return { success: true, proceeds, pnl };
 }
@@ -438,12 +559,31 @@ export async function paperClaimPayout(params: {
       txSignature: tradeTxSignature,
       settledAt: new Date(),
     });
+
+    const [updatedJob] = await db
+      .update(schema.jobs)
+      .set({
+        totalProfit: sql`${schema.jobs.totalProfit} + ${String(pnl)}`,
+      })
+      .where(eq(schema.jobs.id, jobId))
+      .returning({ clientAddress: schema.jobs.clientAddress });
+
+    if (updatedJob?.clientAddress) {
+      const costBasis = contracts * Number(position.entryPrice);
+      reportTradeOutcomeToAtom(params.agentId, updatedJob.clientAddress, pnl, costBasis).catch(() => {});
+    }
   }
 
   console.log(
     `[PaperTrading] CLAIM ${position.side.toUpperCase()} ${contracts.toFixed(2)} contracts ` +
     `| Market result: ${marketResult} | Payout: $${payout.toFixed(2)}`
   );
+
+  try {
+    await recomputeAgentPerformance(params.agentId, true);
+  } catch (err) {
+    console.error("[PaperTrading] recomputeAgentPerformance failed:", err);
+  }
 
   return { success: true, payout };
 }

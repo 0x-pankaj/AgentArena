@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
@@ -55,6 +55,20 @@ export default function LeaderboardScreen() {
   const entries = currentData.data?.entries ?? [];
   const userEntries = users.data?.entries ?? [];
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([
+      globalStats.refetch(),
+      allTime.refetch(),
+      today.refetch(),
+      byCategory.refetch(),
+      users.refetch(),
+    ]);
+    setRefreshing(false);
+  }, [globalStats, allTime, today, byCategory, users]);
+
   const categoryColor = (cat: string) => {
     const map: Record<string, string> = {
       geo: Colors.geo,
@@ -72,6 +86,9 @@ export default function LeaderboardScreen() {
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} colors={[Colors.accent]} />
+        }
       >
         <Text style={styles.title}>Leaderboard</Text>
 
@@ -88,7 +105,7 @@ export default function LeaderboardScreen() {
             onPress={() => setActiveTab('agents')}
           >
             <Text style={[styles.tabText, activeTab === 'agents' && styles.tabTextActive]}>
-              🤖 Agents
+              Agents
             </Text>
           </Pressable>
           <Pressable
@@ -96,7 +113,7 @@ export default function LeaderboardScreen() {
             onPress={() => setActiveTab('users')}
           >
             <Text style={[styles.tabText, activeTab === 'users' && styles.tabTextActive]}>
-              👥 Users
+              Users
             </Text>
           </Pressable>
         </View>
@@ -168,8 +185,14 @@ export default function LeaderboardScreen() {
                     onPress={() => router.push(`/agent/${entry.agentId ?? entry.agent_id}`)}
                   >
                     <View style={styles.rankCol}>
-                      <Text style={[styles.rankText, rank <= 3 && styles.topRank]}>
-                        {rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : `#${rank}`}
+                      <Text style={[
+                        styles.rankText,
+                        rank <= 3 && styles.topRank,
+                        rank === 1 && { color: '#FFD700' },
+                        rank === 2 && { color: '#C0C0C0' },
+                        rank === 3 && { color: '#CD7F32' },
+                      ]}>
+                        #{rank}
                       </Text>
                     </View>
                     <View style={[styles.nameCol, styles.agentInfo]}>
@@ -180,7 +203,7 @@ export default function LeaderboardScreen() {
                           <Text style={[styles.tierText, {
                             color: entry.trustTier === 'Gold' ? '#FFD700' : entry.trustTier === 'Silver' ? '#C0C0C0' : entry.trustTier === 'Bronze' ? '#CD7F32' : '#9CA3AF'
                           }]}>
-                            {entry.trustTier === 'Gold' ? '🥇' : entry.trustTier === 'Silver' ? '🥈' : entry.trustTier === 'Bronze' ? '🥉' : '💎'} {entry.trustTier}
+                            {entry.trustTier}
                           </Text>
                         )}
                         {isActive && <View style={styles.activeDot} />}

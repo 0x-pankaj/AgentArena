@@ -7,6 +7,9 @@ import { userRouter } from "./user";
 import { leaderboardRouter } from "./leaderboard";
 import { feedRouter } from "./feed";
 import { evolutionRouter } from "./evolution";
+import { swarmGraphRouter } from "./swarm-graph";
+import { reactionRouter } from "./reaction";
+import { paperBetsRouter } from "./paper-bets";
 
 export const appRouter = router({
   agent: agentRouter,
@@ -19,6 +22,9 @@ export const appRouter = router({
   leaderboard: leaderboardRouter,
   feed: feedRouter,
   evolution: evolutionRouter,
+  swarmGraph: swarmGraphRouter,
+  reaction: reactionRouter,
+  paperBets: paperBetsRouter,
 });
 
 export type AppRouter = typeof appRouter;

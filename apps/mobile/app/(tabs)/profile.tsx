@@ -1,11 +1,12 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Clipboard, RefreshControl } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
 import { useAuthStore } from '../../src/stores/authStore';
 import { SkeletonCard, SkeletonLoader } from '../../src/components/SkeletonLoader';
-import { useUserPortfolio, useJobList, useJobPause, useJobResume, useJobWalletBalance, useJobFund, usePaperTradingBalance } from '../../src/lib/api';
+import { useUserPortfolio, useJobList, useJobPause, useJobResume, useJobWalletBalance, useJobFund, usePaperTradingBalance, usePaperBalance, useMyBets, usePredictorLeaderboard } from '../../src/lib/api';
 import { useSolBalance } from '../../src/hooks/useSolBalance';
 import { usePrivy } from '@privy-io/expo';
 
@@ -42,6 +43,9 @@ export default function ProfileScreen() {
   const resumeJob = useJobResume();
   const fundJob = useJobFund();
   const solBalance = useSolBalance(walletAddress);
+  const paperBalance = usePaperBalance();
+  const myBets = useMyBets('all', 10);
+  const predictors = usePredictorLeaderboard(10);
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -51,9 +55,11 @@ export default function ProfileScreen() {
       portfolio.refetch(),
       jobs.refetch(),
       solBalance.refetch(),
+      paperBalance.refetch(),
+      myBets.refetch(),
     ]);
     setRefreshing(false);
-  }, [portfolio, jobs, solBalance]);
+  }, [portfolio, jobs, solBalance, paperBalance, myBets]);
 
   const handleDisconnect = () => {
     Alert.alert('Disconnect Wallet', 'Are you sure you want to disconnect?', [
@@ -123,7 +129,7 @@ export default function ProfileScreen() {
         <View style={styles.header}>
           <Text style={styles.title}>Profile</Text>
           <Pressable style={styles.settingsButton}>
-            <Text style={styles.settingsIcon}>⚙️</Text>
+            <Ionicons name="settings-outline" size={20} color={Colors.textPrimary} />
           </Pressable>
         </View>
 
@@ -155,15 +161,64 @@ export default function ProfileScreen() {
             <Text style={styles.connectBtnText}>Connect Wallet</Text>
           </Pressable>
         )}
-        {isConnected && (
-          <Pressable
-            style={styles.createAgentBtn}
-            onPress={() => router.push('/create-agent')}
-          >
-            <Text style={styles.createAgentText}>+ Create Agent</Text>
-          </Pressable>
-        )}
+        {/* Custom agent creation is disabled pre-traction.
+            Re-enable by gating on EXPO_PUBLIC_ENABLE_CUSTOM_AGENT_CREATION. */}
         </View>
+
+        {/* Paper Points Card */}
+        <View style={styles.paperPointsCard}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+            <Ionicons name="trophy" size={20} color={Colors.accent} />
+            <Text style={styles.paperPointsLabel}>Paper Points</Text>
+          </View>
+          <Text style={styles.paperPointsValue}>{(paperBalance.data?.balance ?? 1000).toFixed(0)}</Text>
+          <View style={{ flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xs }}>
+            <Text style={styles.paperPointsSub}>Earned: +{(paperBalance.data?.totalEarned ?? 0).toFixed(0)}</Text>
+            <Text style={styles.paperPointsSub}>Lost: -{(paperBalance.data?.totalLost ?? 0).toFixed(0)}</Text>
+          </View>
+        </View>
+
+        {/* Recent Bets */}
+        {myBets.data && myBets.data.bets && myBets.data.bets.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>My Recent Bets</Text>
+            {myBets.data.bets.slice(0, 5).map((bet: any) => (
+              <View key={bet.id} style={styles.betRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flex: 1 }}>
+                  <View style={[
+                    styles.betStatusDot,
+                    { backgroundColor: bet.status === 'won' ? Colors.success : bet.status === 'lost' ? Colors.danger : Colors.warning }
+                  ]} />
+                  <Text style={styles.betText} numberOfLines={1}>
+                    {bet.direction.toUpperCase()} · {Number(bet.amount).toFixed(0)} pts
+                  </Text>
+                </View>
+                <Text style={[
+                  styles.betStatusText,
+                  { color: bet.status === 'won' ? Colors.success : bet.status === 'lost' ? Colors.danger : Colors.warning }
+                ]}>
+                  {bet.status.toUpperCase()}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Predictor Leaderboard */}
+        {predictors.data && predictors.data.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Top Predictors</Text>
+            {predictors.data.slice(0, 5).map((p: any) => (
+              <View key={p.walletAddress} style={styles.predictorRow}>
+                <Text style={styles.predictorRank}>#{p.rank}</Text>
+                <Text style={styles.predictorName} numberOfLines={1}>{p.username}</Text>
+                <Text style={[styles.predictorProfit, { color: p.netProfit >= 0 ? Colors.success : Colors.danger }]}>
+                  {p.netProfit >= 0 ? '+' : ''}{p.netProfit.toFixed(0)} pts
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {portfolio.data && (
           <View style={styles.summaryRow}>
@@ -278,7 +333,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: BorderRadius.xl, backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border, justifyContent: 'center', alignItems: 'center',
   },
-  settingsIcon: { fontSize: 18 },
+
   walletCard: {
     backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1,
     borderColor: Colors.accent, padding: Spacing.xl, gap: Spacing.lg,
@@ -352,4 +407,48 @@ const styles = StyleSheet.create({
   viewText: { fontFamily: Fonts.body, fontSize: 13, fontWeight: '600', color: Colors.accent },
   emptyState: { padding: Spacing.xl, alignItems: 'center' },
   emptyText: { fontFamily: Fonts.body, fontSize: 14, color: Colors.textMuted, textAlign: 'center' },
+
+  // Paper Points
+  paperPointsCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.accent + '33',
+    padding: Spacing.lg,
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  paperPointsLabel: { fontFamily: Fonts.body, fontSize: 12, fontWeight: '600', color: Colors.accent },
+  paperPointsValue: { fontFamily: Fonts.mono, fontSize: 28, fontWeight: '700', color: Colors.textPrimary },
+  paperPointsSub: { fontFamily: Fonts.mono, fontSize: 11, color: Colors.textMuted },
+
+  // Bets
+  betRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.md,
+  },
+  betStatusDot: { width: 8, height: 8, borderRadius: 4 },
+  betText: { fontFamily: Fonts.body, fontSize: 13, color: Colors.textSecondary, flex: 1 },
+  betStatusText: { fontFamily: Fonts.mono, fontSize: 11, fontWeight: '700' },
+
+  // Predictors
+  predictorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.md,
+    gap: Spacing.md,
+  },
+  predictorRank: { fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700', color: Colors.accent, width: 28 },
+  predictorName: { fontFamily: Fonts.body, fontSize: 13, color: Colors.textPrimary, flex: 1 },
+  predictorProfit: { fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700' },
 });

@@ -17,6 +17,7 @@ import {
   paperBuyOrder,
   paperClosePosition,
 } from "./paper-trading";
+import { recomputeAgentPerformance } from "../leaderboard";
 
 // --- Retry helper for external API calls ---
 
@@ -160,7 +161,11 @@ export async function executeBuyOrder(params: {
     params.isYes,
     params.confidence
   );
-  const finalAmount = Math.min(params.amount, positionSize);
+  // Quarter-Kelly with confidence-scaling can shrink positionSize to fractions
+  // of a cent on low-confidence trades. Enforce a $5 minimum so paper fills
+  // don't round to zero contracts and so executions stay demo-visible.
+  const sizedAmount = Math.min(params.amount, positionSize);
+  const finalAmount = Math.max(5, sizedAmount);
 
   // 3. Check trading mode for this job
   const [job] = await db
@@ -452,6 +457,12 @@ export async function closePosition(params: {
         timestamp: new Date().toISOString(),
       })
     );
+
+    try {
+      await recomputeAgentPerformance(params.agentId, false);
+    } catch (err) {
+      console.error("[TradeService] recomputeAgentPerformance failed:", err);
+    }
 
     return { success: true, trade };
   } catch (err) {

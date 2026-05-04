@@ -6,7 +6,7 @@ import {
   IPFSClient,
 } from "8004-solana";
 import { SOLANA_RPC_URL, SOLANA_COMMITMENT, IS_DEVNET } from "@agent-arena/shared";
-import { getBackendPayer, ensureBackendPayerBalance } from "./devnet-helpers";
+import { getBackendPayer, ensureBackendPayerBalance, connection } from "./devnet-helpers";
 
 // ═══════════════════════════════════════════════════════════════
 // 8004 Solana Agent Registry Integration
@@ -302,4 +302,4 @@ export function getAgentExplorerUrl(assetAddress: string): string {
 }
 
 // Re-export SDK types for convenience
-export { Tag, getAtomStatsPDA };
+export { Tag, getAtomStatsPDA, connection };

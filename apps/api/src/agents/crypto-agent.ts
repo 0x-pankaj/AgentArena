@@ -46,6 +46,7 @@ import { recordAgentPrediction as recordOutcomePrediction } from "../services/ou
 import { runScenarioAnalysis, quickScenarioGate } from "../services/scenario-analysis";
 import { db, schema } from "../db";
 import { runEnhancedPipeline } from "./enhanced-pipeline";
+import { runSwarmHooks } from "./swarm-hooks";
 
 const AGENT_NAME = "Crypto Agent";
 const AGENT_ID = "crypto-agent";
@@ -103,8 +104,12 @@ SIGNAL SOURCES:
 - CoinGecko: Price, volume, market cap, volatility, trending coins
 - DeFiLlama: TVL trends, protocol health, Solana ecosystem growth
 - Twitter: Crypto influencer sentiment, breaking news
+- Reddit: r/cryptocurrency, r/solana, r/ethfinance, r/Bitcoin for grassroots sentiment and early trend detection
+- Google Trends: Search interest for BTC, ETH, SOL, crypto ETF, regulation keywords (leading indicator 12-48h ahead)
 - FRED: Macro indicators (Fed rate, inflation) that drive crypto
 - GDELT: Regulatory news, government crypto policy
+
+Weigh signals by reliability: on-chain data > price action > Reddit sentiment > Google Trends > news > social media
 
 OUTPUT: For each market, provide your independent probability estimate with step-by-step reasoning.
 Be specific about which signals changed your estimate from the market price.`,
@@ -113,6 +118,8 @@ Be specific about which signals changed your estimate from the market price.`,
           "coingecko_price", "coingecko_trending", "coingecko_global",
           "defillama_tvl", "defillama_solana", "defillama_protocols",
           "twitter_search", "twitter_social_signal",
+          "reddit_search", "reddit_sentiment", "reddit_category",
+          "google_trends", "google_trends_category", "google_trends_breakout",
           "fred_series", "fred_macro_signal",
           "gdelt_search",
           "market_detail",
@@ -131,7 +138,7 @@ RULES:
 - Only trade markets settling within ${AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION} days
 - Only trade markets with >$${AGENT_LIMITS.MIN_MARKET_VOLUME.toLocaleString()} volume
 - If uncertain, choose "hold"
-- Only trade when edge (your probability - market price) exceeds 5%
+- Only trade when edge (your probability - market price) exceeds ${(AGENT_LIMITS.MIN_EDGE * 100).toFixed(1)}%
 ${EXECUTE_TRADES ? "" : "- NOTE: Running in decision-only mode (devnet). Log decisions but flag as analysis only."}
 
 EDGE DETECTION:
@@ -294,6 +301,11 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
     } catch {}
   }
 
+  // Self-heal: if a previous tick wedged the FSM, reset it.
+  fsm.recoverIfStuck("SCANNING", 10 * 60 * 1000);
+  fsm.recoverIfStuck("ANALYZING", 15 * 60 * 1000);
+  fsm.recoverIfStuck("EXECUTING", 5 * 60 * 1000);
+
   // Always force scan on first tick after resume (markets cache may be stale/missing)
   const marketsCacheKey = `${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`;
   const marketsCacheExists = await redis.exists(marketsCacheKey);
@@ -320,10 +332,26 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
   if (fsm.getState() === "SCANNING") {
     await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} scanning crypto prediction markets (BTC, ETH, SOL, ETFs, regulations)...`, { pipeline_stage: "scanning_start" });
 
-    // Enhanced pipeline: use MarketEventBus for deduped fetching + market ranking
-    await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
-    const markets = await scanMarkets("crypto");
-    
+    // Handle swarm delegation / consensus targets — skip scanning, analyze the specific market
+    const targetMarket = ctx.delegationTarget ?? ctx.consensusTarget;
+    let markets: MarketContext[];
+
+    if (targetMarket) {
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} analyzing delegated market: "${targetMarket.marketQuestion}"`, { pipeline_stage: "delegated_market", marketId: targetMarket.marketId });
+      markets = [{
+        marketId: targetMarket.marketId,
+        question: targetMarket.marketQuestion,
+        outcomes: targetMarket.outcomes ?? [{ name: "Yes", price: 0.5 }, { name: "No", price: 0.5 }],
+        volume: targetMarket.volume ?? 10000,
+        liquidity: ctx.delegationTarget?.liquidity ?? 5000,
+        closesAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      }];
+    } else {
+      // Enhanced pipeline: use MarketEventBus for deduped fetching + market ranking
+      await publishFeedStep(ctx.agentId, "scanning", `${AGENT_NAME} fetching markets via MarketEventBus...`, { pipeline_stage: "fetching_markets_enhanced", pipeline_version: "v2" });
+      markets = await scanMarkets("crypto");
+    }
+
     if (markets.length === 0) {
       fsm.transition("no_markets");
       await saveState();
@@ -362,17 +390,36 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
         pnl: Number(p.pnl ?? 0),
       }));
       const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
-      const decision = pipelineResult.decision;
+      let decision = pipelineResult.decision;
+
+      // ===== SWARM HOOKS: Delegation + Consensus =====
+      const swarmResult = await runSwarmHooks(ctx, ctx.agentId, "crypto", decision);
+      if (!swarmResult.proceed) {
+        fsm.abortToScanning();
+        await saveState();
+        return {
+          state: fsm.getState() as any,
+          action: "skipped",
+          detail: swarmResult.detail,
+          decision,
+          tokensUsed: pipelineResult.tokensUsed,
+        };
+      }
+      decision = swarmResult.decision ?? decision;
 
       if (decision.action === "buy" && decision.marketId) {
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", marketId: decision.marketId, market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
         const buyResult = await executeBuy(
-          decision, AGENT_ID, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "crypto"
+          decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "crypto"
         );
         if (buyResult.success) {
           fsm.transition("order_placed");
           await saveState();
           return { state: fsm.getState() as any, action: "executed", detail: `Bought on "${decision.marketQuestion}"`, decision, tokensUsed: pipelineResult.tokensUsed };
         }
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} ❌ Order failed — ${buyResult.error ?? "unknown"}`, { pipeline_stage: "execution_failed", error: buyResult.error ?? "unknown" }, "critical");
+        try { fsm.transition("order_failed"); } catch {}
+        await saveState();
       }
 
       return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, decision: pipelineResult.decision, tokensUsed: pipelineResult.tokensUsed };
@@ -465,7 +512,7 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
         }
       }
 
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", marketId: decision.marketId, market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
 
       const result = await executeBuy(decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "crypto");
       if (result.success) {

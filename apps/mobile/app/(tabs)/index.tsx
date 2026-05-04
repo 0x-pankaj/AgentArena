@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Clipboard, Alert, RefreshControl } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Fonts, Spacing, BorderRadius } from '../../constants/Colors';
@@ -9,7 +10,7 @@ import { SkeletonCard, SkeletonLoader } from '../../src/components/SkeletonLoade
 import { useAuthStore } from '../../src/stores/authStore';
 import { useAgentList, useTrendingAgents } from '../../src/lib/api';
 
-const categories = ['All', 'Geo', 'Politics', 'Sports', 'Crypto', 'General'];
+const categories = ['All', 'Politics', 'Sports', 'Crypto'];
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -82,7 +83,7 @@ export default function HomeScreen() {
             </View>
           </Pressable>
           <Pressable style={styles.notifButton}>
-            <Text style={styles.notifIcon}>🔔</Text>
+            <Ionicons name="notifications-outline" size={20} color={Colors.textPrimary} />
           </Pressable>
         </View>
 
@@ -106,7 +107,7 @@ export default function HomeScreen() {
         {/* Trending Agents */}
         {(trendingAgents.length > 0 || trending.isLoading) && (
           <View style={styles.trendingSection}>
-            <Text style={styles.sectionTitle}>🔥 Trending Now</Text>
+            <Text style={styles.sectionTitle}>Trending Now</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -199,7 +200,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: BorderRadius.xl, backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border, justifyContent: 'center', alignItems: 'center',
   },
-  notifIcon: { fontSize: 18 },
+
   title: { fontFamily: Fonts.heading, fontSize: 24, fontWeight: '700', color: Colors.textPrimary },
   chipsRow: { flexDirection: 'row', gap: Spacing.sm },
   agentList: { gap: Spacing.lg },
