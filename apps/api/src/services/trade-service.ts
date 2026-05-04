@@ -115,29 +115,42 @@ export async function getActivePositions(
 }
 
 // Display-time patch: legacy rows may carry a placeholder marketQuestion
-// (`Market POLY-…`) from before the scan-time drop landed. Show something
-// readable instead of the raw ID.
-function patchPositionDisplay<T extends { marketQuestion: string | null }>(p: T): T {
+// (`Market POLY-…` or bare `Untitled prediction market`) from before the
+// scan-time fix + ID-tagged label landed. Show the canonical
+// `Untitled prediction market (<id>)` label so the user can identify
+// which untitled position is which.
+function patchPositionDisplay<T extends { marketId: string; marketQuestion: string | null }>(p: T): T {
   if (!isPlaceholderMarketQuestion(p.marketQuestion)) return p;
-  return { ...p, marketQuestion: displayMarketQuestion(p.marketQuestion) };
+  return { ...p, marketQuestion: displayMarketQuestion(p.marketQuestion, p.marketId) };
 }
 
-// Detect the `Market <id>` placeholder we used to fall back to when Jupiter
-// returned a market with no readable question/title. Any string matching this
-// is a sign the upstream scan should have dropped the market — keep it as a
-// guard so a regression can't silently land a placeholder onto a position row.
-const PLACEHOLDER_QUESTION_RE = /^Market\s+[A-Z0-9_-]+$/i;
+// Detect placeholder marketQuestion shapes. Several have leaked over time:
+//   1. `Market <id>` — original execution-engine fallback (now blocked).
+//   2. `Untitled prediction market` — earlier display fallback (no ID).
+//   3. `Untitled prediction market (<id>)` — current canonical fallback.
+// Any of these is a signal that no real title was available; keep the
+// guard so a regression can't quietly land worse data onto a position row.
+const ID_PLACEHOLDER_RE = /^Market\s+[A-Z0-9_-]+$/i;
+const UNTITLED_PLACEHOLDER_RE = /^Untitled prediction market(?:\s*\(.+\))?$/i;
 
 export function isPlaceholderMarketQuestion(question: string | null | undefined): boolean {
   const q = (question ?? "").trim();
-  return q.length === 0 || PLACEHOLDER_QUESTION_RE.test(q);
+  return q.length === 0 || ID_PLACEHOLDER_RE.test(q) || UNTITLED_PLACEHOLDER_RE.test(q);
 }
 
-// Display-time fallback for legacy positions that already carry the placeholder.
-// Cheap & deterministic — never goes back to Jupiter from a hot read path.
-export function displayMarketQuestion(question: string | null | undefined): string {
-  if (!isPlaceholderMarketQuestion(question)) return (question ?? "").trim();
-  return "Untitled prediction market";
+// Display-time fallback for legacy rows that still carry one of the
+// placeholder shapes above. Includes the marketId in brackets so the user
+// can at least cross-reference a specific market — the bare label was
+// indistinguishable across multiple untitled positions in the same screen.
+export function displayMarketQuestion(
+  question: string | null | undefined,
+  marketId?: string | null,
+): string {
+  const q = (question ?? "").trim();
+  if (q && !isPlaceholderMarketQuestion(q)) return q;
+  return marketId
+    ? `Untitled prediction market (${marketId})`
+    : "Untitled prediction market";
 }
 
 // Last-line guard: replace any leaked placeholder/error reasoning that would

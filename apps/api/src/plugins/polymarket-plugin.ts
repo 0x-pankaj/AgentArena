@@ -34,6 +34,19 @@ export const JupiterEventSchema = z.object({
         closeTime: z.union([z.string(), z.number()]).nullish(),
         resolveAt: z.union([z.string(), z.number(), z.null()]).optional(),
         pricing: z.any().optional(),
+        // Top-level fields Jupiter actually returns. Previously these lived
+        // only inside a `metadata` sub-object that the API never sends, so
+        // every market looked title-less to our extractors.
+        title: z.string().nullish(),
+        rulesPrimary: z.string().nullish(),
+        rulesSecondary: z.string().nullish(),
+        imageUrl: z.string().nullable().optional(),
+        outcomes: z.array(z.string()).nullish(),
+        outcomePrices: z.array(z.string()).nullish(),
+        eventId: z.string().nullish(),
+        isTeamMarket: z.boolean().nullish(),
+        // Keep metadata in case Jupiter ever adds it back — best-effort
+        // fallback path in the extractors.
         metadata: z
           .object({
             question: z.string().nullish(),
@@ -56,6 +69,15 @@ export const JupiterMarketSchema = z.object({
   closeTime: z.union([z.string(), z.number()]).nullish(),
   resolveAt: z.union([z.string(), z.number(), z.null()]).optional(),
   pricing: z.any().optional(),
+  // Same top-level fields as the inline event-markets shape above.
+  title: z.string().nullish(),
+  rulesPrimary: z.string().nullish(),
+  rulesSecondary: z.string().nullish(),
+  imageUrl: z.string().nullable().optional(),
+  outcomes: z.array(z.string()).nullish(),
+  outcomePrices: z.array(z.string()).nullish(),
+  eventId: z.string().nullish(),
+  isTeamMarket: z.boolean().nullish(),
   metadata: z
     .object({
       question: z.string().nullish(),
@@ -66,6 +88,50 @@ export const JupiterMarketSchema = z.object({
     .nullish(),
 });
 export type JupiterMarket = z.infer<typeof JupiterMarketSchema>;
+
+// Compose a human-readable question for a Jupiter market by combining the
+// event-level template (e.g. "Bitcoin above ___ on May 5?") with the
+// market-level title that fills it in (e.g. "78,000"). Falls through to
+// the next-best source on each market shape Jupiter returns. Returns null
+// when nothing usable is available — callers should drop the market in
+// that case rather than persist a placeholder.
+export function composeMarketQuestion(
+  market: Pick<JupiterMarket, "title" | "rulesPrimary" | "metadata">,
+  event?: { metadata?: { title?: string | null; subtitle?: string | null } | null } | null,
+): string | null {
+  const eventTitle = event?.metadata?.title?.trim() || null;
+  const eventSubtitle = event?.metadata?.subtitle?.trim() || null;
+  const marketTitle = market.title?.trim() || market.metadata?.title?.trim() || null;
+  const marketQuestion = market.metadata?.question?.trim() || null;
+  const rules =
+    market.rulesPrimary?.trim() || market.metadata?.rulesPrimary?.trim() || null;
+
+  // 1. Explicit question wins outright.
+  if (marketQuestion) return marketQuestion.slice(0, 200);
+
+  // 2. Templated event title with `___` placeholder filled by market title.
+  if (eventTitle && marketTitle && eventTitle.includes("___")) {
+    return eventTitle.replace("___", marketTitle).slice(0, 200);
+  }
+
+  // 3. Event title + market title disambiguator (tennis match → which player).
+  if (eventTitle && marketTitle && marketTitle !== eventTitle) {
+    return `${eventTitle} — ${marketTitle}`.slice(0, 200);
+  }
+
+  // 4. Either alone.
+  if (eventTitle) return eventTitle.slice(0, 200);
+  if (marketTitle) return marketTitle.slice(0, 200);
+  if (eventSubtitle) return eventSubtitle.slice(0, 200);
+
+  // 5. First sentence of rulesPrimary as a last resort.
+  if (rules) {
+    const firstSentence = rules.split(/(?<=[.!?])\s+/)[0]?.trim();
+    if (firstSentence && firstSentence.length > 10) return firstSentence.slice(0, 200);
+  }
+
+  return null;
+}
 
 export const JupiterOrderSchema = z.object({
   orderPubkey: z.string(),

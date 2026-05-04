@@ -28,12 +28,16 @@ import { db } from "./db";
 //      already handled by cleanup-reasoning.ts).
 const ID_PLACEHOLDER_RE = "^Market [A-Za-z0-9_-]+$";
 const BATCH_PLACEHOLDER_RE = "^[Bb]atch analysis";
-const FALLBACK_LABEL = "Untitled prediction market";
+// Earlier passes wrote a bare "Untitled prediction market" label without the
+// market ID. Rewrite those too so the user can disambiguate multiple
+// untitled rows in the UI.
+const BARE_UNTITLED_RE = "^Untitled prediction market$";
 
 async function backfill(table: string, column: string): Promise<number> {
   // Prefer a real question from market_data when available; otherwise the
-  // clean fallback label. COALESCE skips market_data rows whose own question
-  // is null OR is itself one of the placeholder patterns.
+  // ID-tagged fallback label so the user can identify the row by marketId.
+  // COALESCE skips market_data rows whose own question is null OR matches
+  // any of the placeholder shapes we know about.
   const res = await db.execute(sql`
     UPDATE ${sql.raw(table)} t
        SET ${sql.raw(column)} = COALESCE(
@@ -43,11 +47,13 @@ async function backfill(table: string, column: string): Promise<number> {
              AND md.question IS NOT NULL
              AND md.question !~ ${ID_PLACEHOLDER_RE}
              AND md.question !~ ${BATCH_PLACEHOLDER_RE}
+             AND md.question !~ ${BARE_UNTITLED_RE}
            LIMIT 1),
-         ${FALLBACK_LABEL}
+         'Untitled prediction market (' || t.market_id || ')'
        )
      WHERE ${sql.raw(column)} ~ ${ID_PLACEHOLDER_RE}
         OR ${sql.raw(column)} ~ ${BATCH_PLACEHOLDER_RE}
+        OR ${sql.raw(column)} ~ ${BARE_UNTITLED_RE}
   `);
   return (res as any).rowCount ?? 0;
 }

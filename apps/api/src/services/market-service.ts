@@ -6,6 +6,7 @@ import {
   jupiterPredict,
   type JupiterEvent,
   type JupiterMarket,
+  composeMarketQuestion,
 } from "../plugins/polymarket-plugin";
 import { getCachedJupiterEvents, invalidateCategoryCache, AGENT_TO_JUPITER_CATEGORIES } from "./jupiter-cache-manager";
 
@@ -253,7 +254,12 @@ export async function syncMarketsFromJupiter(
 // --- Helpers ---
 
 function mapJupiterMarketToDb(
-  market: JupiterMarket & { eventId?: string; category?: string; eventTitle?: string }
+  market: JupiterMarket & {
+    eventId?: string | null;
+    category?: string | null;
+    eventTitle?: string | null;
+    eventSubtitle?: string | null;
+  }
 ): typeof schema.marketData.$inferSelect {
   // pricing is an object: { buyYesPriceUsd, sellYesPriceUsd, buyNoPriceUsd, sellNoPriceUsd, volume }
   const pricingObj = market.pricing as any;
@@ -265,14 +271,17 @@ function mapJupiterMarketToDb(
   if (buyYesPrice !== null) outcomes.push({ name: "Yes", price: buyYesPrice });
   if (buyNoPrice !== null) outcomes.push({ name: "No", price: buyNoPrice });
 
-  // Question comes from event title + market rules
+  // Build the question via the shared composer that knows about Jupiter's
+  // top-level title + rulesPrimary fields and the templated event title
+  // (e.g. "Bitcoin above ___ on May 5?" + "78,000"). Last-resort fallback
+  // to a tagged "Untitled" label so DB rows never carry a bare market ID.
   const question =
-    (market.metadata as any)?.question?.slice(0, 200) ??
-    market.metadata?.rulesPrimary?.slice(0, 200) ??
-    market.metadata?.title ??
-    market.eventTitle ??
-    (market as any).eventSubtitle ??
-    `Market ${market.marketId}`;
+    composeMarketQuestion(market, {
+      metadata: {
+        title: market.eventTitle ?? null,
+        subtitle: (market as any).eventSubtitle ?? null,
+      },
+    }) ?? `Untitled prediction market (${market.marketId})`;
 
   const closeTime = market.closeTime
     ? typeof market.closeTime === "number"

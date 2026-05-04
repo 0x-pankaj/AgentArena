@@ -1,4 +1,4 @@
-import { jupiterPredict, type JupiterMarket } from "../plugins/polymarket-plugin";
+import { jupiterPredict, type JupiterMarket, composeMarketQuestion } from "../plugins/polymarket-plugin";
 import { signSolanaTransaction } from "../utils/privy";
 import { getEffectiveBalance } from "../utils/balance";
 import {
@@ -261,19 +261,14 @@ export async function scanMarketsWithResearch(
           if (daysUntilClose > AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION) continue;
           if (daysUntilClose < 0) continue; // skip markets that already closed
 
-          // Drop markets with no readable question — Jupiter occasionally
-          // returns sparse entries with no metadata.title / question /
-          // rulesPrimary / event title. Trading those (or even ranking them)
-          // is pointless because the LLM has nothing to reason about and the
-          // UI shows the bare market ID. Rather than persist a "Market POLY-…"
-          // placeholder onto the position row, skip the market entirely.
-          const question =
-            (market.metadata as any)?.question?.slice(0, 200) ??
-            market.metadata?.rulesPrimary?.slice(0, 200) ??
-            market.metadata?.title ??
-            event.metadata?.title ??
-            (event.metadata as any)?.subtitle ??
-            null;
+          // Drop markets with no readable question. Jupiter returns title +
+          // rulesPrimary at the top level of each market, plus a templated
+          // event.metadata.title (e.g. "Bitcoin above ___ on May 5?") that
+          // composeMarketQuestion fills in with the market title (e.g.
+          // "78,000" → "Bitcoin above 78,000 on May 5?"). If even that
+          // can't produce a usable string, skip the market — better to
+          // lose a candidate than persist a bare ID onto a position row.
+          const question = composeMarketQuestion(market, event);
           if (!question) continue;
           const closesAt = market.closeTime
             ? new Date(typeof market.closeTime === "number" ? market.closeTime * 1000 : market.closeTime).toISOString()
@@ -429,16 +424,9 @@ export async function scanAndRankMarkets(
           if (daysUntilClose > AGENT_LIMITS.MAX_MARKET_DAYS_TO_RESOLUTION) continue;
           if (daysUntilClose < 0) continue; // skip markets that already closed
 
-          // Same drop-on-missing-question rule as scanMarkets above: avoid
-          // pushing "Market POLY-…" placeholders downstream into research,
-          // analysis, and (critically) onto persisted position rows.
-          const question =
-            (market.metadata as any)?.question?.slice(0, 200) ??
-            market.metadata?.rulesPrimary?.slice(0, 200) ??
-            market.metadata?.title ??
-            event.metadata?.title ??
-            (event.metadata as any)?.subtitle ??
-            null;
+          // Same composeMarketQuestion path as scanMarkets above. Drop the
+          // market entirely when no readable question can be assembled.
+          const question = composeMarketQuestion(market, event);
           if (!question) continue;
           const closesAt = market.closeTime
             ? new Date(typeof market.closeTime === "number" ? market.closeTime * 1000 : market.closeTime).toISOString()
