@@ -30,6 +30,64 @@ const AGENT_LIMITS = {
   MAX_MARKET_DAYS_TO_RESOLUTION: 7,
 };
 
+// Defensive backstop: Jupiter sometimes mis-tags markets (memecoins ending up
+// in "sports", non-Latin tokens leaking everywhere). Drop questions whose text
+// has zero domain keywords for the agent's category before we waste an LLM
+// call analyzing them. Generous on purpose — false negatives only cost reach.
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  sports: [
+    "wins","beats","defeats","loses","vs ","v.","championship","playoffs","title",
+    "match","game","season","league","tournament","cup","final","semifinal",
+    "nfl","nba","mlb","nhl","ufc","mma","ncaa","fifa","mls","nascar","atp","wta",
+    "soccer","football","basketball","baseball","hockey","tennis","cricket","golf",
+    "boxing","racing","olympics","grand prix","grand slam","super bowl","world cup",
+    "premier league","champions league","la liga","bundesliga","serie a","ipl",
+    "lakers","warriors","celtics","heat","nuggets","yankees","dodgers","cowboys",
+    "patriots","chiefs","49ers","manchester","liverpool","barcelona","madrid",
+    "messi","ronaldo","lebron","mahomes","brady","djokovic","alcaraz","rory","tiger",
+  ],
+  crypto: [
+    "bitcoin","btc","ethereum","eth","sol","solana","xrp","ripple","doge","dogecoin",
+    "shiba","ada","cardano","matic","polygon","avax","avalanche","dot","polkadot",
+    "link","chainlink","memecoin","altcoin","crypto","blockchain","token","stablecoin",
+    "usdc","usdt","tether","binance","coinbase","kraken","etf","halving","ath",
+    "all-time high","reach $","hit $","cross $","break $","1k","10k","100k","1000k",
+  ],
+  politics: [
+    "election","president","candidate","senator","senate","house","congress","governor",
+    "mayor","primary","caucus","poll","polls","vote","voting","ballot",
+    "democrat","republican","trump","biden","harris","desantis","obama",
+    "putin","zelensky","modi","xi jinping","macron","merz","starmer",
+    "supreme court","scotus","cabinet","policy","bill","law","tariff","sanction",
+    "war","peace","treaty","nato","united nations","ukraine","russia","china",
+    "israel","gaza","iran","north korea","saudi","fed","federal reserve","interest rate",
+  ],
+};
+
+export function isLikelyCategoryMatch(category: string, question: string): boolean {
+  if (!question) return false;
+  if (category === "general") return true;
+  // Reject markets whose first character is CJK / Hangul / Hiragana — these
+  // are almost always memecoin / regional asset markets that leak into other
+  // categories via Jupiter's loose tagging.
+  if (/^[぀-ヿ㐀-䶿一-鿿가-힯]/.test(question)) {
+    return false;
+  }
+  const tokens = CATEGORY_KEYWORDS[category];
+  if (!tokens) return true; // unknown category — don't filter
+  const q = question.toLowerCase();
+  return tokens.some((t) => q.includes(t));
+}
+
+// Classify trade-execution failures so agents can quiet routine cap/cooldown
+// rejections instead of broadcasting them as critical-severity events.
+const SOFT_REJECT_PATTERNS = /exposure would exceed|cooldown active|concurrent positions|below minimum|daily loss limit|already have an open|requires human approval|insufficient orderbook depth|insufficient paper balance|microstructure rejected|correlation rejected|market resolves in|market has closed|confidence \d+% below/i;
+
+export function isSoftRejection(error: string | undefined): boolean {
+  if (!error) return false;
+  return SOFT_REJECT_PATTERNS.test(error);
+}
+
 // --- Cached SOL price ---
 let cachedSOLPrice = 150; // default fallback
 let solPriceLastFetched = 0;
@@ -122,6 +180,8 @@ export async function scanMarkets(
           ? (m.outcomes as Array<{ name: string; price?: number }>)
               .map((o) => ({ name: o.name, price: o.price ?? 0 }))
           : [];
+
+        if (!isLikelyCategoryMatch(category, m.question)) continue;
 
         allMarkets.push({
           marketId: m.marketId,
@@ -218,6 +278,8 @@ export async function scanMarketsWithResearch(
           const outcomes: Array<{ name: string; price: number }> = [];
           if (buyYesPrice !== null) outcomes.push({ name: "Yes", price: buyYesPrice });
           if (buyNoPrice !== null) outcomes.push({ name: "No", price: buyNoPrice });
+
+          if (!isLikelyCategoryMatch(category, question)) continue;
 
           allMarkets.push({
             marketId: market.marketId,
@@ -441,7 +503,7 @@ export async function executeBuy(
   portfolio: PortfolioSnapshot,
   agentName: string = "Agent",
   category: string = "general"
-): Promise<{ success: boolean; positionId?: string; error?: string }> {
+): Promise<{ success: boolean; positionId?: string; error?: string; softReject?: boolean }> {
   if (decision.action !== "buy" || !decision.marketId) {
     return { success: false, error: "Invalid decision for buy execution" };
   }
@@ -513,7 +575,16 @@ export async function executeBuy(
   });
 
   if (result.success && result.position) {
-    // Publish to public feed
+    // Use the *filled* amount from the position record, not the LLM's intended
+    // amount. Quarter-Kelly + the $5 paper-fill floor mean the actual fill is
+    // routinely much smaller than what the LLM asked for; surfacing the
+    // pre-sizing number here made the feed disagree with the position screen.
+    const filledAmount = Number(result.position.amount);
+    const intendedAmount = amount;
+    const sizingNote = filledAmount < intendedAmount
+      ? ` (Kelly-sized from $${intendedAmount.toFixed(0)})`
+      : "";
+
     const feedEvent = buildFeedEvent({
       agentId,
       agentName,
@@ -523,12 +594,12 @@ export async function executeBuy(
       content: {
         market_analyzed: decision.marketQuestion ?? market.question,
         action: "buy",
-        amount: String(amount),
+        amount: String(filledAmount),
         price: decision.isYes ? "yes" : "no",
         decision: decision.reasoning,
         reasoning_snippet: decision.reasoning.slice(0, 200),
       },
-      displayMessage: `${agentName} placed order: BUY ${decision.isYes ? "YES" : "NO"}, $${amount} USDC on "${decision.marketQuestion ?? market.question}"`,
+      displayMessage: `${agentName} placed order: BUY ${decision.isYes ? "YES" : "NO"}, $${filledAmount.toFixed(2)} USDC on "${decision.marketQuestion ?? market.question}"${sizingNote}`,
     });
     await publishFeedEvent(feedEvent);
 
@@ -549,7 +620,7 @@ export async function executeBuy(
     return { success: true, positionId: result.position.id };
   }
 
-  return { success: false, error: result.error };
+  return { success: false, error: result.error, softReject: isSoftRejection(result.error) };
 }
 
 // --- Execute a sell (close position) ---

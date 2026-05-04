@@ -98,6 +98,18 @@ export const MODELS = {
     maxTokens: 4000,
   } satisfies ModelConfig,
 
+  // DeepSeek V4 Flash — reasoning model with `reasoning_details`. Cheaper than
+  // Sonnet/GPT-4o, generally produces more reliable structured JSON than
+  // qwen/kimi on multi-market batched analysis. Override slug via env if
+  // OpenRouter renames it. Used for analysis + decision defaults below.
+  deepseekFlash: {
+    model: process.env.OPENROUTER_DEEPSEEK_MODEL ?? "deepseek/deepseek-v4-flash",
+    provider: "openrouter" as const,
+    temperature: 0.2,
+    maxTokens: 4000,
+    providerOptions: { openrouter: { reasoning: { enabled: true } } },
+  } satisfies ModelConfig,
+
   gpt4o: {
     model: "gpt-4o",
     provider: "openai" as const,
@@ -136,45 +148,48 @@ export const MODELS = {
     maxTokens: 2000,
   } satisfies ModelConfig,
 
-  // Heavy model for deep analysis (expensive, thorough)
+  // Heavy model for deep analysis. Switched from Sonnet → DeepSeek V4 Flash:
+  // cheaper, reasoning-capable, good structured-JSON reliability for the
+  // multi-market batch path that previously emitted placeholder reasoning.
   deepAnalysis: {
-    model: "claude-sonnet-4-20250514",
-    provider: "anthropic" as const,
-    temperature: 0.2,
-    maxTokens: 4000,
-  } satisfies ModelConfig,
-
-  // Decision model (high-end, best structured output capability)
-  // Routed through OpenRouter so you don't need a separate Moonshot API key
-  decision: {
-    model: process.env.OPENROUTER_KIMI_MODEL ?? "moonshotai/kimi-k2.6",
+    model: process.env.OPENROUTER_DEEPSEEK_MODEL ?? "deepseek/deepseek-v4-flash",
     provider: "openrouter" as const,
     temperature: 0.2,
     maxTokens: 4000,
+    providerOptions: { openrouter: { reasoning: { enabled: true } } },
+  } satisfies ModelConfig,
+
+  // Decision model — same DeepSeek V4 Flash. Reasoning-aware, structured.
+  decision: {
+    model: process.env.OPENROUTER_DEEPSEEK_MODEL ?? "deepseek/deepseek-v4-flash",
+    provider: "openrouter" as const,
+    temperature: 0.2,
+    maxTokens: 4000,
+    providerOptions: { openrouter: { reasoning: { enabled: true } } },
   } satisfies ModelConfig,
 } as const;
 
 export const DEFAULT_POLITICS_AGENT_MODELS: AgentModels = {
-  analysis: MODELS.qwen,
-  decision: MODELS.kimi,
+  analysis: MODELS.deepseekFlash,
+  decision: MODELS.deepseekFlash,
   search: MODELS.qwen,
 };
 
 export const DEFAULT_SPORTS_AGENT_MODELS: AgentModels = {
-  analysis: MODELS.qwen,
-  decision: MODELS.kimi,
+  analysis: MODELS.deepseekFlash,
+  decision: MODELS.deepseekFlash,
   search: MODELS.qwen,
 };
 
 export const DEFAULT_CRYPTO_AGENT_MODELS: AgentModels = {
-  analysis: MODELS.qwen,
-  decision: MODELS.kimi,
+  analysis: MODELS.deepseekFlash,
+  decision: MODELS.deepseekFlash,
   search: MODELS.qwen,
 };
 
 export const DEFAULT_GENERAL_AGENT_MODELS: AgentModels = {
-  analysis: MODELS.qwen,
-  decision: MODELS.kimi,
+  analysis: MODELS.deepseekFlash,
+  decision: MODELS.deepseekFlash,
   search: MODELS.qwen,
 };
 

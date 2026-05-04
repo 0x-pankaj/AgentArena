@@ -231,6 +231,7 @@ export async function quickAnalysis(params: {
         temperature: modelConfig.temperature ?? 0.3,
         maxRetries: 0,
         abortSignal: AbortSignal.timeout(90_000),
+        providerOptions: modelConfig.providerOptions,
       }),
       2,
       "quickAnalysis"
@@ -505,6 +506,7 @@ export async function quickDecision<T>(params: {
           maxTokens: modelConfig.maxTokens ?? 2000,
           maxRetries: 0,
           abortSignal: AbortSignal.timeout(60_000),
+          providerOptions: modelConfig.providerOptions,
         }),
         2,
         "quickDecision.generateObject"
@@ -530,6 +532,7 @@ export async function quickDecision<T>(params: {
         temperature: modelConfig.temperature ?? 0.3,
         maxRetries: 0,
         abortSignal: AbortSignal.timeout(60_000),
+        providerOptions: modelConfig.providerOptions,
       }),
       2,
       "quickDecision.generateText"
@@ -557,6 +560,7 @@ export async function quickDecision<T>(params: {
           temperature: 0.1,
           maxRetries: 0,
           abortSignal: AbortSignal.timeout(45_000),
+          providerOptions: modelConfig.providerOptions,
         }),
         1,
         "quickDecision.strictRetry"

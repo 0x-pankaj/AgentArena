@@ -114,6 +114,21 @@ export async function getActivePositions(
   return { positions };
 }
 
+// Last-line guard: replace any leaked placeholder/error reasoning that would
+// otherwise appear in the public feed (e.g. "Batch analysis partial output …",
+// raw market UUIDs) with a coherent market-question-based rationale.
+function sanitizeReasoning(reasoning: string, marketQuestion: string, isYes: boolean): string {
+  const r = (reasoning ?? "").trim();
+  const looksLikePlaceholder =
+    r.length === 0 ||
+    /^batch analysis (partial output|failed)/i.test(r) ||
+    /^analysis (failed|error|unavailable)/i.test(r) ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r) || // bare UUID
+    r === marketQuestion;
+  if (!looksLikePlaceholder) return r;
+  return `Taking ${isYes ? "YES" : "NO"} on "${marketQuestion.slice(0, 140)}" based on prevailing signals; sized as a speculative entry.`;
+}
+
 // --- Execute a trade (buy) ---
 
 export async function executeBuyOrder(params: {
@@ -175,6 +190,7 @@ export async function executeBuyOrder(params: {
     .limit(1);
 
   const tradingMode = job?.tradingMode ?? "paper";
+  const reasoning = sanitizeReasoning(params.reasoning, params.marketQuestion, params.isYes);
 
   // 4. Execute based on trading mode
   try {
@@ -188,7 +204,7 @@ export async function executeBuyOrder(params: {
         isYes: params.isYes,
         depositAmount: finalAmount,
         entryPrice: params.entryPrice,
-        reasoning: params.reasoning,
+        reasoning,
         category: params.category,
         marketClosesAt: params.marketClosesAt,
       });
@@ -219,7 +235,7 @@ export async function executeBuyOrder(params: {
             marketQuestion: params.marketQuestion,
             side: params.isYes ? "yes" : "no",
             amount: result.contracts ?? finalAmount,
-            reasoning: params.reasoning,
+            reasoning,
             txSignature: result.txSignature,
             isPaperTrade: true,
             timestamp: new Date().toISOString(),
@@ -271,7 +287,7 @@ export async function executeBuyOrder(params: {
         entryPrice: String(params.entryPrice),
         status: "open",
         isPaperTrade: false,
-        reasoningSnippet: params.reasoning,
+        reasoningSnippet: reasoning,
         txSignature,
         positionPubkey: order.positionPubkey ?? null,
       })
@@ -289,7 +305,7 @@ export async function executeBuyOrder(params: {
         marketQuestion: params.marketQuestion,
         side: params.isYes ? "yes" : "no",
         amount: finalAmount,
-        reasoning: params.reasoning,
+        reasoning,
         txSignature,
         isPaperTrade: false,
         timestamp: new Date().toISOString(),

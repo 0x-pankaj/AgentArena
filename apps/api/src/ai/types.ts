@@ -23,6 +23,8 @@ export interface ModelConfig {
   apiKeyEnv?: string;
   temperature?: number;
   maxTokens?: number;
+  /** Vercel AI SDK providerOptions, e.g. { openrouter: { reasoning: { enabled: true } } } */
+  providerOptions?: Record<string, Record<string, any>>;
 }
 
 export interface AgentModels {

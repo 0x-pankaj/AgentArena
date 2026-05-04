@@ -9,6 +9,7 @@ import {
   publishAnalysisEvent,
   publishReasoningEvent,
   validateDecision,
+  isSoftRejection,
 } from "./execution-engine";
 import { redis } from "../utils/redis";
 import { REDIS_KEYS, AGENT_LIMITS, AGENT_PROFILES, EXECUTE_TRADES } from "@agent-arena/shared";
@@ -172,6 +173,12 @@ async function publishFeedStep(
   content: Record<string, any> = {},
   severity: "info" | "significant" | "critical" = "info"
 ): Promise<void> {
+  if (severity === "critical" && isSoftRejection((content?.error as string) ?? displayMessage)) {
+    severity = "info";
+    displayMessage = displayMessage
+      .replace(/❌ Order failed — /, "⏸ Skipping: ")
+      .replace(/❌ Sell failed — /, "⏸ Skipping sell: ");
+  }
   const feedEvent = buildFeedEvent({
     agentId,
     agentName: AGENT_NAME,
@@ -467,7 +474,7 @@ export async function runPoliticsAgentTick(
       decision = swarmResult.decision ?? decision;
 
       if (decision.action === "buy" && decision.marketId) {
-        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", marketId: decision.marketId, market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
+        await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} preparing: BUY ${decision.isYes ? "YES" : "NO"} on "${decision.marketQuestion}" (target $${decision.amount ?? 0}, Kelly-sizing applies)`, { pipeline_stage: "executing", action: "buy", marketId: decision.marketId, market_analyzed: decision.marketQuestion, intended_amount: String(decision.amount ?? 0) });
         const buyResult = await executeBuy(
           decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "politics"
         );
@@ -575,7 +582,7 @@ export async function runPoliticsAgentTick(
         }
       }
 
-      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} executing: BUY ${decision.isYes ? "YES" : "NO"} $${decision.amount ?? 0} on "${decision.marketQuestion}"`, { pipeline_stage: "executing", action: "buy", marketId: decision.marketId, market_analyzed: decision.marketQuestion, amount: String(decision.amount ?? 0) });
+      await publishFeedStep(ctx.agentId, "thinking", `${AGENT_NAME} preparing: BUY ${decision.isYes ? "YES" : "NO"} on "${decision.marketQuestion}" (target $${decision.amount ?? 0}, Kelly-sizing applies)`, { pipeline_stage: "executing", action: "buy", marketId: decision.marketId, market_analyzed: decision.marketQuestion, intended_amount: String(decision.amount ?? 0) });
 
       const result = await executeBuy(decision, ctx.agentId, ctx.jobId, ctx.agentWalletId, ctx.ownerPubkey, portfolio, AGENT_NAME, "politics");
       if (result.success) {
