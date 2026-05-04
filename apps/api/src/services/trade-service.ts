@@ -199,22 +199,11 @@ export async function executeBuyOrder(params: {
     return { success: false, error: `Market has no readable title (got "${params.marketQuestion}") — refusing to trade` };
   }
 
-  // 1. Run risk checks
-  const riskResult = runPreTradeChecks(
-    params.amount,
-    params.category,
-    params.confidence,
-    params.marketVolume,
-    params.marketClosesAt,
-    params.portfolio,
-    params.marketId
-  );
-
-  if (!riskResult.allowed) {
-    return { success: false, error: riskResult.reason };
-  }
-
-  // 2. Calculate position size (True Kelly Criterion)
+  // 1. Calculate position size (True Kelly Criterion) FIRST so the risk
+  // checks operate on the actual fill amount, not the LLM's pre-resize ask.
+  // Risk-checking the unresized amount caused size-sensitive gates
+  // (category exposure, portfolio limit, human-approval threshold) to trip
+  // on a $40+ "intended" amount that Kelly would have shrunk to ~$5.
   const positionSize = calculatePositionSize(
     params.estimatedProbability ?? params.confidence, // use true probability estimate if available
     params.entryPrice,
@@ -227,6 +216,21 @@ export async function executeBuyOrder(params: {
   // don't round to zero contracts and so executions stay demo-visible.
   const sizedAmount = Math.min(params.amount, positionSize);
   const finalAmount = Math.max(5, sizedAmount);
+
+  // 2. Run risk checks on the sized amount
+  const riskResult = runPreTradeChecks(
+    finalAmount,
+    params.category,
+    params.confidence,
+    params.marketVolume,
+    params.marketClosesAt,
+    params.portfolio,
+    params.marketId
+  );
+
+  if (!riskResult.allowed) {
+    return { success: false, error: riskResult.reason };
+  }
 
   // 3. Check trading mode for this job
   const [job] = await db

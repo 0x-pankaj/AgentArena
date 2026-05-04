@@ -46,16 +46,24 @@ export function checkCategoryExposure(
   category: string,
   existingPositions: PositionRecord[]
 ): RiskCheckResult {
-  const categoryExposure = existingPositions
-    .filter((p) => p.category === category && p.status === "open")
-    .reduce((sum, p) => sum + p.amount, 0);
-
-  const totalOpen = existingPositions
-    .filter((p) => p.status === "open")
-    .reduce((sum, p) => sum + p.amount, 0);
+  const open = existingPositions.filter((p) => p.status === "open");
+  const totalOpen = open.reduce((sum, p) => sum + p.amount, 0);
 
   // No existing positions — category check is handled by portfolio limit
   if (totalOpen === 0) return { allowed: true };
+
+  // Single-category portfolios (sports/crypto/politics agents whose every
+  // position is in their own category) cannot satisfy a 25% diversification
+  // cap by design — adding any new position keeps the ratio at 100%. Skip
+  // the check; per-position sizing is still bounded by checkPortfolioLimit.
+  const distinctCategories = new Set(open.map((p) => p.category));
+  if (distinctCategories.size === 1 && distinctCategories.has(category)) {
+    return { allowed: true };
+  }
+
+  const categoryExposure = open
+    .filter((p) => p.category === category)
+    .reduce((sum, p) => sum + p.amount, 0);
 
   const newTotal = totalOpen + proposedAmount;
   const newCategoryExposure = categoryExposure + proposedAmount;

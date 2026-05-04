@@ -260,7 +260,7 @@ export async function runEnhancedPipeline(
       pnl: Number(p.pnl ?? 0),
     }));
 
-    const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
+    const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId, category);
 
     // ===== EARLY SHORT-CIRCUIT: peer-delegated tick =====
     // When ctx.delegationTarget is set, another agent is asking for our view

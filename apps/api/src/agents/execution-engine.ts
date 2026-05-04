@@ -716,7 +716,8 @@ export async function monitorPositions(
 export async function buildPortfolioSnapshot(
   agentWalletAddress: string,
   positions: AgentPosition[],
-  jobId?: string
+  jobId?: string,
+  agentCategory: string = "general"
 ): Promise<PortfolioSnapshot> {
   await refreshSOLPrice();
 
@@ -775,7 +776,10 @@ export async function buildPortfolioSnapshot(
     dailyPnl,
     positions: positions.map((p) => ({
       marketId: p.marketId,
-      category: "general",
+      // All positions in a job belong to the same agent (1 job ↔ 1 agent),
+      // so they share the agent's category. Hardcoding "general" here broke
+      // the category-exposure check for sports/crypto/politics agents.
+      category: agentCategory,
       amount: p.amount,
       entryPrice: p.entryPrice,
       currentPrice: p.currentPrice,

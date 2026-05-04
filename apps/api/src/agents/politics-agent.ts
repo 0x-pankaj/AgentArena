@@ -461,7 +461,7 @@ export async function runPoliticsAgentTick(
         entryPrice: Number(p.entryPrice), currentPrice: Number(p.currentPrice ?? p.entryPrice),
         pnl: Number(p.pnl ?? 0),
       }));
-      const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
+      const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId, "politics");
       let decision = pipelineResult.decision;
 
       // ===== SWARM HOOKS: Delegation + Consensus =====
@@ -519,7 +519,7 @@ export async function runPoliticsAgentTick(
       currentPrice: Number(p.currentPrice ?? p.entryPrice),
       pnl: Number(p.pnl ?? 0),
     }));
-    const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
+    const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId, "politics");
 
     if (decision.action === "buy") {
       // Feature 6: Market microstructure check
