@@ -126,7 +126,17 @@ export async function getCoinData(coinId: string): Promise<CoinPrice | null> {
 
 // --- Get global crypto market overview ---
 
+// Negative-cache window for getGlobalMarket failures. CoinGecko's /global is
+// non-essential (it provides BTC dominance + 24h cap change to flavor crypto
+// signals); when it's down we shouldn't hammer it from every agent tick or
+// spew multi-line ConnectionRefused errors on each call.
+let globalMarketFailureUntil = 0;
+const GLOBAL_MARKET_NEGATIVE_CACHE_MS = 60_000;
+
 export async function getGlobalMarket(): Promise<MarketOverview | null> {
+  if (Date.now() < globalMarketFailureUntil) {
+    return null;
+  }
   return cachedFetch("coingecko", ["global"], async () => {
     try {
       const url = `${BASE_URL}/global`;
@@ -145,7 +155,9 @@ export async function getGlobalMarket(): Promise<MarketOverview | null> {
         fetchedAt: new Date().toISOString(),
       };
     } catch (err) {
-      console.error("CoinGecko getGlobalMarket failed:", err);
+      globalMarketFailureUntil = Date.now() + GLOBAL_MARKET_NEGATIVE_CACHE_MS;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`CoinGecko getGlobalMarket failed (suppressing for ${GLOBAL_MARKET_NEGATIVE_CACHE_MS / 1000}s): ${msg}`);
       return null;
     }
   });

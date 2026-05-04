@@ -44,7 +44,7 @@ import {
   type AnalysisCursor,
   type AnalyzedMarket,
 } from "../services/analysis-cursor";
-import { analyzeMarketsInBatch } from "../services/per-market-analysis";
+import { analyzeMarketsInBatch, analyzeSingleMarket } from "../services/per-market-analysis";
 import { buildResearchContextForLLM } from "../services/market-research";
 import { runImprovedBayesianSynthesis } from "../services/improved-bayesian";
 
@@ -261,6 +261,87 @@ export async function runEnhancedPipeline(
     }));
 
     const portfolio = await buildPortfolioSnapshot(ctx.agentWalletAddress, positions, ctx.jobId);
+
+    // ===== EARLY SHORT-CIRCUIT: peer-delegated tick =====
+    // When ctx.delegationTarget is set, another agent is asking for our view
+    // on ONE specific market. requestPeerAnalysis only consumes confidence +
+    // direction, so re-running scan / sliding window / batch analysis is pure
+    // waste — and worse, the swarm hooks on this delegated tick would fire
+    // again, producing recursive cascades (sports → crypto → politics → …).
+    // Run a single-market analysis, return a minimal decision, done.
+    if (ctx.delegationTarget) {
+      const target = ctx.delegationTarget;
+      const yesPrice = target.outcomes?.find((o) => o.name.toLowerCase() === "yes")?.price ?? 0.5;
+
+      const rankedMarket: RankedMarket = {
+        marketId: target.marketId,
+        question: target.marketQuestion,
+        outcomes: target.outcomes ?? [{ name: "Yes", price: 0.5 }, { name: "No", price: 0.5 }],
+        volume: target.volume ?? 10_000,
+        liquidity: target.liquidity ?? 5_000,
+        closesAt: null,
+        rank: 1,
+        score: 1,
+        scoreBreakdown: { edgePotential: 1, volumeConfidence: 1, timeSweetSpot: 1, freshnessBonus: 0, newMarketBonus: 0 },
+        isNewMarket: false,
+        researchPriority: "deep",
+      };
+
+      await publishFeedStep(agentId, "thinking", `${agentName} delegated single-market analysis: "${target.marketQuestion.slice(0, 60)}"`, {
+        pipeline_stage: "delegated_analysis_start",
+        marketId: target.marketId,
+      });
+
+      const analysisResult = await analyzeSingleMarket(
+        rankedMarket,
+        undefined,
+        signals,
+        positions,
+        portfolio.totalBalance,
+        config.models.analysis,
+        agentId,
+        agentName,
+        category,
+      );
+
+      const probability = analysisResult.analysis.probability;
+      const confidence = analysisResult.analysis.confidence;
+      const edge = Math.abs(probability - yesPrice);
+      const isYes = probability > yesPrice;
+      const action: "buy" | "hold" =
+        edge >= AGENT_LIMITS.MIN_EDGE && confidence >= AGENT_LIMITS.MIN_CONFIDENCE ? "buy" : "hold";
+
+      const decision: TradeDecision = {
+        action,
+        marketId: target.marketId,
+        marketQuestion: target.marketQuestion,
+        isYes,
+        amount: 0,
+        confidence,
+        reasoning: analysisResult.analysis.reasoning,
+        signals: [],
+      };
+
+      // Release the FSM back to SCANNING — peer ticks are one-shot and
+      // must not progress to EXECUTING (the parent owns trade execution).
+      fsm.transition("no_edge");
+      await saveState();
+
+      await publishFeedStep(agentId, "thinking", `${agentName} delegated analysis complete: prob=${(probability * 100).toFixed(0)}% conf=${(confidence * 100).toFixed(0)}% → ${action}`, {
+        pipeline_stage: "delegated_analysis_complete",
+        confidence,
+        probability,
+        action,
+      });
+
+      return {
+        state: fsm.getState(),
+        action: "analyzed",
+        detail: `Delegated analysis: ${action} (prob=${(probability * 100).toFixed(0)}%, conf=${(confidence * 100).toFixed(0)}%)`,
+        decision,
+        tokensUsed: analysisResult.tokensUsed,
+      };
+    }
 
     // Check thresholds
     const lastAnalysisRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${agentId}:last_analysis`);

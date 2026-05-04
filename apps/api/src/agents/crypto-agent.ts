@@ -387,6 +387,12 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
     }, saveState);
 
     if (pipelineResult.decision && pipelineResult.action === "analyzed") {
+      // Peer-delegated tick: pipeline already returned a focused single-market
+      // analysis. Skip swarm hooks (would recursively re-delegate) and trade
+      // execution (the parent agent that asked us owns sizing + execution).
+      if (ctx.delegationTarget || ctx.consensusTarget) {
+        return { state: fsm.getState() as any, action: pipelineResult.action as any, detail: pipelineResult.detail, decision: pipelineResult.decision, tokensUsed: pipelineResult.tokensUsed };
+      }
       // We have a decision with edge found — proceed to execution
       const marketsRaw = await redis.get(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`);
       const markets: MarketContext[] = marketsRaw ? JSON.parse(marketsRaw) : [];
