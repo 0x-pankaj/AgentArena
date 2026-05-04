@@ -840,6 +840,9 @@ export async function resumeActiveAgents(): Promise<number> {
     .where(eq(schema.jobs.status, "active"));
 
   let count = 0;
+  let synced = 0;
+  let syncFailed = 0;
+
   for (const job of activeJobs) {
     if (!job.privyWalletId || !job.privyWalletAddress) {
       console.log(`[Supervisor] Skipping job ${job.id} — no wallet`);
@@ -852,20 +855,55 @@ export async function resumeActiveAgents(): Promise<number> {
       .where(eq(schema.agents.id, job.agentId))
       .limit(1);
 
-    if (agent && agent.isActive) {
-      const ctx: AgentRuntimeContext = {
-        agentId: job.agentId,
-        jobId: job.id,
-        agentWalletId: job.privyWalletId,
-    agentWalletAddress: job.privyWalletAddress ?? "",
-        ownerPubkey: job.clientAddress,
-      };
+    if (!agent || !agent.isActive) continue;
 
-      await startAgentLoop(ctx, agent.category);
-      count++;
+    // Pre-flight sync: flush any TP/SL/expiry/resolution that fired while
+    // the API was down BEFORE the 5-min agent tick + 30s monitor begin.
+    // Otherwise live positions could sit open for ~30s after restart in
+    // states they should already have exited. Mirrors what resumeJob()
+    // does for user-triggered resumes; failures here must NOT block boot
+    // (a startup-time DB blip would otherwise wedge every active job).
+    try {
+      const syncResult = await preFlightPositionSync({
+        jobId: job.id,
+        agentId: job.agentId,
+        agentWalletId: job.privyWalletId,
+        agentName: agent.name,
+        walletAddress: job.privyWalletAddress,
+        tradingMode: (job.tradingMode as "paper" | "live") ?? "paper",
+      });
+      synced++;
+      if (syncResult.closedByExpiry > 0 || syncResult.claimedByResolution > 0) {
+        console.log(
+          `[Supervisor] Pre-flight for ${job.id}: ` +
+          `closed ${syncResult.closedByExpiry} by expiry, ` +
+          `claimed ${syncResult.claimedByResolution} resolutions`
+        );
+      }
+    } catch (err) {
+      syncFailed++;
+      console.error(
+        `[Supervisor] Pre-flight sync failed for job ${job.id} — ` +
+        `agent will start anyway and the 30s monitor will catch the backlog. ` +
+        `Error: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
+
+    const ctx: AgentRuntimeContext = {
+      agentId: job.agentId,
+      jobId: job.id,
+      agentWalletId: job.privyWalletId,
+      agentWalletAddress: job.privyWalletAddress,
+      ownerPubkey: job.clientAddress,
+    };
+
+    await startAgentLoop(ctx, agent.category);
+    count++;
   }
 
-  console.log(`[Supervisor] Resumed ${count} active agent(s)`);
+  console.log(
+    `[Supervisor] Resumed ${count} active agent(s) ` +
+    `(pre-flight: ${synced} ok, ${syncFailed} failed)`
+  );
   return count;
 }
