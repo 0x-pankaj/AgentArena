@@ -10,7 +10,26 @@
 import { cachedFetch } from "../utils/cache";
 
 const REDDIT_BASE = "https://www.reddit.com";
-const USER_AGENT = "AgentArena/1.0 (Research Bot)";
+// Reddit blocks generic bot UAs in 2024+. Format per Reddit's API guide:
+// `<platform>:<app id>:<version> (by /u/<username>)` — even without OAuth this
+// reduces 403s vs an anonymous fetch.
+const USER_AGENT = "node:agent-arena:1.0 (by /u/agent_arena)";
+
+// Per-subreddit circuit breaker. When a sub returns 403/429, we skip it for
+// `BLOCK_TTL_MS` to avoid log spam and to stop hammering an upstream that's
+// actively rejecting us.
+const blockUntil = new Map<string, number>();
+const BLOCK_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+// One-log-per-window: don't log the same subreddit failure more than once per BLOCK_TTL_MS.
+const loggedAt = new Map<string, number>();
+function logOnce(key: string, msg: string) {
+  const now = Date.now();
+  const last = loggedAt.get(key) ?? 0;
+  if (now - last < BLOCK_TTL_MS) return;
+  loggedAt.set(key, now);
+  console.warn(msg);
+}
 
 // --- Types ---
 
@@ -143,6 +162,14 @@ export async function getSubredditPosts(
   sort: "hot" | "new" | "top" = "hot",
   limit: number = 25
 ): Promise<RedditPost[]> {
+  // Circuit breaker — if this sub recently 403'd, skip the network call and
+  // return [] immediately. The empty result still flows through cachedFetch's
+  // 30min TTL, which combined with this in-process gate means agents don't
+  // spam logs every cache expiry.
+  const blockKey = `${subreddit}:${sort}`;
+  const breaker = blockUntil.get(blockKey) ?? 0;
+  if (Date.now() < breaker) return [];
+
   const cacheKey = ["reddit", subreddit, sort, String(limit)];
 
   return cachedFetch("reddit", cacheKey, async () => {
@@ -151,7 +178,13 @@ export async function getSubredditPosts(
       return parseListing(data);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[Reddit] Failed to fetch r/${subreddit}: ${msg}`);
+      // 403/429 → trip the breaker so we don't re-attempt for an hour.
+      if (msg.includes("403") || msg.includes("429")) {
+        blockUntil.set(blockKey, Date.now() + BLOCK_TTL_MS);
+        logOnce(`reddit:${subreddit}`, `[Reddit] r/${subreddit} blocked (${msg}); pausing for ${BLOCK_TTL_MS / 60000}min`);
+      } else {
+        logOnce(`reddit:${subreddit}`, `[Reddit] Failed to fetch r/${subreddit}: ${msg}`);
+      }
       return [];
     }
   });

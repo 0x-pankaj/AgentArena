@@ -19,14 +19,14 @@ export const CACHE_NAMESPACES = {
   fred: { prefix: "cache:fred", defaultTtl: 3600 },         // 1 hour
   firms: { prefix: "cache:firms", defaultTtl: 1800 },       // 30 min
   twitter: { prefix: "cache:twitter", defaultTtl: 900 },    // 15 min
-  coingecko: { prefix: "cache:coingecko", defaultTtl: 300 }, // 5 min
+  coingecko: { prefix: "cache:coingecko", defaultTtl: 600 }, // 10 min — free tier is rate-limited, cache aggressively
   defillama: { prefix: "cache:defillama", defaultTtl: 300 }, // 5 min
   sports: { prefix: "cache:sports", defaultTtl: 300 },      // 5 min
   websearch: { prefix: "cache:websearch", defaultTtl: 600 }, // 10 min
   signals: { prefix: "cache:signals", defaultTtl: 900 },    // 15 min
   markets: { prefix: "cache:markets", defaultTtl: 900 },    // 15 min
   jupiter: { prefix: "cache:jupiter", defaultTtl: 600 },    // 10 min
-  reddit: { prefix: "cache:reddit", defaultTtl: 600 },      // 10 min
+  reddit: { prefix: "cache:reddit", defaultTtl: 1800 },     // 30 min — Reddit 403s anonymous bots; cache long
   trends: { prefix: "cache:trends", defaultTtl: 3600 },     // 1 hour
 } as const;
 

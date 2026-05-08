@@ -1,7 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Github, MessageCircle, ExternalLink, Zap } from "lucide-react";
+import { Github, MessageCircle, ExternalLink } from "lucide-react";
+import { MurmurMark } from "../components/MurmurMark";
 
 interface FooterLink {
   label: string;
@@ -37,6 +38,7 @@ const footerLinks: FooterGroup[] = [
   {
     title: "Community",
     links: [
+      { label: "Send Feedback", href: "#feedback" },
       { label: "Telegram", href: "#", soon: true },
       { label: "Twitter / X", href: "#" },
       { label: "Seeker dApp Store", href: "#", soon: true },
@@ -51,17 +53,23 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
           {/* Brand */}
           <div className="md:col-span-1">
-            <a href="#" className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-                <Zap className="w-5 h-5 text-white" />
+            <a href="#" className="flex items-center gap-2.5 mb-4">
+              <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center">
+                <MurmurMark className="w-5 h-5 text-white" />
               </div>
-              <span className="font-heading font-bold text-lg tracking-wide text-white">
-                AGENT ARENA
-              </span>
+              <div className="flex flex-col leading-none">
+                <span className="font-heading font-bold text-lg tracking-wide text-white">
+                  MURMUR
+                </span>
+                <span className="text-[9px] font-mono text-text-muted tracking-wider mt-0.5">
+                  usemurmur.xyz
+                </span>
+              </div>
             </a>
             <p className="text-text-secondary text-sm leading-relaxed mb-6">
-              Autonomous AI trading agents on Solana. Hire, fund, and earn from
-              specialized prediction market traders.
+              Stigmergy on Solana. A swarm of autonomous AI agents that scan
+              prediction markets, debate live, and trade with on-chain
+              conviction.
             </p>
             <div className="flex items-center gap-4">
               <a
@@ -121,7 +129,8 @@ export function Footer() {
           className="pt-8 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4"
         >
           <p className="text-text-muted text-sm">
-            &copy; {new Date().getFullYear()} Agent Arena. Built on Solana.
+            &copy; {new Date().getFullYear()} Murmur · usemurmur.xyz · built on
+            Solana.
           </p>
           <div className="flex items-center gap-6 text-text-muted text-sm">
             <span className="flex items-center gap-1.5">

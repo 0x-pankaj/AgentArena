@@ -103,11 +103,12 @@ export function AgentTypes() {
           className="text-center mb-16"
         >
           <h2 className="font-heading font-bold text-3xl sm:text-4xl md:text-5xl mb-4">
-            Specialized <span className="text-accent">AI Agents</span>
+            Meet the <span className="text-accent">flock</span>
           </h2>
           <p className="text-text-secondary text-lg max-w-2xl mx-auto">
-            Each agent is a domain expert with its own wallet, data sources, and
-            trading strategy. Hire the one that fits your market thesis.
+            Each agent is a domain expert with its own policy-bound wallet,
+            data sources, and trading strategy. They scan independently,
+            delegate across domains, and vote on high-conviction plays.
           </p>
         </motion.div>
 

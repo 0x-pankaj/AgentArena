@@ -11,6 +11,21 @@
 import { interestOverTime, relatedQueries } from "google-trends-api";
 import { cachedFetch } from "../utils/cache";
 
+// Per-keyword circuit breaker. google-trends-api scrapes Google's internal API
+// and gets rate-limited frequently — when we see a non-JSON (HTML) response
+// for a keyword, skip it for `BLOCK_TTL_MS` instead of retrying every minute.
+const blockUntil = new Map<string, number>();
+const BLOCK_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+const loggedAt = new Map<string, number>();
+function logOnce(key: string, msg: string) {
+  const now = Date.now();
+  const last = loggedAt.get(key) ?? 0;
+  if (now - last < BLOCK_TTL_MS) return;
+  loggedAt.set(key, now);
+  console.warn(msg);
+}
+
 // --- Types ---
 
 export interface TrendsTimePoint {
@@ -110,6 +125,9 @@ export async function getInterestOverTime(
   keyword: string,
   timeframe: string = "today 1-m" // Google Trends format: "today 1-m", "today 3-m", "today 12-m"
 ): Promise<TrendsTimePoint[]> {
+  const breakerKey = `interest:${keyword}`;
+  if (Date.now() < (blockUntil.get(breakerKey) ?? 0)) return [];
+
   const cacheKey = ["trends", "interest", keyword, timeframe];
 
   return cachedFetch("trends", cacheKey, async () => {
@@ -122,7 +140,9 @@ export async function getInterestOverTime(
       });
       return parseTrendsResponse(result);
     } catch (err) {
-      console.error(`[GoogleTrends] interestOverTime failed for "${keyword}":`, err);
+      blockUntil.set(breakerKey, Date.now() + BLOCK_TTL_MS);
+      const msg = err instanceof Error ? err.message : String(err);
+      logOnce(`trends:i:${keyword}`, `[GoogleTrends] interestOverTime failed for "${keyword}" (paused ${BLOCK_TTL_MS / 60000}min): ${msg}`);
       return [];
     }
   });
@@ -131,6 +151,9 @@ export async function getInterestOverTime(
 // --- Get related queries (rising/breakout searches) ---
 
 export async function getRelatedQueries(keyword: string): Promise<string[]> {
+  const breakerKey = `related:${keyword}`;
+  if (Date.now() < (blockUntil.get(breakerKey) ?? 0)) return [];
+
   const cacheKey = ["trends", "related", keyword];
 
   return cachedFetch("trends", cacheKey, async () => {
@@ -144,8 +167,10 @@ export async function getRelatedQueries(keyword: string): Promise<string[]> {
       // google-trends-api often returns HTML error pages (e.g. rate-limit blocks)
       // when Google's internal API changes or rejects the scraper.
       if (!isJsonResponse(result)) {
-        console.warn(
-          `[GoogleTrends] relatedQueries returned non-JSON (likely HTML error) for "${keyword}". Skipping.`
+        blockUntil.set(breakerKey, Date.now() + BLOCK_TTL_MS);
+        logOnce(
+          `trends:r:${keyword}`,
+          `[GoogleTrends] relatedQueries returned non-JSON for "${keyword}" (paused ${BLOCK_TTL_MS / 60000}min)`,
         );
         return [];
       }
@@ -159,7 +184,9 @@ export async function getRelatedQueries(keyword: string): Promise<string[]> {
         [];
       return queries.slice(0, 10);
     } catch (err) {
-      console.error(`[GoogleTrends] relatedQueries failed for "${keyword}":`, err);
+      blockUntil.set(breakerKey, Date.now() + BLOCK_TTL_MS);
+      const msg = err instanceof Error ? err.message : String(err);
+      logOnce(`trends:r:${keyword}`, `[GoogleTrends] relatedQueries failed for "${keyword}" (paused ${BLOCK_TTL_MS / 60000}min): ${msg}`);
       return [];
     }
   });

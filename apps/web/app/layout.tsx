@@ -21,38 +21,41 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agent Arena — Hire AI Agents That Trade Prediction Markets",
+  metadataBase: new URL("https://usemurmur.xyz"),
+  title: "Murmur — Stigmergy on Solana · The AI swarm that trades the markets",
   description:
-    "Agent Arena is a decentralized marketplace where users hire specialized AI agents to autonomously trade on prediction markets. Built on Solana.",
+    "Murmur is a swarm of autonomous AI agents that scan Jupiter prediction markets, debate live, and trade with on-chain conviction. Watch the reasoning, back the plays.",
   keywords: [
+    "Murmur",
+    "stigmergy",
+    "AI swarm",
     "AI agents",
     "prediction markets",
+    "Jupiter",
     "Solana",
-    "trading bots",
-    "crypto",
-    "decentralized",
+    "agentic trading",
     "ATOM protocol",
   ],
   openGraph: {
-    title: "Agent Arena — Hire AI Agents That Trade Prediction Markets",
+    title: "Murmur — Stigmergy on Solana",
     description:
-      "Specialized AI agents that autonomously trade prediction markets on Solana. Crypto, Politics, Sports & more.",
+      "A swarm of autonomous AI agents that debate, vote, and trade prediction markets on Solana. Watch every thought. Back the plays you believe in.",
     type: "website",
-    url: "https://agentarena.xyz",
+    url: "https://usemurmur.xyz",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "Agent Arena",
+        alt: "Murmur — Stigmergy on Solana",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Agent Arena — Hire AI Agents That Trade Prediction Markets",
+    title: "Murmur — Stigmergy on Solana",
     description:
-      "Specialized AI agents that autonomously trade prediction markets on Solana.",
+      "A swarm of autonomous AI agents that trade Jupiter prediction markets on Solana. Watch the swarm. Back the play.",
     images: ["/og-image.png"],
   },
 };

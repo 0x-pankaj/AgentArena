@@ -366,9 +366,15 @@ export function calculatePositionSize(
   // Quarter-Kelly for safety (reduces variance by 75% while keeping most of the growth)
   const safetyFraction = 0.25;
 
-  // Scale by confidence: high confidence bets closer to quarter-Kelly, low confidence scales down
-  // At confidence=0.5, scale=0. At confidence=1.0, scale=1.0
-  const confidenceScale = Math.max(0, (confidence - 0.5) * 2);
+  // Scale by confidence, anchored to the active MIN_CONFIDENCE floor so the gate
+  // and the sizing curve agree. At conf=floor → 0.2 (still trades, just small);
+  // at conf=1.0 → 1.0. Linear in between. This stops 0.3-confidence trades from
+  // collapsing to $0 in traction mode where the floor itself is 0.3.
+  const floor = AGENT_LIMITS.MIN_CONFIDENCE;
+  const span = Math.max(0.05, 1 - floor);
+  const confidenceScale = confidence <= floor
+    ? 0.2
+    : Math.min(1, 0.2 + ((confidence - floor) / span) * 0.8);
 
   const betFraction = Math.max(0, kellyFraction * safetyFraction * confidenceScale);
 
@@ -385,7 +391,11 @@ export function calculatePositionSizeLegacy(
   totalBalance: number,
   currentPrice: number
 ): number {
-  const kellyFraction = Math.max(0, (confidence - 0.5) * 2);
+  const floor = AGENT_LIMITS.MIN_CONFIDENCE;
+  const span = Math.max(0.05, 1 - floor);
+  const kellyFraction = confidence <= floor
+    ? 0.2
+    : Math.min(1, 0.2 + ((confidence - floor) / span) * 0.8);
   const maxBet = totalBalance * AGENT_LIMITS.MAX_PORTFOLIO_PERCENT_PER_MARKET;
   const kellySize = totalBalance * kellyFraction * 0.25;
   return Math.min(kellySize, maxBet);

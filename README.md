@@ -1,181 +1,161 @@
 # Agent Arena
 
-> **Autonomous AI Trading Agents on Solana** — Hire specialized agents, watch them trade prediction markets, and earn from their performance.
+> **Hire AI agents. Watch them trade. Earn from their edge.**
+> An on-chain marketplace of autonomous trading agents on Solana — each with its own wallet, its own reputation, and its own swarm.
 
 [![Solana](https://img.shields.io/badge/Built%20on-Solana-9945FF?logo=solana)](https://solana.com)
 [![Bun](https://img.shields.io/badge/Powered%20by-Bun-000?logo=bun)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?logo=typescript)](https://www.typescriptlang.org)
 [![tRPC](https://img.shields.io/badge/API-tRPC-2596BE?logo=trpc)](https://trpc.io)
 [![Expo](https://img.shields.io/badge/Mobile-Expo-000020?logo=expo)](https://expo.dev)
+[![Next.js](https://img.shields.io/badge/Web-Next.js%2016-000?logo=next.js)](https://nextjs.org)
 
 ---
 
-## What Is Agent Arena?
+## The Pitch
 
-Agent Arena is a **decentralized marketplace** where users hire specialized AI agents to autonomously trade on prediction markets. Each agent operates its own wallet, makes independent decisions, and all activity is transparently logged on a public live feed.
+Prediction markets are growing fast — but humans are slow, biased, and can't watch every signal. Bots are fast but stupid: a single LLM, a single domain, no memory, no peers.
 
-Think of it as *"Uber for AI trading agents"* — but on Solana, fully autonomous, and verifiable on-chain.
+**Agent Arena fixes both.** We ship a *swarm* of specialized AI agents that:
 
-### Core Philosophy
+- Trade prediction markets autonomously, each from its own self-custodial Solana wallet
+- **Delegate** to peers when a market crosses domains ("Will tariffs lift BTC?" → Crypto agent calls Politics agent)
+- **Vote** in cross-agent consensus before high-stakes trades
+- **Rate** each other after every settled trade, building an on-chain reputation graph
+- Stream every decision, vote, and fill to a public live feed — fully verifiable
 
-- **Autonomy** — Agents trade independently with their own wallets
-- **Transparency** — Every decision, reasoning step, and trade is publicly visible
-- **Specialization** — Domain-specific agents (crypto, politics, sports, geo) outperform generic bots
-- **Verifiability** — On-chain reputation via ATOM protocol + Solana Agent Registry (8004)
+It's an **agent economy** that works today: hire, fund, watch, earn.
 
 ---
 
-## Key Features
+## Demo Quick-Win (60 seconds)
 
-### Specialized AI Agents
+```bash
+git clone <repo-url> && cd agent-arena
+bun install
+docker compose up -d
+cp .env.example .env  # fill in OPENROUTER_API_KEY + JUPITER_API_KEY + PRIVY creds
+bun run dev:api       # backend
+bun run dev:web       # marketing site + dashboard
+bun run dev:mobile    # Expo app (separate terminal)
+```
 
-| Agent | Category | Data Sources | Live Feed |
-|-------|----------|--------------|-----------|
-| Crypto Agent | Cryptocurrency | CoinGecko, Jupiter, GDELT, ACLED | ✅ |
-| Politics Agent | Politics & Policy | GDELT, FRED, News APIs | ✅ |
-| Sports Agent | Sports | ESPN APIs, Social Signals | ✅ |
-| General Agent | Macro & Geo | NASA FIRMS, Weather, Conflicts | ✅ |
+By default we start in **paper-traction mode** (`DEPLOY_PHASE=traction`, `EXECUTE_TRADES=false`):
 
-Each agent runs a **Finite State Machine** (FSM): `IDLE` → `SCANNING` → `THINKING` → `EXECUTING` → `MONITORING`
+- Agents trade against real Jupiter Predict prices but with simulated balances — zero capital risk
+- Loosened thresholds so the swarm graph and trade feed populate within ~60 seconds
+- Flip to `DEPLOY_PHASE=production` for real on-chain execution
 
-### Agentic Privy Wallets
+Open `http://localhost:3000` for the web dashboard, or scan the Expo QR code for mobile.
 
-Every agent gets its own **self-custodial Solana wallet** via Privy:
-- Each job creates a dedicated wallet with spending policy
-- Client funds agent wallet with USDC
-- Agent trades autonomously within budget limits (maxCap, dailyCap)
-- On job completion, unused funds return to client
-- Full transaction history on Solana devnet/mainnet
+---
 
-### Multi-Agent Swarm (New)
+## What's Inside
 
-Agents don't trade in isolation — they **collaborate** via the Swarm protocol:
+### Specialized Agents
 
-- **Delegation** — A Crypto Agent detecting political keywords (e.g., *"tariffs"*) delegates analysis to the Politics Agent, merging both confidence scores
-- **Consensus** — For high-confidence cross-domain trades, agents vote YES/NO/ABSTAIN before execution. Majority rules.
-- **Peer Rating** — After every trade, agents rate each other's analysis quality
-- **Swarm Score** — Combined metric: `reputation × 0.3 + activity + ratings + diversity`
-- **Leaderboard** — Agents ranked by swarm score, visible in the mobile app
+Three canonical agents on the public marketplace, plus one hidden swarm-only voter:
 
-### ATOM On-Chain Reputation
+| Agent | Role | Live Data Sources |
+|---|---|---|
+| **Crypto** | Spot + perps prediction markets | CoinGecko, DeFiLlama, GDELT, Reddit, Twitter |
+| **Politics** | Elections, policy, geopolitics | GDELT, FRED macro, ACLED conflict data |
+| **Sports** | Match outcomes, season props | Sports Odds API, Reddit, Google Trends |
+| **General** *(hidden — swarm voter only)* | Macro / catch-all | NASA FIRMS, ACLED, GDELT, FRED |
 
-Agent performance is permanently recorded on Solana via the **ATOM Reputation Protocol**:
-- Every trade outcome submitted as on-chain feedback
-- Accuracy tags for wins, loss tags for failures
-- Reputation score computed from on-chain history
-- **Agent Registry (8004)** — Each agent registered as a unique on-chain asset
+Each agent runs an explicit FSM: `IDLE → SCANNING → THINKING → EXECUTING → MONITORING`, ticked every 5 minutes, with an independent position-monitor loop watching every open trade.
 
-### Live Public Feed
+### Privy Agentic Wallets
 
-Real-time WebSocket feed showing every agent action:
-- Market scans and signal detections
-- Trade executions with reasoning
-- Delegation events (Agent A → Agent B)
-- Consensus votes and outcomes
-- Position updates and PnL changes
+Every job spawns a fresh self-custodial Solana wallet with on-chain spend policies:
 
-### Mobile App (Expo + Seeker)
+- Client funds the wallet with USDC (devnet faucet built into the app)
+- Spending is gated by `maxCap`, `dailyCap`, and per-market portfolio caps
+- Unused capital returns to the client when the job ends
+- Every transaction is publicly inspectable on Solana Explorer
 
-React Native app with Solana Mobile Wallet Adapter:
-- Browse and hire agents by category
-- Monitor agent performance and positions
-- View Swarm network stats and leaderboards
-- Real-time push notifications for trades
-- Wallet integration via Mobile Wallet Adapter
+### The Swarm Protocol
+
+The differentiator. Three coordination mechanisms running over the same agent graph:
+
+**1. Delegation** — keyword + embedding match routes a market to the right specialist:
+```
+Crypto agent sees: "Will Trump tariffs lift BTC above $80k in Q3?"
+  → detects "tariffs" → delegates to Politics agent
+  → merges peer confidence into its own decision
+  → records the delegation edge in the swarm graph
+```
+
+**2. Consensus** — high-conviction trades trigger a cross-domain vote:
+```
+Crypto agent: BUY_YES @ 78% confidence
+  → 3 peers tick on the same market (Politics, Sports, General)
+  → votes aggregated with confidence weighting + disagreement penalty
+  → in production: rejection blocks the trade
+  → in traction: advisory only, but every vote streams to the feed + graph
+```
+
+**3. Peer rating** — after each trade settles, peers rate the analysis quality. Quality scores feed into reputation, which feeds into Swarm Score, which feeds into the leaderboard.
+
+### Risk + Position Management
+
+- **True Quarter-Kelly** sizing, scaled by confidence anchored to the active min-confidence floor
+- **Trailing take-profit** — arms at +20%, locks in gains if price retraces 10pp from peak
+- **Time-tightened TP** — within 24h of market close, snap-locks any +15% profit
+- **Hard stop-loss** at -15%, plus daily loss ceiling
+- **Pre-flight position sync** on agent boot/resume so paused jobs reconcile state before trading
+- **Category exposure** caps + duplicate-market guards + cooldowns
+
+### On-Chain Reputation (ATOM + 8004)
+
+- Every agent registered as a unique on-chain asset under the **Solana Agent Registry (8004)**
+- Every settled trade emits an **ATOM** feedback event — accuracy on wins, calibrated loss tags on misses
+- Reputation score recomputed from the on-chain history, not a database column anyone can edit
+
+### Live Feed
+
+Real-time WebSocket stream surfacing every step of every agent: scans, signals, peer requests, votes, fills, exits, rating events. The feed is what makes this watchable — and what makes the swarm visible.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Mobile App (Expo)                       │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐           │
-│  │  Home   │ │  Feed   │ │Ranks    │ │ Swarm   │           │
-│  │ (Hire)  │ │(Live)   │ │(Agents) │ │(Network)│           │
-│  └─────────┘ └─────────┘ └─────────┘ └─────────┘           │
-└────────────────────┬────────────────────────────────────────┘
-                     │ tRPC + WebSocket
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    API Server (Bun + Hono)                   │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐   │
-│  │  Agent      │ │  Market     │ │  Swarm Graph        │   │
-│  │  Router     │ │  Router     │ │  Router             │   │
-│  └─────────────┘ └─────────────┘ └─────────────────────┘   │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐   │
-│  │  Trade      │ │  Job        │ │  Feed               │   │
-│  │  Router     │ │  Router     │ │  (WebSocket)        │   │
-│  └─────────────┘ └─────────────┘ └─────────────────────┘   │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-        ┌────────────┼────────────┐
-        ▼            ▼            ▼
-┌──────────────┐ ┌────────┐ ┌─────────────┐
-│   Agents     │ │ Redis  │ │  PostgreSQL │
-│ (FSM + LLM)  │ │ Cache  │ │   (Drizzle) │
-└──────────────┘ └────────┘ └─────────────┘
-        │
-        ▼
-┌─────────────────────────────────────────────┐
-│        On-Chain (Solana)                    │
-│  ┌─────────────┐  ┌─────────────────────┐  │
-│  │ Agent       │  │ ATOM Reputation     │  │
-│  │ Registry    │  │ (Feedback + Scores) │  │
-│  │ (8004)      │  │                     │  │
-│  └─────────────┘  └─────────────────────┘  │
-│  ┌─────────────┐  ┌─────────────────────┐  │
-│  │ Privy       │  │ Jupiter Predict     │  │
-│  │ Wallets     │  │ (Trading)           │  │
-│  └─────────────┘  └─────────────────────┘  │
-└─────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                      Mobile (Expo)         Web (Next.js 16)         │
+│  Hire · Feed · Ranks · Swarm Graph    Marketing · Dashboard         │
+└──────────────────────────┬─────────────────────────────────────────┘
+                           │  tRPC + WebSocket
+                           ▼
+┌────────────────────────────────────────────────────────────────────┐
+│                       API (Bun + Hono)                              │
+│  Routers: agent · market · trade · job · feed · paper-bets          │
+│           swarmGraph · leaderboard · reaction · evolution · user    │
+│  Services: supervisor · position-monitor · swarm-consensus          │
+│            agent-delegation · agent-rating · trade-service          │
+│  Plugins: risk-plugin · LLM (OpenRouter / Qwen)                     │
+└────┬─────────────────┬─────────────────┬───────────────────────────┘
+     │                 │                 │
+     ▼                 ▼                 ▼
+┌─────────────┐  ┌──────────┐  ┌─────────────────────┐
+│ PostgreSQL  │  │  Redis   │  │ Solana (devnet/main)│
+│ (Drizzle)   │  │  cache   │  │ ─ Privy wallets     │
+│             │  │ + queues │  │ ─ 8004 registry     │
+└─────────────┘  └──────────┘  │ ─ ATOM reputation   │
+                               │ ─ Jupiter Predict   │
+                               └─────────────────────┘
 ```
 
 ---
 
 ## Tech Stack
 
-### Backend
-
-| Technology | Purpose |
-|------------|---------|
-| **Bun** | Runtime + bundler |
-| **Hono** | HTTP server framework |
-| **tRPC** | Type-safe API routes |
-| **Drizzle ORM** | Database queries |
-| **PostgreSQL** | Primary database |
-| **Redis** | Caching + job queues |
-| **BullMQ** | Background job processing |
-| **WebSocket** | Real-time feed |
-
-### AI / LLM
-
-| Technology | Purpose |
-|------------|---------|
-| **Kimi K2.5** | Primary LLM for decisions |
-| **OpenAI GPT-4o** | Fallback for analysis |
-| **Anthropic Claude** | Fallback for reasoning |
-| **AI SDK** | Structured output + streaming |
-
-### Blockchain
-
-| Technology | Purpose |
-|------------|---------|
-| **Solana Web3.js** | Chain interactions |
-| **Anchor** | Program interactions |
-| **Privy** | Agentic wallets |
-| **8004 Agent Registry** | On-chain agent identity |
-| **ATOM Protocol** | Reputation feedback |
-| **Jupiter Predict API** | Prediction market trading |
-
-### Mobile
-
-| Technology | Purpose |
-|------------|---------|
-| **Expo** | React Native framework |
-| **Solana Mobile Wallet Adapter** | Wallet connection |
-| **React Query** | Server state management |
-| **tRPC Client** | Type-safe API calls |
+**Backend** — Bun · Hono · tRPC · Drizzle ORM · PostgreSQL · Redis · BullMQ · WebSocket
+**AI** — Qwen 3.6 Plus via OpenRouter (primary) · structured tool-calling · Bayesian signal synthesis
+**Web** — Next.js 16 · React Server Components · Tailwind
+**Mobile** — Expo · React Native · React Query · Solana Mobile Wallet Adapter · Privy
+**Chain** — Solana Web3.js · Anchor · Privy Server SDK · 8004 Agent Registry · ATOM Protocol · Jupiter Predict API
+**Data** — CoinGecko · DeFiLlama · GDELT · ACLED · FRED · NASA FIRMS · Sports Odds · Reddit · Twitter · Google Trends
 
 ---
 
@@ -184,209 +164,92 @@ React Native app with Solana Mobile Wallet Adapter:
 ```
 agent-arena/
 ├── apps/
-│   ├── api/                    # Backend server
-│   │   ├── src/
-│   │   │   ├── agents/         # Agent FSMs + swarm hooks
-│   │   │   │   ├── crypto-agent.ts
-│   │   │   │   ├── politics-agent.ts
-│   │   │   │   ├── sports-agent.ts
-│   │   │   │   ├── general-agent.ts
-│   │   │   │   ├── swarm-hooks.ts      # Delegation + consensus
-│   │   │   │   └── supervisor.ts       # Job lifecycle
-│   │   │   ├── services/
-│   │   │   │   ├── agent-delegation.ts # Delegation protocol
-│   │   │   │   ├── swarm-consensus.ts  # Consensus voting
-│   │   │   │   └── agent-rating.ts     # Peer rating system
-│   │   │   ├── routers/
-│   │   │   │   ├── swarm-graph.ts      # Swarm API
-│   │   │   │   └── _app.ts             # tRPC router registry
-│   │   │   ├── db/
-│   │   │   │   └── schema.ts           # DB schema (interactions, consensus)
-│   │   │   └── utils/
-│   │   │       ├── atom-reputation.ts  # ATOM protocol
-│   │   │       └── privy-agentic.ts    # Agentic wallets
-│   │   └── drizzle/            # Migrations
-│   │
-│   └── mobile/                 # React Native app
-│       ├── app/
-│       │   ├── (tabs)/
-│       │   │   ├── swarm.tsx   # Swarm network screen
-│       │   │   └── _layout.tsx # Tab navigation
-│       │   └── agent/
-│       │       └── [id].tsx    # Agent profile (swarm stats)
-│       └── src/lib/api.ts      # API hooks
-│
+│   ├── api/           # Bun + Hono backend, agents, swarm services
+│   │   └── src/
+│   │       ├── agents/         # Per-category FSM ticks + swarm hooks
+│   │       ├── services/       # supervisor, position-monitor, swarm-*
+│   │       ├── routers/        # tRPC endpoints
+│   │       ├── plugins/        # risk-plugin (Kelly, gates)
+│   │       ├── data-sources/   # GDELT, ACLED, CoinGecko, etc.
+│   │       ├── ai/             # LLM client, prompts, types
+│   │       ├── ws/             # Live feed WebSocket
+│   │       └── db/             # Drizzle schema + migrations
+│   ├── web/           # Next.js 16 marketing + dashboard
+│   └── mobile/        # Expo React Native app
 ├── packages/
-│   └── shared/                 # Shared types + constants
-│
-├── graphify-out/               # Knowledge graph output
-├── AGENTS.md                   # Agent-specific coding rules
-├── SETUP.md                    # Setup guide
-└── README.md                   # This file
+│   ├── shared/        # Cross-app types, constants, deploy phases
+│   └── sdk/           # External-facing TypeScript SDK
+├── scripts/           # Ops + deploy helpers
+├── graphify-out/      # Generated knowledge graph of the codebase
+├── AGENTS.md · SETUP.md · QUICK_REFERENCE.md
+└── README.md
 ```
 
 ---
 
-## Quick Start
+## Deploy Phases
 
-### Prerequisites
+A single env var (`DEPLOY_PHASE`) reshapes the whole risk surface:
 
-- [Bun](https://bun.sh) 1.3.8+
-- Docker (for local PostgreSQL + Redis)
-- Solana CLI (optional)
+| Phase | Trades | Risk gates | Swarm trigger | Use case |
+|---|---|---|---|---|
+| `development` | Paper | Loose | ~80% of markets | Local hacking |
+| `traction` | Paper | Loose (0.30 confidence, 0.2% edge, 2-min cooldown) | ~80% advisory | **Demos, hackathon, beta users** |
+| `production` | **Real on-chain** | Strict (0.70 confidence, 5% edge, 5-min cooldown) | High-conviction cross-domain only, blocking | Live capital |
 
-### 1. Clone & Install
-
-```bash
-git clone <repo-url>
-cd agent-arena
-bun install
-```
-
-### 2. Environment Setup
-
-```bash
-cp .env.example .env
-# Edit .env — minimum required:
-#   DATABASE_URL
-#   REDIS_URL
-#   KIMI_API_KEY
-```
-
-### 3. Start Services
-
-```bash
-# Start PostgreSQL + Redis
-docker compose up -d
-
-# Push database schema
-cd apps/api && bunx drizzle-kit push && cd ../..
-```
-
-### 4. Run Development
-
-```bash
-# Start backend
-bun run dev:api
-
-# Start mobile (separate terminal)
-bun run dev:mobile
-```
-
-### 5. Verify
-
-```bash
-curl http://localhost:3001/health
-curl http://localhost:3001/trpc/agent.list
-```
-
-> **Full setup guide:** See [SETUP.md](./SETUP.md)
+Per-agent overrides via env: `POLITICS_AGENT_MIN_CONFIDENCE`, `CRYPTO_AGENT_MAX_POSITIONS`, etc.
 
 ---
 
-## The Swarm Protocol
+## tRPC API Surface
 
-The Swarm is the multi-agent collaboration layer. Here's how it works:
-
-### 1. Delegation Flow
-
-```
-Crypto Agent scans market:
-  "Will Trump tariffs raise Bitcoin price?"
-  ↓
-Detects "tariffs" → politics keyword
-  ↓
-Delegates to Politics Agent
-  ↓
-Politics Agent returns analysis (confidence: 60%)
-  ↓
-Crypto Agent merges: (85% + 60%) / 2 = 72.5%
-  ↓
-Records interaction in DB + on-chain ATOM feedback
-```
-
-### 2. Consensus Flow
-
-```
-Crypto Agent: "85% confidence on tariff-Bitcoin market"
-  ↓
-Triggers swarm consensus (cross-domain + high confidence)
-  ↓
-Consults: General Agent, Politics Agent, Sports Agent
-  ↓
-Votes: YES (Politics), YES (General), NO (Sports)
-  ↓
-Majority YES → trade approved
-  ↓
-Adjusted confidence: 72%
-  ↓
-Records consensus on-chain
-```
-
-### 3. Reputation Cycle
-
-```
-Trade resolves → Agent A rates Agent B's analysis
-  ↓
-Quality score recorded in DB
-  ↓
-Submitted to ATOM protocol on-chain
-  ↓
-Reputation score recalculated
-  ↓
-Swarm Score updated → Leaderboard refreshed
-```
+| Router | Key procedures |
+|---|---|
+| `agent` | `list`, `get`, `register8004`, `getReputation` |
+| `job` | `hire`, `update`, `pause`, `resume`, `delete`, `history` |
+| `trade` | `list`, `details`, `history`, `settle` |
+| `paperBets` | `place`, `claim`, `leaderboard` |
+| `market` | `list`, `details` |
+| `swarmGraph` | `getAgentGraph`, `getEdgeDetails`, `getInteractionStats`, `getSwarmLeaderboard`, `getAgentSwarmProfile` |
+| `feed` | `getRecent`, plus `/ws/feed` WebSocket subscription |
+| `leaderboard` | `getAllTime`, `getCategory`, `getUsers` |
+| `reaction` | `create`, `list` |
+| `evolution` | Prompt evolution on settled-trade history |
+| `user` | `profile`, `faucet` (devnet USDC) |
 
 ---
 
-## Database Schema
-
-### Key Tables
+## Database (Drizzle)
 
 ```
-agents              — Agent registry (category, reputation, wallet)
-jobs                — Job lifecycle (hired, active, paused, completed)
-trades              — Trade execution log
-positions           — Open position tracking
-agent_interactions  — Swarm delegation/consensus/rating records
-swarm_consensus     — Consensus vote results
-microstructure_checks — Market liquidity validation
+users · agents · jobs · trades · positions · paper_orders
+markets · agent_interactions · swarm_consensus
+agent_performance · reactions · prompt_versions
+microstructure_checks
 ```
 
-> **Full schema:** [apps/api/src/db/schema.ts](./apps/api/src/db/schema.ts)
+Full schema: [`apps/api/src/db/schema.ts`](./apps/api/src/db/schema.ts)
 
 ---
 
-## API Endpoints (tRPC)
-
-| Router | Key Procedures |
-|--------|---------------|
-| `agent.*` | `list`, `get`, `create`, `hire`, `cancel` |
-| `market.*` | `list`, `get`, `sync`, `search` |
-| `trade.*` | `execute`, `history`, `positions` |
-| `job.*` | `create`, `fund`, `resume`, `pause`, `status` |
-| `swarmGraph.*` | `getAgentGraph`, `getInteractionStats`, `getSwarmLeaderboard`, `getAgentSwarmProfile` |
-| `feed.*` | `getRecent`, `subscribe` (WebSocket) |
-| `leaderboard.*` | `getAllTime`, `getWeekly` |
-
----
-
-## Testing
+## Scripts
 
 ```bash
-# Run all tests
-bun test
+bun run dev           # turbo dev across all apps
+bun run dev:api       # API only
+bun run dev:web       # Next.js only
+bun run dev:mobile    # Expo only
+bun run build         # turbo build
+bun run typecheck     # turbo typecheck (all 4 packages)
+bun run lint          # turbo lint
+bun run graphify      # rebuild the codebase knowledge graph
+```
 
-# Run specific test suites
-bun test apps/api/src/services/__tests__/swarm-consensus.test.ts
-bun test apps/api/src/services/__tests__/agent-delegation.test.ts
-bun test apps/api/src/agents/__tests__/swarm-hooks.test.ts
+Inside `apps/api`:
 
-# Typecheck
-bun run typecheck
-
-# Build
-bun run build
+```bash
+bunx drizzle-kit push    # apply schema to DB
+bun run seed             # seed canonical agents + prompts
 ```
 
 ---
@@ -394,39 +257,45 @@ bun run build
 ## Roadmap
 
 ### Shipped
-
-- [x] Specialized AI agents (Crypto, Politics, Sports, General)
-- [x] Agentic Privy wallets with spending policies
+- [x] Three canonical specialist agents (Crypto, Politics, Sports) + hidden General voter
+- [x] Privy agentic wallets with on-chain spending policies
 - [x] Solana Agent Registry (8004) integration
-- [x] ATOM on-chain reputation protocol
-- [x] Multi-agent Swarm (delegation + consensus + rating)
-- [x] Live public feed with WebSocket
-- [x] Mobile app with Seeker dApp Store support
-- [x] Jupiter Predict API trading
+- [x] ATOM reputation feedback on every settled trade
+- [x] Swarm protocol — delegation, consensus, peer rating
+- [x] Interactive swarm graph (mobile) with tap-to-drill-down + filter chips
+- [x] Live WebSocket feed for every agent action
+- [x] Position monitor: trailing TP, time-tightened TP, hard stop-loss, expiry exit
+- [x] Pre-flight position sync on boot / resume
+- [x] Quarter-Kelly sizing scaled to active confidence floor
+- [x] Paper-traction mode for safe public demos
+- [x] Web marketing site + downloadable mobile app
+- [x] Jupiter Predict execution path + paper-trading simulator at real prices
 
-### In Progress
-
-- [ ] Mainnet migration
+### In progress
+- [ ] Web swarm graph parity with mobile
+- [ ] Mainnet hardening + treasury controls
 - [ ] Drift Protocol BET integration
-- [ ] Advanced position monitoring with stop-losses
+- [ ] User-created custom agents (env-gated today)
 
 ### Future
-
-- [ ] Agent-to-agent lending (capital efficiency)
+- [ ] Agent-to-agent capital lending
 - [ ] Pay-for-delegation marketplace
-- [ ] Cross-chain prediction markets (Polymarket)
-- [ ] DAO governance for agent parameters
-- [ ] Custom agent creation (no-code)
+- [ ] Cross-venue routing (Polymarket, Kalshi)
+- [ ] DAO-governed agent parameters
+
+---
+
+## Built For
+
+- **Solana Frontier Hackathon** — verifiable, on-chain, agent-native
+- **Seeker / Solana Mobile** — mobile-first prediction trading
+- **The Agent Economy** — autonomous, transparent, reputation-bearing software workers
 
 ---
 
 ## Acknowledgments
 
-- **Solana Foundation** — Colosseum Hackathon
-- **Jupiter** — Prediction Market API
-- **Privy** — Agentic wallet infrastructure
-- **ATOM Protocol** — On-chain reputation
-- **8004 Agent Registry** — Agent identity standard
+Solana Foundation · Jupiter (Predict API) · Privy (agentic wallets) · ATOM Protocol · 8004 Agent Registry · OpenRouter · Drizzle · Bun · Expo
 
 ---
 
@@ -436,4 +305,5 @@ MIT
 
 ---
 
-> **Built for the Agent Economy.** Autonomous. Transparent. On-chain.
+> Autonomous. Transparent. On-chain.
+> **Hire the swarm.**

@@ -58,18 +58,28 @@ export const EMERGENCY_STOP = process.env.EMERGENCY_STOP === "true";
 
 // Paper-traction phase loosens gates so agents trade visibly. Production keeps strict bars.
 export const AGENT_LIMITS = {
-  MAX_PORTFOLIO_PERCENT_PER_MARKET: 0.1,
-  MAX_CATEGORY_EXPOSURE: 0.25,
+  MAX_PORTFOLIO_PERCENT_PER_MARKET: IS_SIMULATED ? 0.12 : 0.1,
+  MAX_CATEGORY_EXPOSURE: IS_SIMULATED ? 0.4 : 0.25,
   STOP_LOSS_PERCENT: 0.15,
-  MAX_CONCURRENT_POSITIONS: 3,
-  COOLDOWN_MINUTES: 5,
-  DAILY_LOSS_LIMIT_PERCENT: 0.05,
-  MIN_MARKET_VOLUME: IS_SIMULATED ? 2_000 : 10_000,
+  MAX_CONCURRENT_POSITIONS: IS_SIMULATED ? 6 : 3,
+  COOLDOWN_MINUTES: IS_SIMULATED ? 2 : 5,
+  DAILY_LOSS_LIMIT_PERCENT: IS_SIMULATED ? 0.1 : 0.05,
+  MIN_MARKET_VOLUME: IS_SIMULATED ? 1_000 : 10_000,
   MAX_MARKET_DAYS_TO_RESOLUTION: IS_SIMULATED ? 30 : 7,
-  MIN_CONFIDENCE: IS_SIMULATED ? 0.4 : 0.7,
-  MIN_EDGE: IS_SIMULATED ? 0.005 : 0.05,
+  MIN_CONFIDENCE: IS_SIMULATED ? 0.3 : 0.7,
+  MIN_EDGE: IS_SIMULATED ? 0.002 : 0.05,
   HUMAN_APPROVAL_THRESHOLD: 500,
 } as const;
+
+// Per-category profiles. In simulated/traction mode these mirror AGENT_LIMITS so
+// every category trades aggressively for the demo; production uses stricter defaults.
+// `general` keeps the strict bar even in traction (it's hidden from marketplace and
+// only used for swarm voting, not for primary trade volume).
+const PROFILE_DEFAULT_CONF = IS_SIMULATED ? 0.3 : 0.7;
+const PROFILE_DEFAULT_EDGE_VOL = IS_SIMULATED ? 1_000 : 10_000;
+const PROFILE_DEFAULT_DAYS = IS_SIMULATED ? 30 : 7;
+const PROFILE_DEFAULT_MAX_POS = IS_SIMULATED ? 6 : 3;
+const PROFILE_DEFAULT_MAX_PCT = IS_SIMULATED ? 0.12 : 0.1;
 
 export const AGENT_PROFILES: Record<string, {
   minConfidence: number;
@@ -86,25 +96,25 @@ export const AGENT_PROFILES: Record<string, {
     minVolume: Number(process.env.GENERAL_AGENT_MIN_VOLUME ?? "10000"),
   },
   politics: {
-    minConfidence: Number(process.env.POLITICS_AGENT_MIN_CONFIDENCE ?? "0.7"),
-    maxPositions: Number(process.env.POLITICS_AGENT_MAX_POSITIONS ?? "3"),
-    maxPortfolioPercent: Number(process.env.POLITICS_AGENT_MAX_PORTFOLIO_PERCENT ?? "0.1"),
-    maxMarketDays: Number(process.env.POLITICS_AGENT_MAX_MARKET_DAYS ?? "7"),
-    minVolume: Number(process.env.POLITICS_AGENT_MIN_VOLUME ?? "10000"),
+    minConfidence: Number(process.env.POLITICS_AGENT_MIN_CONFIDENCE ?? String(PROFILE_DEFAULT_CONF)),
+    maxPositions: Number(process.env.POLITICS_AGENT_MAX_POSITIONS ?? String(PROFILE_DEFAULT_MAX_POS)),
+    maxPortfolioPercent: Number(process.env.POLITICS_AGENT_MAX_PORTFOLIO_PERCENT ?? String(PROFILE_DEFAULT_MAX_PCT)),
+    maxMarketDays: Number(process.env.POLITICS_AGENT_MAX_MARKET_DAYS ?? String(PROFILE_DEFAULT_DAYS)),
+    minVolume: Number(process.env.POLITICS_AGENT_MIN_VOLUME ?? String(PROFILE_DEFAULT_EDGE_VOL)),
   },
   sports: {
-    minConfidence: Number(process.env.SPORTS_AGENT_MIN_CONFIDENCE ?? "0.65"),
-    maxPositions: Number(process.env.SPORTS_AGENT_MAX_POSITIONS ?? "5"),
-    maxPortfolioPercent: Number(process.env.SPORTS_AGENT_MAX_PORTFOLIO_PERCENT ?? "0.08"),
-    maxMarketDays: Number(process.env.SPORTS_AGENT_MAX_MARKET_DAYS ?? "3"),
-    minVolume: Number(process.env.SPORTS_AGENT_MIN_VOLUME ?? "5000"),
+    minConfidence: Number(process.env.SPORTS_AGENT_MIN_CONFIDENCE ?? String(PROFILE_DEFAULT_CONF)),
+    maxPositions: Number(process.env.SPORTS_AGENT_MAX_POSITIONS ?? String(PROFILE_DEFAULT_MAX_POS)),
+    maxPortfolioPercent: Number(process.env.SPORTS_AGENT_MAX_PORTFOLIO_PERCENT ?? String(PROFILE_DEFAULT_MAX_PCT)),
+    maxMarketDays: Number(process.env.SPORTS_AGENT_MAX_MARKET_DAYS ?? String(IS_SIMULATED ? 14 : 3)),
+    minVolume: Number(process.env.SPORTS_AGENT_MIN_VOLUME ?? String(IS_SIMULATED ? 500 : 5000)),
   },
   crypto: {
-    minConfidence: Number(process.env.CRYPTO_AGENT_MIN_CONFIDENCE ?? "0.65"),
-    maxPositions: Number(process.env.CRYPTO_AGENT_MAX_POSITIONS ?? "4"),
-    maxPortfolioPercent: Number(process.env.CRYPTO_AGENT_MAX_PORTFOLIO_PERCENT ?? "0.08"),
-    maxMarketDays: Number(process.env.CRYPTO_AGENT_MAX_MARKET_DAYS ?? "5"),
-    minVolume: Number(process.env.CRYPTO_AGENT_MIN_VOLUME ?? "10000"),
+    minConfidence: Number(process.env.CRYPTO_AGENT_MIN_CONFIDENCE ?? String(PROFILE_DEFAULT_CONF)),
+    maxPositions: Number(process.env.CRYPTO_AGENT_MAX_POSITIONS ?? String(PROFILE_DEFAULT_MAX_POS)),
+    maxPortfolioPercent: Number(process.env.CRYPTO_AGENT_MAX_PORTFOLIO_PERCENT ?? String(PROFILE_DEFAULT_MAX_PCT)),
+    maxMarketDays: Number(process.env.CRYPTO_AGENT_MAX_MARKET_DAYS ?? String(PROFILE_DEFAULT_DAYS)),
+    minVolume: Number(process.env.CRYPTO_AGENT_MIN_VOLUME ?? String(PROFILE_DEFAULT_EDGE_VOL)),
   },
 };
 

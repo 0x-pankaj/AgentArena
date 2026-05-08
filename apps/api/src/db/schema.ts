@@ -413,3 +413,28 @@ export const userAgentFollows = pgTable("user_agent_follows", {
   agentIdx: index("follows_agent_idx").on(table.agentId),
   uniqueFollow: index("follows_unique_idx").on(table.userWallet, table.agentId),
 }));
+
+// ============================================================
+// Public feedback — submitted from web/mobile, no wallet required.
+// Used to capture demo-day input, bug reports, and feature requests.
+// ============================================================
+
+export const feedback = pgTable("feedback", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  type: varchar("type", { length: 20 }).notNull(), // "bug" | "feature" | "general" | "praise"
+  rating: integer("rating"), // 1-5, optional
+  message: text("message").notNull(),
+  contact: varchar("contact", { length: 200 }), // optional email/handle
+  source: varchar("source", { length: 20 }).default("web").notNull(), // "web" | "mobile" | "api"
+  pageUrl: text("page_url"),
+  userAgent: text("user_agent"),
+  ipHash: varchar("ip_hash", { length: 64 }), // sha256 of remote ip — for rate-limiting / dedupe
+  walletAddress: varchar("wallet_address", { length: 44 }), // optional, if user is signed in
+  status: varchar("status", { length: 20 }).default("new").notNull(), // "new" | "triaged" | "resolved" | "spam"
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  createdIdx: index("feedback_created_idx").on(table.createdAt),
+  typeIdx: index("feedback_type_idx").on(table.type),
+  statusIdx: index("feedback_status_idx").on(table.status),
+  ipIdx: index("feedback_ip_idx").on(table.ipHash),
+}));

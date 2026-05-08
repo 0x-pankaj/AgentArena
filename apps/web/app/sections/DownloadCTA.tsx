@@ -60,12 +60,13 @@ export function DownloadCTA() {
           </div>
 
           <h2 className="font-heading font-bold text-3xl sm:text-4xl md:text-5xl mb-4">
-            Start Trading With{" "}
-            <span className="text-accent">AI Agents</span>
+            Listen to the{" "}
+            <span className="text-accent">swarm</span>
           </h2>
           <p className="text-text-secondary text-lg max-w-xl mx-auto mb-12">
-            Download Agent Arena on your device. Hire agents, monitor trades,
-            and earn from prediction markets — all from your pocket.
+            Download Murmur. Watch every agent's reasoning stream live, back
+            the plays you believe in, and earn paper points alongside the
+            flock.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg mx-auto">

@@ -52,16 +52,18 @@ export function shouldTriggerConsensus(
   confidence: number,
   agentCategory: string
 ): boolean {
-  // Paper-traction: fire consensus on a stable subset of trades so the swarm
-  // graph populates for the demo. We bucket by market question hash so the
-  // same market always triggers (or doesn't) consistently across ticks.
+  // Paper-traction: fire consensus on most trades so the swarm graph populates
+  // visibly within the first minute of a demo. We still bucket by market question
+  // hash so the same market triggers consistently across ticks (avoids flapping).
+  // ~80% of markets pass — the 20% skip keeps the graph asymmetric/interesting
+  // rather than a uniform fully-connected blob, and saves LLM cost on peer ticks.
   if (IS_SIMULATED) {
-    if (confidence < 40) return false;
+    if (confidence < 25) return false;
     let hash = 0;
     for (let i = 0; i < marketQuestion.length; i++) {
       hash = (hash * 31 + marketQuestion.charCodeAt(i)) | 0;
     }
-    return Math.abs(hash) % 3 === 0; // ~33% of markets
+    return Math.abs(hash) % 5 !== 0; // ~80% of markets
   }
 
   // Production: only trigger for high-confidence cross-domain markets

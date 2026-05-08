@@ -17,6 +17,30 @@ async function trpcQuery<T>(procedure: string, input?: unknown): Promise<T | nul
   }
 }
 
+export class TRPCMutationError extends Error {
+  constructor(message: string, public readonly code?: string) {
+    super(message);
+    this.name = "TRPCMutationError";
+  }
+}
+
+async function trpcMutation<T>(procedure: string, input: unknown): Promise<T> {
+  // tRPC v10 over HTTP without a transformer expects the raw input as the POST body.
+  const url = `${API_BASE}/trpc/${procedure}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok || json?.error) {
+    const msg = json?.error?.json?.message ?? json?.error?.message ?? `Request failed (${res.status})`;
+    const code = json?.error?.json?.data?.code ?? json?.error?.data?.code;
+    throw new TRPCMutationError(msg, code);
+  }
+  return (json?.result?.data?.json ?? json?.result?.data) as T;
+}
+
 export async function fetchHealth() {
   try {
     const res = await fetch(`${API_BASE}/health`);
@@ -69,6 +93,53 @@ export async function fetchAgentNftMetadata(assetAddress: string) {
     symbol?: string;
     uri?: string;
   }>("agent.getNftMetadata", { assetAddress });
+}
+
+// --- Feedback ---
+
+export type FeedbackType = "bug" | "feature" | "general" | "praise";
+
+export interface FeedbackInput {
+  type: FeedbackType;
+  message: string;
+  rating?: number;
+  contact?: string;
+  pageUrl?: string;
+}
+
+export async function submitFeedback(input: FeedbackInput): Promise<{ success: boolean; id: string | null }> {
+  return trpcMutation("feedback.submit", {
+    type: input.type,
+    message: input.message,
+    rating: input.rating,
+    contact: input.contact,
+    pageUrl: input.pageUrl,
+    source: "web",
+    website: "", // honeypot — must stay empty
+  });
+}
+
+export async function fetchFeedbackStats() {
+  return trpcQuery<{
+    total: number;
+    avgRating: number | null;
+    bugs: number;
+    features: number;
+    praise: number;
+  }>("feedback.stats");
+}
+
+export async function fetchRecentFeedback(limit = 10) {
+  return trpcQuery<{
+    items: Array<{
+      id: string;
+      type: FeedbackType;
+      rating: number | null;
+      message: string;
+      source: string;
+      createdAt: string;
+    }>;
+  }>("feedback.recent", { limit });
 }
 
 export function getSolanaExplorerUrl(address: string | null, type: "address" | "tx" = "address") {

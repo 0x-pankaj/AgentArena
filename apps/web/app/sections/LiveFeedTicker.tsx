@@ -158,7 +158,7 @@ export function LiveFeedTicker() {
               <div className="w-3 h-3 rounded-full bg-success" />
             </div>
             <span className="ml-3 text-xs text-text-muted font-mono">
-              agent-arena-feed --live --websocket
+              murmur-swarm --tail --on-chain
             </span>
             <div className="ml-auto flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />

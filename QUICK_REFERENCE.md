@@ -1,20 +1,80 @@
-# Quick Reference: AI Pipeline Optimizations
+# Quick Reference
 
-## 🚀 Quick Start
+A one-page cheatsheet for running, demoing, and debugging Agent Arena.
 
-All optimizations are automatically activated on server startup. No configuration needed.
-
-### Test Mode
-```bash
-TEST_MODE=true npm run dev:api
-```
-Mock Jupiter API activates automatically with realistic test data.
+For full setup see [SETUP.md](./SETUP.md). For features and architecture see [README.md](./README.md).
 
 ---
 
-## 📊 Monitoring
+## 🚀 Scripts
 
-### View Live Metrics (every 5 minutes in logs)
+```bash
+# Dev
+bun run dev              # all apps via turbo
+bun run dev:api          # API only          → :3001 (HTTP) :3002 (WS)
+bun run dev:web          # Next.js web       → :3000
+bun run dev:mobile       # Expo              → scan QR
+
+# Build / quality
+bun run build            # turbo build (api + web + mobile + shared)
+bun run typecheck        # tsc --noEmit across all packages
+bun run lint             # turbo lint
+
+# DB
+cd apps/api && bunx drizzle-kit push      # apply schema
+cd apps/api && bunx drizzle-kit studio    # GUI
+
+# Codebase graph
+bun run graphify         # rebuild graphify-out/
+bun run graphify:query "question"
+bun run graphify:watch
+```
+
+---
+
+## 🎛️ Deploy Phases
+
+One env var (`DEPLOY_PHASE`) reshapes risk + swarm behavior:
+
+| Phase | Trades | Min confidence | Min edge | Cooldown | Max concurrent | Swarm trigger | Swarm reject blocks? |
+|---|---|---|---|---|---|---|---|
+| `development` | Paper | 0.30 | 0.2% | 2 min | 6 | ~80% | No |
+| `traction` (default for demos) | Paper | 0.30 | 0.2% | 2 min | 6 | ~80% | No (advisory) |
+| `production` | **Real** | 0.70 | 5% | 5 min | 3 | Cross-domain only | **Yes** |
+
+`general` agent stays at 0.7 confidence in all phases (hidden from marketplace, used only for swarm voting).
+
+---
+
+## 🔑 Env Cheatsheet
+
+Required: `DATABASE_URL`, `REDIS_URL`, `OPENROUTER_API_KEY`
+Live trading: `JUPITER_API_KEY`, `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, `BACKEND_PAYER_SECRET_KEY`
+Phase: `DEPLOY_PHASE=traction` (paper) or `production` (real)
+Kill switch: `EMERGENCY_STOP=true` pauses all agents
+Custom agents: `ENABLE_CUSTOM_AGENT_CREATION=true` to expose user agent creation (default off)
+
+Per-agent overrides (optional): `POLITICS_AGENT_MIN_CONFIDENCE`, `..._MAX_POSITIONS`, `..._MAX_PORTFOLIO_PERCENT`, `..._MAX_MARKET_DAYS`, `..._MIN_VOLUME` — same shape for `SPORTS_*`, `CRYPTO_*`, `GENERAL_*`.
+
+---
+
+## 🧪 Demo Checklist (60 seconds before going live)
+
+1. `DEPLOY_PHASE=traction` in `.env`
+2. `docker compose up -d` — Postgres + Redis up
+3. `bun run dev:api` — watch for `Backend payer:` and `Seeded canonical agents` logs
+4. `curl http://localhost:3001/health` — should return `ok` + payer pubkey
+5. `curl http://localhost:3001/trpc/agent.list` — 3 public agents (politics/sports/crypto)
+6. `bun run dev:web` → open `http://localhost:3000` — landing + feedback section
+7. `websocat ws://localhost:3002` → `{"action":"subscribe","channel":"feed"}` — see scans/trades
+8. Open mobile Swarm tab — graph should populate within ~60s
+
+If trade volume looks low, see Debugging below.
+
+---
+
+## 📊 Live Metrics (auto-logged every 5 min)
+
 ```
 Jupiter API Metrics:
   API calls: 150 total, 12/min, 85/hour
@@ -24,287 +84,96 @@ Jupiter API Metrics:
   LLM Cache: 85 hits, 180 misses (32.1% hit rate)
 ```
 
-### Check Cache Status (code)
-```typescript
-import { getCacheStats } from './services/jupiter-cache-manager';
-const stats = await getCacheStats();
-// Returns: { sports: { age: 45, eventCount: 25, isStale: false }, ... }
-```
+Inspect at runtime:
 
-### Check Rate Limiter (code)
-```typescript
-import { jupiterRateLimiter } from './services/jupiter-rate-limiter';
-const status = jupiterRateLimiter.getStatus('sports');
-// Returns: { requestsThisMinute: 5, requestsThisHour: 120, queueLength: 0, ... }
-```
-
----
-
-## 🔧 Manual Cache Control
-
-### Invalidate Cache
-```typescript
-import { invalidateCategoryCache } from './services/jupiter-cache-manager';
-await invalidateCategoryCache('sports');
-```
-
-### Force Refresh
-```typescript
-import { getCachedJupiterEvents } from './services/jupiter-cache-manager';
-const { events } = await getCachedJupiterEvents('sports', { forceRefresh: true });
-```
-
-### Pre-Warm All Caches
-```typescript
-import { preWarmCategoryCaches } from './services/jupiter-cache-manager';
-await preWarmCategoryCaches();
-```
-
----
-
-## 📁 File Reference
-
-### New Services
-| File | Purpose |
-|------|---------|
-| `jupiter-cache-manager.ts` | Category-specific caching with smart TTLs |
-| `jupiter-rate-limiter.ts` | Rate limiting with retry & circuit breaker |
-| `market-event-bus.ts` | Single-fetch → broadcast pattern |
-| `signal-invalidation.ts` | Event-driven cache invalidation |
-| `realtime-price-monitor.ts` | 15-second price polling |
-| `llm-cache.ts` | LLM response caching |
-| `parallel-analysis.ts` | Parallel market analysis |
-| `mock-jupiter.ts` | Test mode mock API |
-| `jupiter-metrics.ts` | Usage metrics tracking |
-
-### Modified Files
-| File | Changes |
-|------|---------|
-| `polymarket-plugin.ts` | Integrated rate limiter |
-| `market-service.ts` | Use new cache manager |
-| `sports-agent.ts` | Added signal invalidation |
-| `pipeline.ts` | Added LLM caching |
-| `models.ts` | Added specialized models |
-| `index.ts` | Startup integrations |
-
----
-
-## ⚙️ Configuration (Code-Level)
-
-### Cache TTLs
-**File:** `jupiter-cache-manager.ts`
-```typescript
-CATEGORY_CACHE_CONFIGS = {
-  sports: { ttlSeconds: 180 },     // 3 min
-  crypto: { ttlSeconds: 120 },     // 2 min
-  politics: { ttlSeconds: 600 },   // 10 min
-  economics: { ttlSeconds: 900 },  // 15 min
-}
-```
-
-### Rate Limits
-**File:** `jupiter-rate-limiter.ts`
-```typescript
-CATEGORY_RATE_LIMITS = {
-  sports: { maxPerMinute: 30, maxPerHour: 500 },
-  crypto: { maxPerMinute: 20, maxPerHour: 300 },
-  politics: { maxPerMinute: 20, maxPerHour: 300 },
-  economics: { maxPerMinute: 15, maxPerHour: 200 },
-}
-```
-
-### Price Monitor
-**File:** `realtime-price-monitor.ts`
-```typescript
-DEFAULT_CONFIG = {
-  pollIntervalMs: 15_000,         // 15 seconds
-  cacheTtlMs: 30_000,             // 30 seconds
-  stopLossCheckIntervalMs: 30_000,
-  priceSpikeThreshold: 0.10,      // 10%
-}
-```
-
-### LLM Cache
-**File:** `llm-cache.ts`
-```typescript
-const LLM_CACHE_TTL = 30 * 60;              // 30 minutes
-const SIMILARITY_THRESHOLD = 0.85;          // 85% similarity
-const MAX_CACHE_ENTRIES = 500;
-```
-
-### Parallel Analysis
-**File:** `parallel-analysis.ts`
-```typescript
-DEFAULT_CONFIG = {
-  maxChunkSize: 3,            // 3 markets per LLM call
-  maxConcurrent: 3,           // 3 concurrent LLM calls
-  timeoutMs: 120_000,         // 2 minute timeout
-}
-```
-
----
-
-## 🎯 Usage Examples
-
-### Get Markets for Agent (Automatic Caching + Rate Limiting)
-```typescript
-import { getMarketsForAgent } from './services/market-event-bus';
-
-// Fetches with caching, rate limiting, and broadcast
-const events = await getMarketsForAgent('sports', { forceRefresh: false });
-// Returns: { sports: [JupiterEvent, ...] }
-```
-
-### Parallel Market Analysis
-```typescript
-import { smartAnalyzeMarkets } from './services/parallel-analysis';
-
-// Automatically chooses parallel vs sequential based on market count
-const results = await smartAnalyzeMarkets(
-  markets, signals, positions, portfolio,
-  modelConfig, systemPrompt
-);
-```
-
-### Invalidate on Signal Trigger
-```typescript
-import { invalidateOnThreshold } from './services/signal-invalidation';
-
-// When agent detects significant signal change
-await invalidateOnThreshold('sports', 'GDELT sentiment spike detected');
-```
-
-### Real-Time Price Monitoring (Automatic)
-```typescript
-import { realTimePriceMonitor } from './services/realtime-price-monitor';
-
-// Started automatically on server boot
-// Polls every 15 seconds for all registered positions
-// Executes stop-loss immediately when triggered
-
-// Manual position registration (usually automatic)
-await realTimePriceMonitor.registerPosition({
-  positionId: 'pos_123',
-  marketId: 'market_456',
-  // ... other fields
-});
-```
-
----
-
-## 🧪 Testing
-
-### Run with Mock Jupiter API
-```bash
-TEST_MODE=true npm run dev:api
-```
-
-Mock data includes:
-- ✅ Sports markets (NBA, soccer, MMA)
-- ✅ Crypto markets (BTC, ETH)
-- ✅ Politics markets (elections)
-- ✅ Economics markets (Fed rates)
-- ✅ Positions and orderbooks
-
-### Verify Caching
-```bash
-# Start server
-npm run dev:api
-
-# Watch logs for:
-# [JupiterCache] Fetching fresh events for sports...
-# [JupiterCache] Cached 25 events for sports (245ms)
-# [JupiterCache] Serving stale data for sports (age: 180s)
-```
-
-### Verify Rate Limiting
-```bash
-# Make many requests rapidly
-# Watch logs for:
-# [JupiterRateLimiter] Attempt 1/4 failed for sports, retrying in 2000ms...
-# [JupiterRateLimiter] Circuit breaker opened for sports (10s backoff)
-```
-
----
-
-## 📈 Expected Performance
-
-### Without Optimizations
-```
-Agent tick (5 min):
-  ├─ Fetch sports markets: 500ms (Jupiter API call)
-  ├─ Fetch crypto markets: 450ms (Jupiter API call)
-  ├─ Get signals: 200ms
-  ├─ LLM research: 8000ms
-  ├─ LLM analysis: 10000ms
-  ├─ LLM decision: 5000ms
-  └─ Check prices: 300ms (5 min old data)
-
-Total: ~26 seconds, 2 Jupiter calls
-```
-
-### With Optimizations
-```
-Agent tick (5 min):
-  ├─ Fetch markets: 50ms (CACHED ✨)
-  ├─ Get signals: 30ms (CACHED ✨)
-  ├─ LLM research: 2000ms (CACHED sometimes ✨)
-  ├─ LLM analysis: 6000ms (PARALLEL ✨)
-  ├─ LLM decision: 4000ms
-  └─ Check prices: 15ms (15s old data ✨)
-
-Total: ~12 seconds, 0-1 Jupiter calls
-```
-
-**Result: 2x faster, 50-100% fewer API calls** ✅
-
----
-
-## 🆘 Troubleshooting
-
-### Cache Not Working
-```typescript
-// Check cache stats
-import { getCacheStats } from './services/jupiter-cache-manager';
+```ts
+import { getCacheStats } from "./services/jupiter-cache-manager";
 console.log(await getCacheStats());
 
-// Force invalidate
-import { invalidateCategoryCache } from './services/jupiter-cache-manager';
-await invalidateCategoryCache('sports');
-```
-
-### Rate Limiting Too Aggressive
-```typescript
-// Check rate limiter status
-import { jupiterRateLimiter } from './services/jupiter-rate-limiter';
+import { jupiterRateLimiter } from "./services/jupiter-rate-limiter";
 console.log(jupiterRateLimiter.getAllStatus());
 
-// If circuit breaker is open, wait for it to close
-// Or increase limits in jupiter-rate-limiter.ts
-```
-
-### Price Monitor Not Running
-```typescript
-import { realTimePriceMonitor } from './services/realtime-price-monitor';
+import { realTimePriceMonitor } from "./services/realtime-price-monitor";
 console.log(realTimePriceMonitor.getStatus());
-// Should show: { isRunning: true, monitoredPositions: N, ... }
-```
-
-### Mock API Not Activating
-```bash
-# Ensure TEST_MODE is set
-echo $TEST_MODE  # Should output: true
-
-# Check logs for:
-# [MockJupiter] TEST_MODE enabled - applying mock Jupiter API
-# [MockJupiter] Mock Jupiter API applied successfully
 ```
 
 ---
 
-## 📚 Further Reading
+## 🌐 API Surface (tRPC)
 
-- Full details: `OPTIMIZATION_SUMMARY.md`
-- Architecture: Check `agents/sports-agent.ts` for integration example
-- API Client: `plugins/polymarket-plugin.ts`
-- Startup Flow: `index.ts`
+| Router | Procedures |
+|---|---|
+| `agent` | `list`, `get`, `register8004`, `getReputation`, `getNftMetadata`, `listActive` |
+| `job` | `hire`, `update`, `pause`, `resume`, `delete`, `history` |
+| `trade` | `list`, `details`, `history`, `settle` |
+| `position` | `list`, `get`, `close` |
+| `paperTrading` / `paperBets` | `place`, `claim`, `leaderboard` |
+| `market` | `list`, `details` |
+| `feed` | `getRecent` (HTTP) + `/ws/feed` (WebSocket) |
+| `swarmGraph` | `getAgentGraph`, `getEdgeDetails`, `getInteractionStats`, `getSwarmLeaderboard`, `getAgentSwarmProfile` |
+| `leaderboard` | `getAllTime`, `getCategory`, `getUsers` |
+| `reaction` | `toggle`, `getForEvents`, `getTopEvents` |
+| `evolution` | Prompt evolution on settled trades |
+| `feedback` | `submit`, `recent`, `stats` |
+| `user` | `profile`, `faucet` (devnet USDC) |
+
+Auth: protected procedures expect `x-wallet-address` header.
+
+---
+
+## 🐞 Debugging
+
+### "Politics agent never trades"
+Check `POLITICS_AGENT_MIN_CONFIDENCE`. In `traction` it should default to 0.3 (loose). If you're in `production` it'll be 0.7 (strict by design).
+
+### "Swarm graph is empty"
+- Confirm `DEPLOY_PHASE=traction` (production gates swarm to high-conviction cross-domain only)
+- Wait ~60s for the first agent tick + redis cache TTL
+- `redis-cli KEYS "consensus:*"` — should populate
+
+### "No trades after 5 minutes"
+- Check `EMERGENCY_STOP` isn't set to `true`
+- Check `EXECUTE_TRADES` — in dev/traction this is `false` (paper). To trade for real flip `DEPLOY_PHASE=production`
+- Check `MIN_EDGE` — in traction it's 0.002. If markets are tightly priced, drop to 0.001 via env
+- Check the feed for `risk_blocked` events — daily loss limit, cooldown, or category exposure may be capping
+
+### "LLM rate-limited"
+Switch `LLM_MODEL` in env to a different OpenRouter route, or upgrade your OpenRouter tier.
+
+### Cache misbehaving
+```ts
+import { invalidateCategoryCache } from "./services/jupiter-cache-manager";
+await invalidateCategoryCache("sports");
+```
+
+### Mock Jupiter for offline dev
+```bash
+TEST_MODE=true bun run dev:api
+```
+Returns realistic mock markets for sports/crypto/politics/economics.
+
+---
+
+## 🧱 Performance Optimizations (already on)
+
+| Service | Purpose |
+|---|---|
+| `jupiter-cache-manager.ts` | Per-category cache with smart TTLs (sports 3 min, crypto 2 min, politics 10 min, econ 15 min) |
+| `jupiter-rate-limiter.ts` | Rate limit + retry + circuit breaker |
+| `market-event-bus.ts` | Single fetch → broadcast pattern (de-dupes per-tick fetches across agents) |
+| `signal-invalidation.ts` | Event-driven cache invalidation on signal threshold cross |
+| `realtime-price-monitor.ts` | 15-second price polling for open positions (stop-loss responsiveness) |
+| `position-monitor.ts` | Trailing TP, time-tightened TP, expiry exit |
+| `llm-cache.ts` | LLM response cache (~30 min TTL, 85% similarity threshold) |
+| `parallel-analysis.ts` | Batch market analysis up to 3-wide |
+
+Result vs naive baseline: ~2× faster ticks, 50–100% fewer Jupiter calls.
+
+---
+
+## 📚 More
+
+- [README.md](./README.md) — pitch, features, architecture, roadmap
+- [SETUP.md](./SETUP.md) — full setup with API key sources
+- [AGENTS.md](./AGENTS.md) — codebase graphify workflow
+- `graphify-out/GRAPH_REPORT.md` — auto-generated dependency report

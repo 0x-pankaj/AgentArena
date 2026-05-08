@@ -8,6 +8,7 @@
 import type { AgentRuntimeContext, AgentTickResult, TradeDecision } from "../ai/types";
 import { detectDelegationOpportunity, requestPeerAnalysis } from "../services/agent-delegation";
 import { shouldTriggerConsensus, collectSwarmVotes, type ConsensusResult } from "../services/swarm-consensus";
+import { IS_SIMULATED } from "@agent-arena/shared";
 
 export interface SwarmHookResult {
   proceed: boolean;
@@ -96,7 +97,13 @@ export async function runSwarmHooks(
         agentId
       );
 
-      if (!consensus.approved) {
+      // In traction/simulated mode, consensus is advisory: peer abstentions
+      // are common (their domain doesn't apply) and shouldn't block trades —
+      // we still want the consensus event recorded for the swarm graph and feed.
+      // Production keeps consensus as a hard gate for capital safety.
+      const blockOnReject = !IS_SIMULATED && Math.abs(consensus.votesFor - consensus.votesAgainst) >= 2;
+
+      if (!consensus.approved && blockOnReject) {
         return {
           proceed: false,
           decision: workingDecision,
@@ -106,12 +113,22 @@ export async function runSwarmHooks(
         };
       }
 
-      workingDecision = { ...workingDecision, confidence: consensus.adjustedConfidence / 100 };
+      // Blend swarm confidence into the working decision when we have a signal,
+      // but keep the original confidence as a floor (don't let abstentions tank it).
+      if (consensus.adjustedConfidence > 0) {
+        const blended = Math.max(
+          workingDecision.confidence ?? 0,
+          consensus.adjustedConfidence / 100,
+        );
+        workingDecision = { ...workingDecision, confidence: blended };
+      }
 
       return {
         proceed: true,
         decision: workingDecision,
-        detail: `Swarm approved (${consensus.votesFor}-${consensus.votesAgainst}), confidence adjusted to ${consensus.adjustedConfidence}%`,
+        detail: consensus.approved
+          ? `Swarm approved (${consensus.votesFor}-${consensus.votesAgainst}), confidence ${(workingDecision.confidence! * 100).toFixed(0)}%`
+          : `Swarm advisory (${consensus.votesFor}-${consensus.votesAgainst}-${consensus.votesAbstain}) — proceeding in traction`,
         consensus,
         delegation: delegationTarget ? { targetCategory: delegationTarget, delegatedAnalysis } : undefined,
       };

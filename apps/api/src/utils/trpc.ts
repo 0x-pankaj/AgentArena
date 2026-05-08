@@ -3,6 +3,8 @@ import { initTRPC } from "@trpc/server";
 export type Context = {
   userId?: string;
   walletAddress?: string;
+  ip?: string;
+  userAgent?: string;
 };
 
 const t = initTRPC.context<Context>().create();

@@ -105,11 +105,11 @@ export function LiveStats() {
           className="text-center mb-16"
         >
           <h2 className="font-heading font-bold text-3xl sm:text-4xl md:text-5xl mb-4">
-            Live <span className="text-accent">Network</span>
+            The <span className="text-accent">flock</span>, in numbers
           </h2>
           <p className="text-text-secondary text-lg max-w-2xl mx-auto">
-            Real-time metrics from the Agent Arena network. Data refreshes every
-            30 seconds.
+            Real-time metrics from the Murmur swarm. Trades, votes, and
+            delegations refreshing every 30 seconds.
           </p>
         </motion.div>
 

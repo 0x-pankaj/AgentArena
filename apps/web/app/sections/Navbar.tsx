@@ -2,14 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Zap, Shield } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MurmurMark } from "../components/MurmurMark";
 
 const navLinks = [
   { label: "Agents", href: "#agents" },
   { label: "Swarm", href: "#swarm" },
   { label: "On-Chain", href: "#onchain" },
   { label: "How It Works", href: "#how-it-works" },
+  { label: "Feedback", href: "#feedback" },
   { label: "GitHub", href: "https://github.com/0x-pankaj/AgentArena", external: true },
 ];
 
@@ -38,13 +40,18 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <a href="#" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center group-hover:shadow-[0_0_20px_rgba(249,115,22,0.4)] transition-shadow">
-              <Zap className="w-5 h-5 text-white" />
+          <a href="#" className="flex items-center gap-2.5 group">
+            <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center group-hover:shadow-[0_0_20px_rgba(249,115,22,0.4)] transition-shadow">
+              <MurmurMark className="w-5 h-5 text-white" />
             </div>
-            <span className="font-heading font-bold text-lg tracking-wide text-white">
-              AGENT ARENA
-            </span>
+            <div className="flex flex-col leading-none">
+              <span className="font-heading font-bold text-lg tracking-wide text-white">
+                MURMUR
+              </span>
+              <span className="text-[9px] font-mono text-text-muted tracking-wider mt-0.5">
+                usemurmur.xyz
+              </span>
+            </div>
           </a>
 
           {/* Desktop Links */}
@@ -64,7 +71,7 @@ export function Navbar() {
               href="#download"
               className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-dark transition-colors shadow-[0_0_20px_rgba(249,115,22,0.25)]"
             >
-              Get the App
+              Get Murmur
             </a>
           </div>
 
@@ -105,7 +112,7 @@ export function Navbar() {
                 className="px-4 py-2 rounded-lg bg-accent text-white text-center font-semibold hover:bg-accent-dark transition-colors"
                 onClick={() => setMobileOpen(false)}
               >
-                Get the App
+                Get Murmur
               </a>
             </div>
           </motion.div>
