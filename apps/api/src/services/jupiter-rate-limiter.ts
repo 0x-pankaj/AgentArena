@@ -50,7 +50,39 @@ export const CATEGORY_RATE_LIMITS: Record<string, RateLimitConfig> = {
     maxRetries: 3,
     backoffMultiplier: 2,
   },
+  // The /markets and /orderbook endpoints carry the heaviest traffic — every
+  // open paper position polls them once per monitor tick. Falling back to
+  // DEFAULT (20/min) caused 60s queue timeouts under modest position counts.
+  markets: {
+    maxPerMinute: 60,
+    maxPerHour: 1500,
+    maxConcurrent: 4,
+    retryDelayMs: 1500,
+    maxRetries: 2,
+    backoffMultiplier: 2,
+  },
 };
+
+// Per-category queue depth ceiling. When the queue grows beyond this we
+// reject new acquires immediately with a StaleOkError so callers can serve
+// stale cached data instead of stalling the event loop for 60s.
+const MAX_QUEUE_DEPTH: Record<string, number> = {
+  markets: 30,
+};
+const DEFAULT_MAX_QUEUE_DEPTH = 50;
+
+// Thrown when the queue is saturated. Callers that have a stale cache should
+// catch this and return the stale value; non-cache callers can let it bubble.
+export class StaleOkError extends Error {
+  readonly category: string;
+  readonly queueLength: number;
+  constructor(category: string, queueLength: number) {
+    super(`Rate limit queue saturated for ${category} (depth=${queueLength}); stale-ok fallback expected`);
+    this.name = "StaleOkError";
+    this.category = category;
+    this.queueLength = queueLength;
+  }
+}
 
 // Default rate limits for unknown categories
 const DEFAULT_RATE_LIMIT: RateLimitConfig = {
@@ -237,6 +269,15 @@ class JupiterRateLimiter {
       return;
     }
 
+    // Shed load before queuing: if the queue is already saturated, reject
+    // immediately so cache-aware callers can serve stale data instead of
+    // waiting up to 60s for a slot that may never come.
+    const state = this.getState(category);
+    const cap = MAX_QUEUE_DEPTH[category] ?? DEFAULT_MAX_QUEUE_DEPTH;
+    if (state.queue.length >= cap) {
+      return Promise.reject(new StaleOkError(category, state.queue.length));
+    }
+
     // Need to wait - add to queue
     return new Promise((resolve, reject) => {
       this.getState(category).queue.push({
@@ -325,6 +366,13 @@ class JupiterRateLimiter {
         }
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
+
+        // Stale-OK rejections are intentional load-shedding — propagate
+        // immediately so the cache layer can serve stale data instead of
+        // burning retries on a saturated queue.
+        if (lastError instanceof StaleOkError) {
+          throw lastError;
+        }
 
         // Check if it's a rate limit error
         const isRateLimit =

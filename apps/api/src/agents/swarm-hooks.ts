@@ -6,7 +6,7 @@
 // ============================================================
 
 import type { AgentRuntimeContext, AgentTickResult, TradeDecision } from "../ai/types";
-import { detectDelegationOpportunity, requestPeerAnalysis } from "../services/agent-delegation";
+import { detectDelegationOpportunity, requestPeerAnalysis, emitPeerCheck } from "../services/agent-delegation";
 import { shouldTriggerConsensus, collectSwarmVotes, type ConsensusResult } from "../services/swarm-consensus";
 import { IS_SIMULATED } from "@agent-arena/shared";
 
@@ -39,6 +39,7 @@ export async function runSwarmHooks(
   let workingDecision: TradeDecision = { ...decision };
   let delegatedAnalysis: any = null;
   let delegationTarget: string | null = null;
+  let consensusFired = false;
 
   // --- 1. Delegation (wrapped for safety) ---
   try {
@@ -87,6 +88,7 @@ export async function runSwarmHooks(
 
       console.log(`[SwarmHooks] Triggering consensus for "${workingDecision.marketQuestion}"`);
 
+      consensusFired = true;
       const consensus = await collectSwarmVotes(
         {
           marketId: workingDecision.marketId!,
@@ -94,7 +96,8 @@ export async function runSwarmHooks(
         },
         votingCategories,
         ctx,
-        agentId
+        agentId,
+        category,
       );
 
       // In traction/simulated mode, consensus is advisory: peer abstentions
@@ -136,6 +139,27 @@ export async function runSwarmHooks(
   } catch (err: any) {
     console.warn(`[SwarmHooks] Consensus failed safely: ${err.message}`);
     // Continue without consensus — don't crash the parent tick
+  }
+
+  // --- 3. Demo-mode peer-check fallback ---
+  // If neither delegation nor consensus fired this tick, emit a lightweight
+  // passive peer-check so the swarm graph still gets a fresh edge. Gated on
+  // IS_SIMULATED so production stays clean. This is a DB-only ping — no LLM
+  // call, no on-chain feedback, no trade impact.
+  if (IS_SIMULATED && !delegationTarget && !consensusFired) {
+    try {
+      await emitPeerCheck(
+        agentId,
+        category,
+        {
+          marketId: workingDecision.marketId!,
+          marketQuestion: workingDecision.marketQuestion!,
+        },
+        ctx.jobId,
+      );
+    } catch (err: any) {
+      console.warn(`[SwarmHooks] Peer-check failed safely: ${err.message}`);
+    }
   }
 
   return {

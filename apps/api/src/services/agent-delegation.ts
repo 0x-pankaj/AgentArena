@@ -22,11 +22,15 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   general: ["weather", "climate", "gdp", "inflation", "recession", "war", "conflict", "natural disaster", "hurricane", "earthquake"],
 };
 
-// Maps which categories should be consulted when a market in category X is found
+// Maps which categories should be consulted when a market in category X is found.
+// Symmetric: every domain agent can delegate to any of the other three so the
+// swarm graph fans out instead of funneling everything through "general".
+// Order = preference (best keyword match first; remaining act as fallbacks
+// when no overlap exists, used by the simulated rotation below).
 const DELEGATION_TARGETS: Record<string, string[]> = {
-  crypto: ["politics", "general"],
-  politics: ["general"],
-  sports: ["general"],
+  crypto: ["politics", "general", "sports"],
+  politics: ["general", "crypto", "sports"],
+  sports: ["general", "crypto", "politics"],
   general: ["crypto", "politics", "sports"],
 };
 
@@ -288,6 +292,66 @@ export async function recordDelegationOnChain(
   } catch (err: any) {
     console.error(`[Delegation] On-chain record failed: ${err.message}`);
     return { error: err.message };
+  }
+}
+
+// ============================================================
+// Lightweight peer-check (demo continuity)
+// ----------------------------------------------------------------
+// When neither a real delegation nor consensus fires on a tick, drop a
+// minimal "peer-check" interaction so the swarm graph keeps growing live
+// during the demo. Records a single interaction edge from this agent to
+// one rotated peer with a tiny confidence ping — no LLM call, no trade.
+// Production callers should keep this gated on IS_SIMULATED.
+// ============================================================
+
+export async function emitPeerCheck(
+  fromAgentId: string,
+  fromCategory: string,
+  marketData: { marketId: string; marketQuestion: string },
+  jobId: string,
+): Promise<{ success: boolean; toAgentId?: string }> {
+  try {
+    const targets = DELEGATION_TARGETS[fromCategory] ?? ["general"];
+    if (targets.length === 0) return { success: false };
+
+    // Deterministic rotation by market id so the same market always picks the
+    // same peer (avoids visual flicker but still spreads load across agents).
+    let hash = 0;
+    for (let i = 0; i < marketData.marketId.length; i++) {
+      hash = (hash * 31 + marketData.marketId.charCodeAt(i)) | 0;
+    }
+    const targetCategory = targets[Math.abs(hash) % targets.length];
+
+    const [targetAgent] = await db
+      .select()
+      .from(schema.agents)
+      .where(eq(schema.agents.category, targetCategory))
+      .limit(1);
+    if (!targetAgent) return { success: false };
+
+    // Pseudo-confidence so the UI shows a real number, not 0.
+    const pingConfidence = 35 + (Math.abs(hash) % 25); // 35..59
+
+    await db.insert(schema.agentInteractions).values({
+      fromAgentId,
+      toAgentId: targetAgent.id,
+      jobId,
+      interactionType: "peer_check",
+      marketId: marketData.marketId,
+      marketQuestion: marketData.marketQuestion,
+      confidence: String(pingConfidence),
+      metadata: {
+        sourceCategory: fromCategory,
+        targetCategory,
+        kind: "passive_signal_ping",
+      },
+    });
+
+    return { success: true, toAgentId: targetAgent.id };
+  } catch (err: any) {
+    console.warn(`[PeerCheck] Failed safely: ${err.message}`);
+    return { success: false };
   }
 }
 

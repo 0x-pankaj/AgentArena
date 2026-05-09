@@ -9,6 +9,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { db, schema } from "../db";
 import { redis } from "../utils/redis";
 import { jupiterPredict, type JupiterMarket } from "../plugins/polymarket-plugin";
+import { getCachedMarket, getCachedMarketsBulk } from "./market-price-cache";
 import { DEFAULT_TAKE_PROFIT_PERCENT, DEFAULT_STOP_LOSS_PERCENT, DEFAULT_PAPER_BALANCE_USDC } from "@agent-arena/shared";
 import { recomputeAgentPerformance } from "../leaderboard";
 import {
@@ -244,12 +245,13 @@ export async function paperBuyOrder(params: {
     return { success: false, error: `Insufficient paper balance: $${balance.toFixed(2)} < $${depositAmount.toFixed(2)}` };
   }
 
-  // 2. Fetch current market data for realistic fill
+  // 2. Fetch current market data for realistic fill (cached + deduped)
   let fillPrice = entryPrice;
   let marketData: JupiterMarket | null = null;
   try {
-    marketData = await jupiterPredict.getMarket(marketId);
-    const pricing = marketData.pricing as any;
+    const cached = await getCachedMarket(marketId);
+    marketData = cached.market;
+    const pricing = marketData?.pricing as any;
     if (pricing) {
       const buyYes = pricing.buyYesPriceUsd ? Number(pricing.buyYesPriceUsd) / 1e6 : null;
       const buyNo = pricing.buyNoPriceUsd ? Number(pricing.buyNoPriceUsd) / 1e6 : null;
@@ -391,11 +393,11 @@ export async function paperClosePosition(params: {
     return { success: false, error: `Position is ${position.status}` };
   }
 
-  // 2. Fetch current market price for realistic exit
+  // 2. Fetch current market price for realistic exit (cached + deduped)
   let exitPrice = Number(position.entryPrice);
   try {
-    const marketData = await jupiterPredict.getMarket(position.marketId);
-    const pricing = marketData.pricing as any;
+    const cached = await getCachedMarket(position.marketId);
+    const pricing = cached.market?.pricing as any;
     if (pricing) {
       const sellYes = pricing.sellYesPriceUsd ? Number(pricing.sellYesPriceUsd) / 1e6 : null;
       const sellNo = pricing.sellNoPriceUsd ? Number(pricing.sellNoPriceUsd) / 1e6 : null;
@@ -610,9 +612,22 @@ export async function updatePaperPositionPrices(jobId: string): Promise<{
   let closedByExpiry = 0;
   let closedByResolution = 0;
 
+  // Dedupe upstream calls: many positions can share the same marketId, and
+  // even unique-market positions across agents benefit from the cache. One
+  // bulk fetch with in-flight dedupe replaces N getMarket() round trips.
+  const marketIds = openPositions.map((p) => p.marketId);
+  const marketDataMap = await getCachedMarketsBulk(marketIds);
+
   for (const pos of openPositions) {
     try {
-      const marketData = await jupiterPredict.getMarket(pos.marketId);
+      const cached = marketDataMap.get(pos.marketId);
+      const marketData = cached?.market;
+      if (!marketData) {
+        // Cache miss + upstream unreachable. Leave the position untouched
+        // for this tick — pos.currentPrice from a previous tick is still
+        // the best estimate; logging per-position would be noisy.
+        continue;
+      }
       const pricing = marketData.pricing as any;
       const status = marketData.status;
       const result = marketData.result;
@@ -688,7 +703,9 @@ export async function updatePaperPositionPrices(jobId: string): Promise<{
         updated++;
       }
     } catch (err) {
-      console.error(`[PaperTrading] Failed to update price for position ${pos.id}:`, err);
+      // Don't log per-position — one upstream hiccup would otherwise
+      // produce N error lines. Aggregate failures are visible via the
+      // returned `updated` count and via the cache layer's own logs.
     }
   }
 

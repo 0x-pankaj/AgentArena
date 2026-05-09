@@ -35,18 +35,48 @@ function clearBackoff(key: string) {
 }
 
 const loggedAt = new Map<string, number>();
+// Wider than FAILURE_BACKOFF_MS: when DNS is flaky, multiple agents tick at
+// once and would each emit a warn line per minute. 5 minutes between repeats
+// keeps the signal without drowning the log.
+const LOG_REPEAT_MS = 5 * 60_000;
 function logOnce(key: string, msg: string) {
   const now = Date.now();
   const last = loggedAt.get(key) ?? 0;
-  if (now - last < FAILURE_BACKOFF_MS) return;
+  if (now - last < LOG_REPEAT_MS) return;
   loggedAt.set(key, now);
   console.warn(msg);
+}
+
+// One-shot reachability probe — runs the first time any CoinGecko function
+// is called per process so the user sees a single clear "reachable" or
+// "unreachable" line rather than parsing Bun's DNS error string.
+let probePromise: Promise<void> | null = null;
+async function ensureReachabilityProbed(): Promise<void> {
+  if (probePromise) return probePromise;
+  probePromise = (async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/ping`, {
+        headers: cgHeaders(),
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (res.ok) {
+        console.log(`[CoinGecko] reachable (${BASE_URL})`);
+      } else {
+        console.warn(`[CoinGecko] degraded — /ping returned ${res.status}; entering best-effort mode`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[CoinGecko] unreachable — ${msg}; signals will degrade until DNS/network recovers`);
+    }
+  })();
+  return probePromise;
 }
 
 // Single-retry fetch with timeout. CoinGecko's free endpoint sometimes drops
 // the first connection from cold — one retry recovers most transient failures
 // without spamming the upstream.
 async function cgFetch(url: string): Promise<Response> {
+  void ensureReachabilityProbed();
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       return await fetch(url, {

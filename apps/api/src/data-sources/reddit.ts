@@ -17,9 +17,16 @@ const USER_AGENT = "node:agent-arena:1.0 (by /u/agent_arena)";
 
 // Per-subreddit circuit breaker. When a sub returns 403/429, we skip it for
 // `BLOCK_TTL_MS` to avoid log spam and to stop hammering an upstream that's
-// actively rejecting us.
+// actively rejecting us. Lowered from 60min → 15min: Reddit's anonymous
+// rate-buckets rotate quickly, so a 60min blackout was overkill and starved
+// the signal cache of reddit data for a full hour after a single 403.
 const blockUntil = new Map<string, number>();
-const BLOCK_TTL_MS = 60 * 60 * 1000; // 1 hour
+const BLOCK_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+// Optional Reddit OAuth bearer token. When set, requests carry an
+// Authorization header which lifts anonymous rate limits ~10×. Backwards
+// compatible: unset = current anonymous behavior.
+const REDDIT_OAUTH_TOKEN = process.env.REDDIT_OAUTH_TOKEN;
 
 // One-log-per-window: don't log the same subreddit failure more than once per BLOCK_TTL_MS.
 const loggedAt = new Map<string, number>();
@@ -83,13 +90,18 @@ function isTimeoutError(err: unknown): boolean {
 }
 
 async function redditFetch<T>(path: string): Promise<T> {
-  const url = `${REDDIT_BASE}${path}`;
+  // OAuth requests must hit oauth.reddit.com instead of www.reddit.com.
+  const useOauth = !!REDDIT_OAUTH_TOKEN;
+  const base = useOauth ? "https://oauth.reddit.com" : REDDIT_BASE;
+  const url = `${base}${path}`;
+  const headers: Record<string, string> = {
+    "User-Agent": USER_AGENT,
+    Accept: "application/json",
+  };
+  if (useOauth) headers.Authorization = `Bearer ${REDDIT_OAUTH_TOKEN}`;
   try {
     const res = await fetch(url, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept: "application/json",
-      },
+      headers,
       signal: AbortSignal.timeout(8_000),
     });
 

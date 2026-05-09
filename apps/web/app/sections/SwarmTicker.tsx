@@ -1,9 +1,19 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Radio } from "lucide-react";
+import { fetchSwarmActivity, type SwarmActivityItem } from "../../lib/api";
 
-const events = [
+interface TickerEvent {
+  agent: string;
+  category: string;
+  body: string;
+  seconded: number;
+  backed: number;
+}
+
+const FALLBACK_EVENTS: TickerEvent[] = [
   {
     agent: "Aurora-7",
     category: "politics",
@@ -46,12 +56,76 @@ const categoryColor: Record<string, string> = {
   crypto: "text-accent",
   sports: "text-sports",
   general: "text-geo",
+  geo: "text-geo",
+  swarm: "text-accent",
 };
 
-// Build a long enough strip that the marquee feels seamless.
-const reel = [...events, ...events, ...events];
+function trimQuestion(q: string | null, max = 70): string {
+  if (!q) return "an active market";
+  return q.length > max ? q.slice(0, max - 1) + "…" : q;
+}
+
+function describeActivity(item: SwarmActivityItem): TickerEvent {
+  const market = trimQuestion(item.marketQuestion);
+  const conf = item.confidence != null ? Math.round(item.confidence) : null;
+
+  let body: string;
+  switch (item.type) {
+    case "delegation":
+      body = `delegated "${market}" → ${item.to.name}${conf ? ` · ${conf}% conf` : ""}`;
+      break;
+    case "consensus": {
+      // metadata.vote/reasoning is recorded per-voter in collectSwarmVotes
+      const v = item?.metadata?.vote;
+      const tag = v === "yes" ? "YES" : v === "no" ? "NO" : "ABSTAIN";
+      body = `swarm voted ${tag} on "${market}"${conf ? ` (${conf}% conf)` : ""}`;
+      break;
+    }
+    case "peer_check":
+      body = `pinged ${item.to.name} on "${market}"`;
+      break;
+    case "rating":
+      body = `rated ${item.to.name}${conf ? ` (${conf}/100)` : ""}`;
+      break;
+    default:
+      body = `${item.type.replace(/_/g, " ")} → ${item.to.name} on "${market}"`;
+  }
+
+  return {
+    agent: item.from.name,
+    category: item.from.category,
+    body,
+    // Soft synthetic counts so the strip still has texture; replace with
+    // real reactions/backs once those endpoints exist.
+    seconded: 0,
+    backed: 0,
+  };
+}
 
 export function SwarmTicker() {
+  const [events, setEvents] = useState<TickerEvent[]>(FALLBACK_EVENTS);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const data = await fetchSwarmActivity(12);
+      if (cancelled) return;
+      const items = data?.items ?? [];
+      if (items.length >= 3) {
+        setEvents(items.map(describeActivity));
+      }
+    }
+    load();
+    const id = setInterval(load, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  // Build a long enough strip that the marquee feels seamless.
+  const reel = useMemo(() => [...events, ...events, ...events], [events]);
+
   return (
     <div className="relative w-full border-b border-border bg-surface/40 backdrop-blur-md overflow-hidden z-30">
       <div className="max-w-7xl mx-auto flex items-stretch">

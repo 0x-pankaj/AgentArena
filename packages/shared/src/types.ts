@@ -113,6 +113,16 @@ export const FeedEvent = z.object({
     marketQuestion: z.string().optional(),
     direction: z.string().optional(),
     adjustedConfidence: z.number().optional(),
+    // 0–100 swarm consensus strength score (combines confidence + margin +
+    // participation). Surfaced to the UI as a bar in the consensus card.
+    consensusStrength: z.number().optional(),
+    // Compact per-voter roll-up for the consensus card.
+    voters: z.array(z.object({
+      name: z.string(),
+      category: z.string(),
+      vote: z.string(),
+      confidence: z.number(),
+    })).optional(),
   }),
   display_message: z.string(),
   is_public: z.boolean(),

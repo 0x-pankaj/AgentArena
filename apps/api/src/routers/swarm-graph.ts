@@ -436,6 +436,60 @@ export const swarmGraphRouter = router({
       };
     }),
 
+  // --- Recent swarm activity for the live ticker ---
+  // Hydrates the front-end SwarmTicker with real (agent, action, market)
+  // tuples instead of the static demo strip. Joins interactions with
+  // initiator/peer agent names so the client doesn't need a follow-up call.
+  getRecentActivity: publicProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(50).default(12),
+      })
+    )
+    .query(async ({ input }) => {
+      const cacheKey = `swarm:activity:${input.limit}`;
+
+      return getCached(cacheKey, async () => {
+        const rows = await db
+          .select({
+            id: schema.agentInteractions.id,
+            type: schema.agentInteractions.interactionType,
+            marketQuestion: schema.agentInteractions.marketQuestion,
+            confidence: schema.agentInteractions.confidence,
+            metadata: schema.agentInteractions.metadata,
+            createdAt: schema.agentInteractions.createdAt,
+            fromName: sql<string>`from_agent.name`.as("fromName"),
+            fromCategory: sql<string>`from_agent.category`.as("fromCategory"),
+            toName: sql<string>`to_agent.name`.as("toName"),
+            toCategory: sql<string>`to_agent.category`.as("toCategory"),
+          })
+          .from(schema.agentInteractions)
+          .leftJoin(
+            sql`${schema.agents} AS from_agent`,
+            sql`from_agent.id = ${schema.agentInteractions.fromAgentId}`,
+          )
+          .leftJoin(
+            sql`${schema.agents} AS to_agent`,
+            sql`to_agent.id = ${schema.agentInteractions.toAgentId}`,
+          )
+          .orderBy(desc(schema.agentInteractions.createdAt))
+          .limit(input.limit);
+
+        return {
+          items: rows.map((r) => ({
+            id: r.id,
+            type: r.type,
+            from: { name: r.fromName ?? "Agent", category: r.fromCategory ?? "general" },
+            to: { name: r.toName ?? "Peer", category: r.toCategory ?? "general" },
+            marketQuestion: r.marketQuestion,
+            confidence: r.confidence ? Number(r.confidence) : null,
+            metadata: r.metadata,
+            at: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+          })),
+        };
+      });
+    }),
+
   // --- Get swarm leaderboard (by swarm score) ---
   getSwarmLeaderboard: publicProcedure
     .input(

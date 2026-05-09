@@ -147,5 +147,12 @@ export interface AgentRuntimeContext {
     marketQuestion: string;
     outcomes?: { name: string; price: number }[];
     volume?: number;
+    /** When true, the peer must return a directional vote (yes/no) even if its
+     *  own action would be hold. Lets consensus aggregate an opinion-weighted
+     *  signal instead of collapsing to all-abstain on cross-domain markets. */
+    forceVote?: boolean;
+    /** Category of the agent that initiated the vote — peers use this to
+     *  calibrate confidence when voting outside their own domain. */
+    initiatorCategory?: string;
   };
 }

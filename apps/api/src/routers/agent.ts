@@ -430,8 +430,30 @@ export const agentRouter = router({
       return getAgentStatus(input.jobId);
     }),
 
-  listActive: publicProcedure.query(() => {
-    return { agentIds: listActiveAgents() };
+  // Returns the set of jobs whose agent loop is currently considered "live"
+  // — joined to agent metadata so the UI can render names + categories
+  // without a follow-up call. The previous shape (agentIds: string[]) was
+  // returning *job* IDs, which the front-end couldn't map to anything, so
+  // it always fell back to the hard-coded count.
+  listActive: publicProcedure.query(async () => {
+    const rows = await db
+      .select({
+        jobId: schema.jobs.id,
+        agentId: schema.agents.id,
+        name: schema.agents.name,
+        category: schema.agents.category,
+        status: schema.jobs.status,
+        startedAt: schema.jobs.startedAt,
+      })
+      .from(schema.jobs)
+      .innerJoin(schema.agents, eq(schema.jobs.agentId, schema.agents.id))
+      .where(eq(schema.jobs.status, "active"));
+    return {
+      agents: rows,
+      // Keep the legacy field populated so any older client reading
+      // `agentIds` doesn't crash; it now reflects job IDs of active jobs.
+      agentIds: listActiveAgents(),
+    };
   }),
 
   getJobWalletBalance: protectedProcedure

@@ -19,6 +19,14 @@ interface Stats {
   loading: boolean;
 }
 
+interface ActiveAgent {
+  jobId: string;
+  agentId: string;
+  name: string;
+  category: string;
+  status: string;
+}
+
 export function LiveStats() {
   const [stats, setStats] = useState<Stats>({
     totalAgents: 0,
@@ -27,6 +35,7 @@ export function LiveStats() {
     swarmInteractions: 0,
     loading: true,
   });
+  const [activeAgents, setActiveAgents] = useState<ActiveAgent[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -53,6 +62,7 @@ export function LiveStats() {
         ) ?? 48,
         loading: false,
       });
+      setActiveAgents(Array.isArray(active?.agents) ? (active.agents as ActiveAgent[]) : []);
     }
 
     load();
@@ -112,6 +122,30 @@ export function LiveStats() {
             delegations refreshing every 30 seconds.
           </p>
         </motion.div>
+
+        {!stats.loading && activeAgents.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.4 }}
+            className="mb-8 flex flex-wrap items-center justify-center gap-2 text-sm"
+          >
+            <span className="text-text-secondary">Currently running:</span>
+            {activeAgents.map((a) => (
+              <span
+                key={a.jobId}
+                className="rounded-full bg-surface-elevated border border-border px-3 py-1 text-white"
+                title={`${a.category} agent · job ${a.jobId.slice(0, 8)}`}
+              >
+                {a.name}
+                <span className="ml-2 text-text-secondary text-xs uppercase tracking-wide">
+                  {a.category}
+                </span>
+              </span>
+            ))}
+          </motion.div>
+        )}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
           {statItems.map((stat, i) => (

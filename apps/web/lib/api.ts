@@ -71,6 +71,24 @@ export async function fetchSwarmLeaderboard() {
   return trpcQuery<{ leaderboard: any[] }>("swarmGraph.getSwarmLeaderboard", { limit: 5 });
 }
 
+export interface SwarmActivityItem {
+  id: string;
+  type: string;
+  from: { name: string; category: string };
+  to: { name: string; category: string };
+  marketQuestion: string | null;
+  confidence: number | null;
+  metadata: any;
+  at: string | null;
+}
+
+export async function fetchSwarmActivity(limit = 12) {
+  return trpcQuery<{ items: SwarmActivityItem[] }>(
+    "swarmGraph.getRecentActivity",
+    { limit },
+  );
+}
+
 export async function fetchAgentReputation(agentId: string) {
   return trpcQuery<{
     assetAddress: string;

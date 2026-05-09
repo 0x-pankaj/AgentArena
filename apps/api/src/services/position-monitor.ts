@@ -8,7 +8,8 @@ import { eq, and, sql } from "drizzle-orm";
 import { db, schema } from "../db";
 import { redis } from "../utils/redis";
 import { REDIS_KEYS } from "@agent-arena/shared";
-import { jupiterPredict, type JupiterMarket } from "../plugins/polymarket-plugin";
+import type { JupiterMarket } from "../plugins/polymarket-plugin";
+import { getCachedMarketsBulk } from "./market-price-cache";
 import {
   paperClosePosition,
   paperClaimPayout,
@@ -224,18 +225,20 @@ export async function monitorJobPositions(params: {
   let claimed = 0;
   const exits: Array<{ positionId: string; type: string; pnl?: number }> = [];
 
+  // Bulk-prefetch all market data through the shared cache so positions on
+  // the same market share a single upstream call (the per-position loop
+  // would otherwise queue N requests on the rate limiter).
+  const marketDataMap = await getCachedMarketsBulk(openPositions.map((p) => p.marketId));
+
   for (const pos of openPositions) {
     try {
-      // Fetch current market data
-      let marketData: JupiterMarket | null = null;
-      try {
-        marketData = await jupiterPredict.getMarket(pos.marketId);
-      } catch {
-        console.warn(`[PositionMonitor] Could not fetch market ${pos.marketId}`);
+      const marketData: JupiterMarket | null = marketDataMap.get(pos.marketId)?.market ?? null;
+      if (!marketData) {
+        // Cache miss + upstream unreachable. Skip this tick — pos.currentPrice
+        // is still the best estimate and updatePaperPositionPrices will retry
+        // on the next loop.
         continue;
       }
-
-      if (!marketData) continue;
 
       const currentPrice = pos.currentPrice ? Number(pos.currentPrice) : Number(pos.entryPrice);
 
