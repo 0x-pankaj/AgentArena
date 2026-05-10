@@ -11,7 +11,7 @@ import { REDIS_KEYS, IS_SIMULATED } from "@agent-arena/shared";
 import { submitAtomFeedback, AtomTag } from "../utils/atom-reputation";
 import { runAgentTick } from "../agents/registry";
 import type { AgentRuntimeContext } from "../ai/types";
-import { publishFeedEvent, buildFeedEvent } from "../feed";
+import { publishFeedEvent, buildFeedEvent, withSwarmPeerContext } from "../feed";
 
 const CATEGORY_TO_REGISTRY_ID: Record<string, string> = {
   politics: "politics-agent",
@@ -157,7 +157,17 @@ export async function collectSwarmVotes(
         },
       };
 
-      const tickResult = await runAgentTick(registryId, ephemeralCtx);
+      // Wrap the peer tick so every feed event the peer publishes gets
+      // tagged as swarm-driven. Without this, the crypto/politics agent's
+      // marketplace page shows their consensus-vote analysis steps as if
+      // they were trading independently.
+      const tickResult = await withSwarmPeerContext(
+        {
+          initiatorAgentId: initiatingAgentId,
+          kind: "consensus",
+        },
+        () => runAgentTick(registryId, ephemeralCtx),
+      );
 
       // --- Map tick result → vote with force-vote fallback ---
       const action = tickResult.action?.toLowerCase() ?? "hold";

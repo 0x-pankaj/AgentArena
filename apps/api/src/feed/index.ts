@@ -1,4 +1,5 @@
 import { eq, desc } from "drizzle-orm";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { db, schema } from "../db";
 import { redis, redisPub, redisSub } from "../utils/redis";
 import { REDIS_KEYS } from "@agent-arena/shared";
@@ -6,6 +7,40 @@ import type { FeedEvent } from "@agent-arena/shared";
 
 const MAX_RECENT_EVENTS = 200;
 const FEED_CHANNEL = "feed:live";
+
+// ─── Swarm peer-call context ──────────────────────────────────────────
+// When the swarm orchestrator runs a peer agent's tick to collect a
+// consensus vote or delegated analysis, every feed event the peer agent
+// publishes should be tagged so the UI can distinguish "agent acting on
+// its own job" from "agent consulted by another agent's swarm." The
+// alternative — threading a flag through 67 publishFeedStep callsites in
+// 4 agent files — is too invasive. AsyncLocalStorage gives us a clean
+// per-execution scope.
+export interface SwarmPeerContext {
+  initiatorAgentId: string;
+  initiatorAgentName?: string;
+  kind: "consensus" | "delegation";
+}
+
+const swarmPeerStore = new AsyncLocalStorage<SwarmPeerContext>();
+
+/**
+ * Run `fn` with a swarm-peer context active. Every publishFeedEvent call
+ * inside the awaited tree will tag its event with `swarm_driven: true`
+ * and the initiator's id/name so the mobile UI can show
+ * "consulted by Sports Agent" instead of pretending the peer agent is
+ * trading on its own.
+ */
+export function withSwarmPeerContext<T>(
+  ctx: SwarmPeerContext,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return swarmPeerStore.run(ctx, fn);
+}
+
+export function getSwarmPeerContext(): SwarmPeerContext | undefined {
+  return swarmPeerStore.getStore();
+}
 
 // --- UUID validation helper ---
 function isValidUUID(str: string): boolean {
@@ -167,6 +202,21 @@ export async function publishFeedEvent(event: FeedEvent): Promise<void> {
   if (event.agent_id) {
     const resolvedName = await resolveAgentName(event.agent_id, event.agent_display_name);
     event.agent_display_name = resolvedName;
+  }
+
+  // Stamp swarm-peer events so the marketplace agent screen can hide /
+  // re-label them. The publishing agent code itself doesn't know it's
+  // running as a peer — the orchestrator wraps the tick.
+  const peerCtx = swarmPeerStore.getStore();
+  if (peerCtx) {
+    const content = (event.content ?? {}) as Record<string, unknown>;
+    event.content = {
+      ...content,
+      swarm_driven: true,
+      swarm_kind: peerCtx.kind,
+      initiator_agent_id: peerCtx.initiatorAgentId,
+      initiator_agent_name: peerCtx.initiatorAgentName,
+    };
   }
 
   const serialized = JSON.stringify(event);

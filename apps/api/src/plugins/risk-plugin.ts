@@ -7,6 +7,9 @@ export interface PositionRecord {
   entryPrice: number;
   currentPrice: number;
   status: "open" | "closed" | "settled";
+  /** "yes" / "no" — used by the duplicate-market check to allow opposite-side
+   *  hedges/reversals through. Optional for backward compatibility. */
+  side?: string;
 }
 
 export interface RiskCheckResult {
@@ -99,13 +102,16 @@ export function checkDuplicateMarket(
     (p) => p.marketId === marketId && p.status === "open"
   );
   if (existing) {
-    // Allow opposite side (closing/reversing existing position)
-    if (proposedSide && existing.category !== proposedSide) {
+    // Allow the opposite side through (a NO entry while holding YES is a
+    // legitimate hedge / reversal). Earlier the comparison was against
+    // existing.category — which is a domain like "sports", never "yes"/"no" —
+    // so this branch never fired and dupes still passed the snapshot check.
+    if (proposedSide && existing.side && existing.side !== proposedSide) {
       return { allowed: true };
     }
     return {
       allowed: false,
-      reason: `Already have an open ${existing.category} position in market ${marketId}`,
+      reason: `Already have an open ${existing.side ?? existing.category} position in market ${marketId}`,
     };
   }
   return { allowed: true };
@@ -297,7 +303,8 @@ export function runPreTradeChecks(
   marketClosesAt: Date,
   portfolio: PortfolioSnapshot,
   marketId?: string,
-  jobLimits?: { maxCap?: number; dailyCap?: number }
+  jobLimits?: { maxCap?: number; dailyCap?: number },
+  proposedSide?: string,
 ): RiskCheckResult {
   // Job-specific limits (from user input)
   if (jobLimits?.maxCap && proposedAmount > jobLimits.maxCap) {
@@ -311,7 +318,7 @@ export function runPreTradeChecks(
     checkPortfolioLimit(proposedAmount, portfolio.totalBalance),
     checkCategoryExposure(proposedAmount, category, portfolio.positions),
     checkMaxPositions(portfolio.positions),
-    ...(marketId ? [checkDuplicateMarket(marketId, portfolio.positions)] : []),
+    ...(marketId ? [checkDuplicateMarket(marketId, portfolio.positions, proposedSide)] : []),
     checkCooldown(portfolio.lastTradeTimestamp),
     checkDailyLossLimit(portfolio.dailyPnl, portfolio.totalBalance),
     checkMinConfidence(confidence),

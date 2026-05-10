@@ -40,7 +40,11 @@ export const JUPUSD_MINT = "JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD";
 export const PAPER_TRADING_ENABLED = process.env.PAPER_TRADING_ENABLED !== "false";
 export const DEFAULT_PAPER_BALANCE_USDC = Number(process.env.DEFAULT_PAPER_BALANCE_USDC ?? "1000");
 export const DEFAULT_TAKE_PROFIT_PERCENT = Number(process.env.DEFAULT_TAKE_PROFIT_PERCENT ?? "0.20");
-export const DEFAULT_STOP_LOSS_PERCENT = Number(process.env.DEFAULT_STOP_LOSS_PERCENT ?? "0.15");
+// Tighter stop than the original 15% — paper-traction data showed too many
+// trades grinding through 12-14% drawdowns that ultimately resolved against
+// the position. 10% gives the trailing-stop logic in position-monitor more
+// headroom to lock in early profits before a full reversal.
+export const DEFAULT_STOP_LOSS_PERCENT = Number(process.env.DEFAULT_STOP_LOSS_PERCENT ?? "0.10");
 
 // Whether to execute trades (false = paper trading only, log but don't trade on-chain)
 // In production, real trades are executed. In dev/traction, paper trading is default.
@@ -58,16 +62,23 @@ export const EMERGENCY_STOP = process.env.EMERGENCY_STOP === "true";
 
 // Paper-traction phase loosens gates so agents trade visibly. Production keeps strict bars.
 export const AGENT_LIMITS = {
-  MAX_PORTFOLIO_PERCENT_PER_MARKET: IS_SIMULATED ? 0.12 : 0.1,
+  MAX_PORTFOLIO_PERCENT_PER_MARKET: IS_SIMULATED ? 0.08 : 0.1,
   MAX_CATEGORY_EXPOSURE: IS_SIMULATED ? 0.4 : 0.25,
-  STOP_LOSS_PERCENT: 0.15,
+  STOP_LOSS_PERCENT: 0.10,
   MAX_CONCURRENT_POSITIONS: IS_SIMULATED ? 6 : 3,
-  COOLDOWN_MINUTES: IS_SIMULATED ? 2 : 5,
-  DAILY_LOSS_LIMIT_PERCENT: IS_SIMULATED ? 0.1 : 0.05,
+  // Slightly longer cooldown trims duplicate ticks (the same agent firing the
+  // same trade twice from a near-simultaneous scan + decision pass).
+  COOLDOWN_MINUTES: IS_SIMULATED ? 3 : 5,
+  // Lower daily-loss circuit-breaker so a bad streak halts the agent before
+  // it eats half the paper bankroll.
+  DAILY_LOSS_LIMIT_PERCENT: IS_SIMULATED ? 0.07 : 0.05,
   MIN_MARKET_VOLUME: IS_SIMULATED ? 1_000 : 10_000,
   MAX_MARKET_DAYS_TO_RESOLUTION: IS_SIMULATED ? 30 : 7,
-  MIN_CONFIDENCE: IS_SIMULATED ? 0.3 : 0.7,
-  MIN_EDGE: IS_SIMULATED ? 0.002 : 0.05,
+  // Lift the floor: 0.3 was letting near-coinflip trades through. 0.45 keeps
+  // demo activity visible while filtering the lowest-conviction noise where
+  // most realised losses came from.
+  MIN_CONFIDENCE: IS_SIMULATED ? 0.45 : 0.7,
+  MIN_EDGE: IS_SIMULATED ? 0.02 : 0.05,
   HUMAN_APPROVAL_THRESHOLD: 500,
 } as const;
 

@@ -80,11 +80,23 @@ export function useFeedRecent(limit: number = 50) {
   });
 }
 
-export function useFeedByAgent(agentId: string, limit: number = 10) {
+/**
+ * Fetch feed events for a single agent.
+ *
+ * `includeSwarm` controls whether peer-vote / delegation events (this agent
+ * consulted by another agent) appear. The marketplace agent page passes
+ * `true` so the SWARM badge can render and demo viewers see the swarm
+ * activity. Pass `false` for views that should only show first-party trades.
+ */
+export function useFeedByAgent(
+  agentId: string,
+  limit: number = 10,
+  includeSwarm: boolean = true,
+) {
   return useQuery({
-    queryKey: ['feed', 'byAgent', agentId, limit],
+    queryKey: ['feed', 'byAgent', agentId, limit, includeSwarm],
     queryFn: () => {
-      const input = JSON.stringify({ agentId, limit });
+      const input = JSON.stringify({ agentId, limit, includeSwarm });
       return fetchFromAPI(`feed.getByAgent?input=${encodeURIComponent(input)}`);
     },
     enabled: !!agentId,

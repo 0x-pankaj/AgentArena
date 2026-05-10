@@ -633,7 +633,11 @@ You have access to web_search and other tools for a final verification if needed
     if (!validation.valid) {
       fsm.transition("no_edge");
       await saveState();
-      return { state: fsm.getState(), action: "analyzed", detail: `Decision rejected: ${validation.error}`, decision, tokensUsed: totalTokensUsed };
+      // Return action="no_edge" so the agent caller's `action === "analyzed"`
+      // gate skips executeBuy. Returning "analyzed" here while fsm is now in
+      // SCANNING caused the caller to BUY a rejected decision and then crash
+      // on `fsm.transition("order_placed")` from SCANNING.
+      return { state: fsm.getState(), action: "no_edge", detail: `Decision rejected: ${validation.error}`, decision, tokensUsed: totalTokensUsed };
     }
 
     // Paper-traction: override LLM hold when the Bayesian candidate clearly
@@ -715,7 +719,7 @@ You have access to web_search and other tools for a final verification if needed
         await publishFeedStep(agentId, "thinking", `${agentName} ⛔ Scenario gate rejected: ${scenarioGate.reason}`, { pipeline_stage: "scenario_rejected" }, "critical");
         fsm.transition("no_edge");
         await saveState();
-        return { state: fsm.getState(), action: "analyzed", detail: `Scenario gate: ${scenarioGate.reason}`, decision, tokensUsed: totalTokensUsed };
+        return { state: fsm.getState(), action: "no_edge", detail: `Scenario gate: ${scenarioGate.reason}`, decision, tokensUsed: totalTokensUsed };
       }
 
       // Scenario analysis (with confidence-calibrated uncertainty)
@@ -734,7 +738,7 @@ You have access to web_search and other tools for a final verification if needed
         await publishFeedStep(agentId, "thinking", `${agentName} ⛔ Scenario analysis rejected: ${scenarioResult.reason}`, { pipeline_stage: "scenario_analysis_rejected" }, "critical");
         fsm.transition("no_edge");
         await saveState();
-        return { state: fsm.getState(), action: "analyzed", detail: `Scenario rejected: ${scenarioResult.reason}`, decision, tokensUsed: totalTokensUsed };
+        return { state: fsm.getState(), action: "no_edge", detail: `Scenario rejected: ${scenarioResult.reason}`, decision, tokensUsed: totalTokensUsed };
       }
 
       // Adversarial review — skip on fast-path (high edge + high confidence = safe enough)
@@ -744,7 +748,7 @@ You have access to web_search and other tools for a final verification if needed
           await publishFeedStep(agentId, "thinking", `${agentName} ⛔ Adversarial review overturned: ${review.reason}`, { pipeline_stage: "adversarial_overturn" }, "critical");
           fsm.transition("no_edge");
           await saveState();
-          return { state: fsm.getState(), action: "analyzed", detail: `Adversarial review overturned: ${review.reason}`, decision, tokensUsed: totalTokensUsed };
+          return { state: fsm.getState(), action: "no_edge", detail: `Adversarial review overturned: ${review.reason}`, decision, tokensUsed: totalTokensUsed };
         }
         decision.confidence = Math.min(decision.confidence, review.riskAdjustedConfidence);
       }

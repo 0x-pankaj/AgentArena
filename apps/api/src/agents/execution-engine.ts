@@ -649,16 +649,23 @@ export async function executeSell(
       content: {
         action: "sell",
         market_analyzed: result.trade.marketQuestion,
-        pnl: result.trade.profitLoss
+        pnl: result.trade.profitLoss != null
           ? {
               value: Number(result.trade.profitLoss),
+              // Percent of cost basis (contracts × entry price), not contracts.
+              // The earlier `pnl / amount` divisor used contracts and produced
+              // single-digit percentages on multi-thousand-contract positions.
               percent:
-                Number(result.trade.profitLoss) / Number(result.trade.amount) * 100,
+                Number(result.trade.profitLoss) /
+                (Number(result.trade.amount) * Number(result.trade.entryPrice)) *
+                100,
             }
           : undefined,
         reasoning_snippet: reason.slice(0, 200),
       },
-      displayMessage: `${agentName} closed position: ${result.trade.marketQuestion} | PnL: $${Number(result.trade.profitLoss ?? 0).toFixed(2)}`,
+      displayMessage: result.trade.profitLoss != null
+        ? `${agentName} closed position: ${result.trade.marketQuestion} | PnL: $${Number(result.trade.profitLoss).toFixed(2)}`
+        : `${agentName} closed position: ${result.trade.marketQuestion}`,
     });
     await publishFeedEvent(feedEvent);
 
@@ -780,6 +787,7 @@ export async function buildPortfolioSnapshot(
       // so they share the agent's category. Hardcoding "general" here broke
       // the category-exposure check for sports/crypto/politics agents.
       category: agentCategory,
+      side: p.side,
       amount: p.amount,
       entryPrice: p.entryPrice,
       currentPrice: p.currentPrice,

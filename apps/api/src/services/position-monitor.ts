@@ -209,6 +209,34 @@ export async function monitorJobPositions(params: {
     await updatePaperPositionPrices(jobId);
   }
 
+  // 1b. Sweep orphaned claimable paper positions. updatePaperPositionPrices
+  // can transition a position to "claimable" without claiming, and the
+  // open-positions loop below filters by status='open' — so any claimable
+  // row created on a prior tick (or by the bulk price update on this tick)
+  // would sit forever and never credit paper balance. Audit found 30 such
+  // orphans in a single demo job.
+  let claimed = 0;
+  if (tradingMode === "paper") {
+    const claimables = await db
+      .select({ id: schema.positions.id })
+      .from(schema.positions)
+      .where(
+        and(
+          eq(schema.positions.jobId, jobId),
+          eq(schema.positions.status, "claimable"),
+          eq(schema.positions.isPaperTrade, true),
+        ),
+      );
+    for (const c of claimables) {
+      try {
+        const r = await paperClaimPayout({ jobId, positionId: c.id, agentId });
+        if (r.success) claimed++;
+      } catch (err) {
+        console.error(`[PositionMonitor] Sweep claim failed for ${c.id}:`, err);
+      }
+    }
+  }
+
   // 2. Get all open positions
   const openPositions = await db
     .select()
@@ -222,7 +250,7 @@ export async function monitorJobPositions(params: {
 
   let checked = 0;
   let closed = 0;
-  let claimed = 0;
+  // `claimed` was hoisted above so the orphan-sweep can increment it.
   const exits: Array<{ positionId: string; type: string; pnl?: number }> = [];
 
   // Bulk-prefetch all market data through the shared cache so positions on

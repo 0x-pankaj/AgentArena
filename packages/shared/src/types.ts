@@ -123,6 +123,13 @@ export const FeedEvent = z.object({
       vote: z.string(),
       confidence: z.number(),
     })).optional(),
+    // Set when the publishing agent was running as a swarm peer (consulted
+    // for a consensus vote or delegated analysis) rather than acting on its
+    // own job. The marketplace agent feed filters these out by default.
+    swarm_driven: z.boolean().optional(),
+    swarm_kind: z.enum(["consensus", "delegation"]).optional(),
+    initiator_agent_id: z.string().optional(),
+    initiator_agent_name: z.string().optional(),
   }),
   display_message: z.string(),
   is_public: z.boolean(),

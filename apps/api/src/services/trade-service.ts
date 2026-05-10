@@ -225,7 +225,9 @@ export async function executeBuyOrder(params: {
     params.marketVolume,
     params.marketClosesAt,
     params.portfolio,
-    params.marketId
+    params.marketId,
+    undefined,
+    params.isYes ? "yes" : "no",
   );
 
   if (!riskResult.allowed) {
@@ -424,8 +426,15 @@ export async function closePosition(params: {
             action: "sell",
             marketId: position.marketId,
             marketQuestion: position.marketQuestion,
-            pnl: result.pnl
-              ? { value: result.pnl, percent: (result.pnl / Number(position.amount)) * 100 }
+            pnl: result.pnl != null
+              ? {
+                  value: result.pnl,
+                  // Percent of cost basis (contracts × entry price), not contracts.
+                  percent:
+                    (result.pnl /
+                      (Number(position.amount) * Number(position.entryPrice))) *
+                    100,
+                }
               : undefined,
             reason: params.reason,
             isPaperTrade: true,
@@ -517,7 +526,7 @@ export async function closePosition(params: {
         action: "sell",
         marketId: position.marketId,
         marketQuestion: position.marketQuestion,
-        pnl: { value: pnl, percent: (pnl / Number(position.amount)) * 100 },
+        pnl: { value: pnl, percent: (pnl / (Number(position.amount) * Number(position.entryPrice))) * 100 },
         reason: params.reason,
         isPaperTrade: false,
         timestamp: new Date().toISOString(),

@@ -11,7 +11,7 @@ import { REDIS_KEYS, IS_SIMULATED } from "@agent-arena/shared";
 import { submitAtomFeedback, AtomTag } from "../utils/atom-reputation";
 import { runAgentTick } from "../agents/registry";
 import type { AgentRuntimeContext } from "../ai/types";
-import { publishFeedEvent, buildFeedEvent } from "../feed";
+import { publishFeedEvent, buildFeedEvent, withSwarmPeerContext } from "../feed";
 
 // --- Domain keyword overlap mapping ---
 
@@ -179,8 +179,16 @@ export async function requestPeerAnalysis(
 
     console.log(`[Delegation] ${fromAgentId} → ${targetAgent.id} (${toCategory}) for "${marketData.marketQuestion}"`);
 
-    // Run a single tick on the target agent with delegation context
-    const tickResult = await runAgentTick(registryId, ephemeralCtx);
+    // Run a single tick on the target agent with delegation context. Wrap
+    // it so every feed event the target publishes carries swarm metadata
+    // (the marketplace agent page uses this to filter / re-label them).
+    const tickResult = await withSwarmPeerContext(
+      {
+        initiatorAgentId: fromAgentId,
+        kind: "delegation",
+      },
+      () => runAgentTick(registryId, ephemeralCtx),
+    );
 
     // Extract analysis from tick result
     const delegatedAnalysis = {

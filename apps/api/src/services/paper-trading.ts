@@ -158,6 +158,20 @@ export interface PaperClaimResult {
 }
 
 // --- Get / Set Paper Balance ---
+//
+// All mutations go through atomic SQL deltas (`paper_balance = paper_balance + $delta`)
+// so two concurrent BUY/CLOSE/CLAIM calls cannot lose updates. The earlier
+// read-then-write pattern produced phantom cash whenever ticks overlapped —
+// audit traced ~$700 of unexplained balance to that race in a single demo job.
+// Redis is now a read-side cache only and is invalidated (not written) on writes.
+
+async function invalidatePaperBalanceCache(jobId: string): Promise<void> {
+  try {
+    await redis.del(PAPER_BALANCE_KEY(jobId));
+  } catch {
+    // best-effort — DB is the source of truth
+  }
+}
 
 export async function getPaperBalance(jobId: string): Promise<number> {
   // Try Redis first
@@ -180,36 +194,67 @@ export async function getPaperBalance(jobId: string): Promise<number> {
 
   const balance = job?.paperBalance ? Number(job.paperBalance) : DEFAULT_PAPER_BALANCE_USDC;
 
-  // Cache in Redis
+  // Cache in Redis (short TTL — writes invalidate, but TTL bounds staleness if
+  // an invalidation is dropped).
   await redis.setex(
     PAPER_BALANCE_KEY(jobId),
-    3600,
+    60,
     JSON.stringify({ usdc: balance, lastUpdated: Date.now() })
   );
 
   return balance;
 }
 
+/** Atomic credit. Returns the new balance after the increment. */
+export async function creditPaperBalance(jobId: string, amount: number): Promise<number> {
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error(`creditPaperBalance: invalid amount ${amount}`);
+  }
+  const [row] = await db
+    .update(schema.jobs)
+    .set({ paperBalance: sql`${schema.jobs.paperBalance} + ${String(amount)}` })
+    .where(eq(schema.jobs.id, jobId))
+    .returning({ paperBalance: schema.jobs.paperBalance });
+  await invalidatePaperBalanceCache(jobId);
+  return Number(row?.paperBalance ?? 0);
+}
+
+/**
+ * Atomic debit. Only succeeds if the on-disk balance is ≥ amount. Returns the
+ * new balance, or null when the WHERE guard rejected the update.
+ */
+export async function debitPaperBalance(jobId: string, amount: number): Promise<number | null> {
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error(`debitPaperBalance: invalid amount ${amount}`);
+  }
+  const [row] = await db
+    .update(schema.jobs)
+    .set({ paperBalance: sql`${schema.jobs.paperBalance} - ${String(amount)}` })
+    .where(
+      and(
+        eq(schema.jobs.id, jobId),
+        sql`${schema.jobs.paperBalance} >= ${String(amount)}`,
+      ),
+    )
+    .returning({ paperBalance: schema.jobs.paperBalance });
+  await invalidatePaperBalanceCache(jobId);
+  return row ? Number(row.paperBalance) : null;
+}
+
+/**
+ * Hard set. Only used for admin reset / topUp wrappers — the live trade paths
+ * use credit/debit so concurrent ticks can't clobber each other.
+ */
 export async function setPaperBalance(jobId: string, amount: number): Promise<void> {
-  // Update DB
   await db
     .update(schema.jobs)
     .set({ paperBalance: String(amount) })
     .where(eq(schema.jobs.id, jobId));
-
-  // Update Redis
-  await redis.setex(
-    PAPER_BALANCE_KEY(jobId),
-    3600,
-    JSON.stringify({ usdc: amount, lastUpdated: Date.now() })
-  );
+  await invalidatePaperBalanceCache(jobId);
 }
 
 export async function topUpPaperBalance(jobId: string, amount: number): Promise<number> {
-  const current = await getPaperBalance(jobId);
-  const newBalance = current + amount;
-  await setPaperBalance(jobId, newBalance);
-  return newBalance;
+  return creditPaperBalance(jobId, amount);
 }
 
 // --- Simulate Buy Order ---
@@ -239,13 +284,43 @@ export async function paperBuyOrder(params: {
     marketClosesAt,
   } = params;
 
-  // 1. Check balance
-  const balance = await getPaperBalance(jobId);
-  if (balance < depositAmount) {
-    return { success: false, error: `Insufficient paper balance: $${balance.toFixed(2)} < $${depositAmount.toFixed(2)}` };
+  // 1. Idempotency: refuse to open a second position on the same market+side
+  //    when one is already open for this job. The pre-trade risk check has
+  //    a duplicate-market guard but operates on a stale portfolio snapshot,
+  //    so two ticks running in parallel both pass it. This DB-level check is
+  //    the last line of defense.
+  const sideStr = isYes ? "yes" : "no";
+  const [existingOpen] = await db
+    .select({ id: schema.positions.id })
+    .from(schema.positions)
+    .where(
+      and(
+        eq(schema.positions.jobId, jobId),
+        eq(schema.positions.marketId, marketId),
+        eq(schema.positions.side, sideStr),
+        eq(schema.positions.status, "open"),
+      ),
+    )
+    .limit(1);
+  if (existingOpen) {
+    return {
+      success: false,
+      error: `Already have an open ${sideStr.toUpperCase()} position on ${marketId} (${existingOpen.id})`,
+    };
   }
 
-  // 2. Fetch current market data for realistic fill (cached + deduped)
+  // 2. Reject pennystock / near-resolved markets. Sub-cent prices let the
+  //    Kelly sizer buy tens of thousands of contracts on noise (one demo row
+  //    held 21,009 contracts at $0.001), and >$0.95 prices have asymmetric
+  //    downside (lose all on a flip, gain almost nothing on a confirm).
+  if (entryPrice > 0 && (entryPrice < 0.05 || entryPrice > 0.95)) {
+    return {
+      success: false,
+      error: `Refusing trade at edge price $${entryPrice.toFixed(3)} (allowed band $0.05–$0.95)`,
+    };
+  }
+
+  // 3. Fetch current market data for realistic fill (cached + deduped)
   let fillPrice = entryPrice;
   let marketData: JupiterMarket | null = null;
   try {
@@ -297,8 +372,12 @@ export async function paperBuyOrder(params: {
 
   const actualDeposit = contracts * fillPrice;
 
-  // 4. Deduct balance
-  await setPaperBalance(jobId, balance - actualDeposit);
+  // 4. Deduct balance atomically. If the WHERE guard rejects (insufficient
+  //    funds, e.g. another buy beat us to it), bail before writing rows.
+  const newBalance = await debitPaperBalance(jobId, actualDeposit);
+  if (newBalance === null) {
+    return { success: false, error: `Insufficient paper balance for $${actualDeposit.toFixed(2)} deposit` };
+  }
 
   // 5. Generate simulated on-chain identifiers.
   // positions.position_pubkey + trades.tx_signature are sized to fit Solana
@@ -356,7 +435,7 @@ export async function paperBuyOrder(params: {
 
   console.log(
     `[PaperTrading] BUY ${isYes ? "YES" : "NO"} ${contracts.toFixed(2)} contracts @ $${fillPrice.toFixed(4)} ` +
-    `on "${marketQuestion.slice(0, 50)}" | Deposit: $${actualDeposit.toFixed(2)} | Balance: $${(balance - actualDeposit).toFixed(2)}`
+    `on "${marketQuestion.slice(0, 50)}" | Deposit: $${actualDeposit.toFixed(2)} | Balance: $${newBalance.toFixed(2)}`
   );
 
   return {
@@ -379,22 +458,38 @@ export async function paperClosePosition(params: {
 }): Promise<PaperCloseResult> {
   const { jobId, positionId, reason } = params;
 
-  // 1. Get position
+  // 1. Atomically claim the position. The earlier read-then-update pattern
+  //    let two concurrent ticks both pass the open-check and double-credit
+  //    proceeds (audit found 4 such double-closes in the live DB). The
+  //    `WHERE status IN (open, closing)` makes the transition idempotent —
+  //    only the first caller proceeds.
   const [position] = await db
-    .select()
-    .from(schema.positions)
-    .where(and(eq(schema.positions.id, positionId), eq(schema.positions.jobId, jobId)))
-    .limit(1);
+    .update(schema.positions)
+    .set({ status: "closing" })
+    .where(
+      and(
+        eq(schema.positions.id, positionId),
+        eq(schema.positions.jobId, jobId),
+        eq(schema.positions.status, "open"),
+      ),
+    )
+    .returning();
 
   if (!position) {
-    return { success: false, error: "Position not found" };
-  }
-  if (position.status !== "open" && position.status !== "closing") {
-    return { success: false, error: `Position is ${position.status}` };
+    return { success: false, error: "Position not open" };
   }
 
-  // 2. Fetch current market price for realistic exit (cached + deduped)
-  let exitPrice = Number(position.entryPrice);
+  // 2. Fetch current market price for realistic exit (cached + deduped).
+  // Fallback chain: live cache → position.currentPrice (just written by the
+  // monitor's updatePaperPositionPrices tick) → entryPrice. The earlier code
+  // skipped currentPrice entirely, so any cache miss collapsed exit==entry
+  // and booked $0 PnL on stop-loss/trailing closes that had clearly moved
+  // (audit: 9 of 56 historical closes — every one had entry==exit despite
+  // a reason text like "15% loss" or "trailing stop gave up 80pp").
+  const fallbackExit = position.currentPrice != null
+    ? Number(position.currentPrice)
+    : Number(position.entryPrice);
+  let exitPrice = fallbackExit;
   try {
     const cached = await getCachedMarket(position.marketId);
     const pricing = cached.market?.pricing as any;
@@ -402,25 +497,26 @@ export async function paperClosePosition(params: {
       const sellYes = pricing.sellYesPriceUsd ? Number(pricing.sellYesPriceUsd) / 1e6 : null;
       const sellNo = pricing.sellNoPriceUsd ? Number(pricing.sellNoPriceUsd) / 1e6 : null;
       exitPrice = position.side === "yes"
-        ? (sellYes ?? exitPrice)
-        : (sellNo ?? exitPrice);
+        ? (sellYes ?? fallbackExit)
+        : (sellNo ?? fallbackExit);
     }
   } catch (err) {
-    console.warn(`[PaperTrading] Could not fetch exit price for ${position.marketId}, using entry price`);
+    console.warn(`[PaperTrading] Could not fetch exit price for ${position.marketId}, using ${position.currentPrice != null ? "monitor-tracked currentPrice" : "entryPrice"}`);
   }
 
   const contracts = Number(position.amount);
   const entryPrice = Number(position.entryPrice);
 
   // 3. Calculate proceeds and P&L
+  // Both YES and NO contracts are bought/sold at their face price (yesPrice
+  // or noPrice). Selling at the current side-price nets `contracts × side-price`,
+  // so PnL is `proceeds - cost` regardless of side. The earlier flipped
+  // formula for the NO branch booked profit on a losing NO close.
   const proceeds = contracts * exitPrice;
-  const pnl = position.side === "yes"
-    ? proceeds - (contracts * entryPrice)
-    : (contracts * entryPrice) - proceeds;
+  const pnl = proceeds - contracts * entryPrice;
 
-  // 4. Credit balance
-  const balance = await getPaperBalance(jobId);
-  await setPaperBalance(jobId, balance + proceeds);
+  // 4. Credit balance atomically — concurrent ticks can no longer double-add.
+  await creditPaperBalance(jobId, proceeds);
 
   // 5. Update position
   await db
@@ -523,18 +619,28 @@ export async function paperClaimPayout(params: {
     payout = 0;
   }
 
-  // 3. Credit balance
-  const balance = await getPaperBalance(jobId);
-  await setPaperBalance(jobId, balance + payout);
-
-  // 4. Update position
-  await db
+  // 3. Credit balance atomically. Guard against double-claim by only
+  //    transitioning from claimable/closed → claimed; if no row updates
+  //    the position was already claimed, skip the credit.
+  const [claimed] = await db
     .update(schema.positions)
     .set({
       status: "claimed",
       claimedAt: new Date(),
     })
-    .where(eq(schema.positions.id, positionId));
+    .where(
+      and(
+        eq(schema.positions.id, positionId),
+        sql`${schema.positions.status} IN ('claimable', 'closed')`,
+      ),
+    )
+    .returning({ id: schema.positions.id });
+
+  if (!claimed) {
+    return { success: false, error: "Position already claimed" };
+  }
+
+  await creditPaperBalance(jobId, payout);
 
   // 5. Record trade if not already recorded
   const tradeTxSignature = position.txSignature ?? `paper-claim-${positionId}-${Date.now()}`;

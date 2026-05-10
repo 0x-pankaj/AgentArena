@@ -38,6 +38,14 @@ interface FeedItemProps {
       signals_count?: number;
       markets_scanned?: number;
       pipeline_stage?: string;
+      // Set by the API when this agent ran as a swarm peer (consulted by
+      // another agent for a consensus vote or delegated analysis) rather
+      // than acting on its own job. Lets the UI label it instead of
+      // pretending the agent is trading independently.
+      swarm_driven?: boolean;
+      swarm_kind?: 'consensus' | 'delegation';
+      initiator_agent_id?: string;
+      initiator_agent_name?: string;
     };
     display_message?: string;
     displayMessage?: string;
@@ -221,6 +229,13 @@ export function FeedItem({
   const isThinking = event.category === 'thinking' || event.category === 'scanning';
   const isTrade = event.category === 'trade';
 
+  // Swarm context — the publishing agent was being consulted by another
+  // agent rather than acting on its own. Show a [SWARM] chip + sub-line so
+  // viewers don't think the agent is trading independently.
+  const isSwarmDriven = content.swarm_driven === true;
+  const swarmKindLabel = content.swarm_kind === 'delegation' ? 'delegated by' : 'consulted by';
+  const swarmInitiator = content.initiator_agent_name ?? 'another agent';
+
   // Big Win detection: PnL > $50 or > 10%
   const isBigWin = content.pnl && (content.pnl.value > 50 || content.pnl.percent > 10);
   const isBigLoss = content.pnl && (content.pnl.value < -50 || content.pnl.percent < -10);
@@ -275,9 +290,23 @@ export function FeedItem({
             <View style={[styles.categoryBadge, { borderColor: severityColor + '44' }]}>
               <Text style={[styles.categoryText, { color: severityColor }]}>{categoryLabel}</Text>
             </View>
+            {isSwarmDriven && (
+              <View style={styles.swarmBadge}>
+                <Ionicons name="people" size={10} color={Colors.warning} />
+                <Text style={styles.swarmBadgeText}>SWARM</Text>
+              </View>
+            )}
           </View>
           <TimeAgo timestamp={timestamp} />
         </View>
+
+        {/* Swarm context line — explains why this peer agent is "active" */}
+        {isSwarmDriven && (
+          <Text style={styles.swarmContextLine}>
+            {swarmKindLabel} <Text style={styles.swarmInitiatorName}>{swarmInitiator}</Text> for a{' '}
+            {content.swarm_kind === 'delegation' ? 'cross-domain analysis' : 'consensus vote'}
+          </Text>
+        )}
 
         {/* Main message */}
         <Text style={styles.message} numberOfLines={expanded ? undefined : 2}>
@@ -460,6 +489,37 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  swarmBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: Colors.warning + '18',
+    borderWidth: 1,
+    borderColor: Colors.warning + '55',
+  },
+  swarmBadgeText: {
+    fontFamily: Fonts.mono,
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.warning,
+    letterSpacing: 0.5,
+  },
+  swarmContextLine: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontStyle: 'italic',
+    marginTop: -2,
+    marginBottom: 2,
+  },
+  swarmInitiatorName: {
+    color: Colors.warning,
+    fontWeight: '600',
+    fontStyle: 'normal',
   },
   time: {
     fontFamily: Fonts.body,

@@ -6,8 +6,22 @@ import {
   TransactionInstruction,
   Keypair,
 } from "@solana/web3.js";
-import { SOLANA_RPC_URL, SOLANA_COMMITMENT } from "@agent-arena/shared";
+import { SOLANA_RPC_URL, SOLANA_COMMITMENT, IS_SIMULATED } from "@agent-arena/shared";
 import { getBackendPayer, ensureBackendPayerBalance } from "./devnet-helpers";
+
+// Feature flag: when on-chain ATOM submission is disabled, submitAtomFeedback
+// short-circuits to null and the caller falls back to the heuristic trust
+// tier (win-rate based). This keeps demo logs clean while we work out the
+// deployed program's actual instruction discriminator. Default: off in
+// paper-traction mode (IS_SIMULATED), unless ATOM_ONCHAIN_ENABLED=true is
+// set explicitly.
+const ATOM_ONCHAIN_ENABLED =
+  process.env.ATOM_ONCHAIN_ENABLED === "true" ||
+  (!IS_SIMULATED && process.env.ATOM_ONCHAIN_ENABLED !== "false");
+
+// Throttle the "skipped" log to once per process so paper-mode runs don't
+// emit a line per closed trade.
+let _skipLogged = false;
 
 // ═══════════════════════════════════════════════════════════════
 // ATOM Reputation Engine Integration
@@ -111,8 +125,10 @@ export async function buildAtomFeedbackTx(
     const [atomStats] = getAtomStatsPDA(agentAsset);
 
     const valueBytes = Buffer.from(params.value, "utf-8");
+    // Anchor IDL discriminators use snake_case Rust fn names. Using camelCase
+    // produces InstructionFallbackNotFound (program error 0x65) on devnet.
     const data = Buffer.concat([
-      getInstructionDiscriminator("giveFeedback"),
+      getInstructionDiscriminator("give_feedback"),
       (() => { const b = Buffer.alloc(4); b.writeUInt32LE(valueBytes.length); return b; })(),
       valueBytes,
       Buffer.from([params.tag1]),
@@ -144,10 +160,22 @@ export async function buildAtomFeedbackTx(
 /**
  * Submit feedback to ATOM reputation engine using backend signer.
  * For hackathon traction: backend acts as reputation oracle.
+ *
+ * In paper-traction mode this is a no-op by default — the deployed program's
+ * instruction discriminator is still being reverse-engineered, and the
+ * heuristic trust-tier path in `paper-trading.ts` already drives the UI.
+ * Set ATOM_ONCHAIN_ENABLED=true to force the real submission attempt.
  */
 export async function submitAtomFeedback(
   params: FeedbackParams
 ): Promise<{ txSignature: string; statsPDA: string } | null> {
+  if (!ATOM_ONCHAIN_ENABLED) {
+    if (!_skipLogged) {
+      console.log("[ATOM] On-chain submission disabled (paper mode) — heuristic trust tier in use");
+      _skipLogged = true;
+    }
+    return null;
+  }
   try {
     await ensureBackendPayerBalance(0.1);
     const payer = getBackendPayer();
@@ -157,7 +185,7 @@ export async function submitAtomFeedback(
 
     const valueBytes = Buffer.from(params.value, "utf-8");
     const data = Buffer.concat([
-      getInstructionDiscriminator("giveFeedback"),
+      getInstructionDiscriminator("give_feedback"),
       (() => { const b = Buffer.alloc(4); b.writeUInt32LE(valueBytes.length); return b; })(),
       valueBytes,
       Buffer.from([params.tag1]),
@@ -183,7 +211,14 @@ export async function submitAtomFeedback(
     console.log(`[ATOM] Feedback submitted: ${txSignature} for agent ${params.agentAsset}`);
     return { txSignature, statsPDA: atomStats.toBase58() };
   } catch (err) {
-    console.error("[ATOM] submitAtomFeedback error:", err);
+    // Quiet single-line warn — full stacks were drowning the demo console.
+    // Set ATOM_DEBUG=true to see the underlying SendTransactionError.
+    const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
+    if (process.env.ATOM_DEBUG === "true") {
+      console.error("[ATOM] submitAtomFeedback error:", err);
+    } else {
+      console.warn(`[ATOM] submission skipped (${msg.slice(0, 120)})`);
+    }
     return null;
   }
 }
@@ -202,7 +237,7 @@ export async function revokeAtomFeedback(
     const [atomStats] = getAtomStatsPDA(asset);
 
     const data = Buffer.concat([
-      getInstructionDiscriminator("revokeFeedback"),
+      getInstructionDiscriminator("revoke_feedback"),
       (() => { const b = Buffer.alloc(4); b.writeUInt32LE(feedbackIndex); return b; })(),
     ]);
 
