@@ -13,4 +13,8 @@ export const redis = new Redis(redisUrl, {
 });
 
 export const redisPub = new Redis(redisUrl);
-export const redisSub = new Redis(redisUrl);
+
+// Subscriber-only client. Disable the periodic ready-check (INFO) since it's
+// rejected once the connection enters subscribe mode and only produces noise
+// on every reconnect against managed Redis (Upstash drops idle TLS conns).
+export const redisSub = new Redis(redisUrl, { enableReadyCheck: false });
