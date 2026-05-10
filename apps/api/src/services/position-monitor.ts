@@ -35,13 +35,36 @@ export interface PositionMonitorConfig {
 }
 
 // --- Trailing-stop tunables ---
-// These supersede the flat take-profit field on the positions row. The TP
-// column is still respected as the *arming* threshold so per-position TP
-// overrides keep working: once unrealized profit % crosses the row's TP
-// (default 20%), the trailing rule takes over and protects gains.
-const TRAILING_GIVEUP_FROM_PEAK = 0.10;   // close once profit retraces 10pp from peak
+// Two rules work together:
+//
+//  1. Trailing arms earlier than the row's TP threshold so even modest
+//     winners (8%+) get protected. The row's TP is still respected as a
+//     hard ceiling: if it's lower than TRAILING_ARM_AT_PEAK, that wins.
+//
+//  2. Give-back is *adaptive*, not flat. A flat 10pp give-back was closing
+//     +50% positions that briefly dipped to +40%, even though absolute profit
+//     was still huge. The new rule:
+//        give_back_allowed = clamp(BASE − DECAY × peak, FLOOR, BASE)
+//     Small peaks (10–15%) get 15pp of breathing room (let winners run).
+//     Big peaks (50%+) get only 5pp (lock in hard-won gains).
+//
+//  3. BREAKEVEN_LOCK_AT: once a position has *ever* shown 10%+ profit, the
+//     hard stop becomes break-even rather than −10%. This is the user's
+//     scenario fix: a winner that round-trips never becomes a loser. Audit:
+//     stop-loss accounted for 86% of net realised losses; this turns the
+//     deepest of those round-trips into break-even closes.
+const TRAILING_ARM_AT_PEAK = 0.08;        // arm trailing at +8% peak (was 20%)
+const TRAILING_GIVEBACK_BASE = 0.15;      // 15pp give-back at low peaks
+const TRAILING_GIVEBACK_FLOOR = 0.05;     // never tighter than 5pp
+const TRAILING_GIVEBACK_DECAY = 0.25;     // each 1.0 of peak shrinks give-back by 0.25
+const BREAKEVEN_LOCK_AT = 0.10;           // once peak ≥ +10%, stop becomes break-even
 const TIME_TIGHTEN_HOURS = 24;            // within 24h of close, lock-in winners
 const TIME_TIGHTEN_LOCK_IN = 0.15;        // at +15% profit, take it (don't trail)
+
+function adaptiveTrailingGiveBack(peakProfitPct: number): number {
+  const allowed = TRAILING_GIVEBACK_BASE - peakProfitPct * TRAILING_GIVEBACK_DECAY;
+  return Math.max(TRAILING_GIVEBACK_FLOOR, Math.min(TRAILING_GIVEBACK_BASE, allowed));
+}
 
 // --- Pure profit/loss helpers (direction-agnostic) ---
 
@@ -93,11 +116,27 @@ export function checkPositionExit(
   const profitPct = computeProfitPct(entryPrice, currentPrice, side);
   const peakProfitPct = Math.max(position.peakProfitPct ?? 0, profitPct);
 
-  // 1. Hard stop-loss (unchanged disaster floor)
-  if (lossPct >= position.stopLossPercent) {
-    reasons.push(
-      `Stop-loss triggered: ${(lossPct * 100).toFixed(1)}% loss on ${side.toUpperCase()} (limit: ${(position.stopLossPercent * 100).toFixed(0)}%)`
-    );
+  // 1. Hard stop-loss with break-even override.
+  //
+  // If this position has ever tagged BREAKEVEN_LOCK_AT profit, the stop
+  // tightens to 0% instead of the row's stopLossPercent. Practically: a
+  // position that hit +12% at peak and is now at -3% will close at the
+  // first profitable tick rather than waiting for the −10% disaster floor.
+  // Audit data showed the trailing-stop alone accounted for ~$26 of wins
+  // while the full-stop path lost ~$124; the break-even rule prevents that
+  // asymmetry by refusing to convert a real winner into a real loser.
+  const breakevenArmed = peakProfitPct >= BREAKEVEN_LOCK_AT;
+  const effectiveStopLossPct = breakevenArmed ? 0 : position.stopLossPercent;
+  if (lossPct >= effectiveStopLossPct) {
+    if (breakevenArmed) {
+      reasons.push(
+        `Break-even stop: peak +${(peakProfitPct * 100).toFixed(1)}% retraced to ${(profitPct * 100).toFixed(1)}% — closing at zero/small loss to protect tagged gain`
+      );
+    } else {
+      reasons.push(
+        `Stop-loss triggered: ${(lossPct * 100).toFixed(1)}% loss on ${side.toUpperCase()} (limit: ${(position.stopLossPercent * 100).toFixed(0)}%)`
+      );
+    }
     exitTypes.push("stop_loss");
   }
 
@@ -120,16 +159,20 @@ export function checkPositionExit(
     exitTypes.push("take_profit");
   }
 
-  // 3. Trailing take-profit. Arms once peak profit crosses the row's TP
-  // threshold (default 20%); fires when current profit retraces by
-  // TRAILING_GIVEUP_FROM_PEAK from that peak. This lets winners run while
-  // protecting against full give-back.
-  const trailingArmed = peakProfitPct >= position.takeProfitPercent;
+  // 3. Trailing take-profit (adaptive give-back).
+  // Arms when peak profit ≥ TRAILING_ARM_AT_PEAK *or* the row's TP override,
+  // whichever is lower — earlier arming so even modest winners get
+  // protected. Give-back tolerance scales with peak: small wins get room
+  // to breathe (15pp), big wins get locked in tight (5pp). The earlier
+  // flat 10pp rule closed +50% peaks the moment they dipped to +40%.
+  const armingThreshold = Math.min(TRAILING_ARM_AT_PEAK, position.takeProfitPercent);
+  const trailingArmed = peakProfitPct >= armingThreshold;
   if (trailingArmed) {
     const giveUp = peakProfitPct - profitPct;
-    if (giveUp >= TRAILING_GIVEUP_FROM_PEAK) {
+    const allowed = adaptiveTrailingGiveBack(peakProfitPct);
+    if (giveUp >= allowed) {
       reasons.push(
-        `Trailing stop: peak +${(peakProfitPct * 100).toFixed(1)}% → now +${(profitPct * 100).toFixed(1)}% (gave up ${(giveUp * 100).toFixed(1)}pp)`
+        `Trailing stop: peak +${(peakProfitPct * 100).toFixed(1)}% → now +${(profitPct * 100).toFixed(1)}% (gave up ${(giveUp * 100).toFixed(1)}pp, allowed ${(allowed * 100).toFixed(1)}pp)`
       );
       exitTypes.push("take_profit");
     }
