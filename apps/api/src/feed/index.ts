@@ -6,6 +6,8 @@ import { REDIS_KEYS } from "@agent-arena/shared";
 import type { FeedEvent } from "@agent-arena/shared";
 
 const MAX_RECENT_EVENTS = 200;
+// Per-job feed keys are created per new jobId and would otherwise accumulate forever.
+const FEED_JOB_KEY_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 const FEED_CHANNEL = "feed:live";
 
 // ─── Swarm peer-call context ──────────────────────────────────────────
@@ -236,6 +238,8 @@ export async function publishFeedEvent(event: FeedEvent): Promise<void> {
     const jobKey = `${REDIS_KEYS.FEED_RECENT}:job:${event.job_id}`;
     await redis.zadd(jobKey, score, serialized);
     await redis.zremrangebyrank(jobKey, 0, -(MAX_RECENT_EVENTS + 1));
+    // Per-job keys multiply unboundedly with new jobIds; expire so old jobs free space.
+    await redis.expire(jobKey, FEED_JOB_KEY_TTL_SECONDS);
   }
 
   // Add to category sorted set (look up agent category)

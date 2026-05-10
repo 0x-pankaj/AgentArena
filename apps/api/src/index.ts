@@ -5,7 +5,7 @@ import { trpcServer } from "@hono/trpc-server";
 import { eq } from "drizzle-orm";
 import { appRouter } from "./routers/_app";
 import { createContext } from "./utils/context";
-import { startWebSocketServer, stopWebSocketServer } from "./ws";
+import { makeWsData, startWebSocketServer, stopWebSocketServer, websocketHandler } from "./ws";
 import { startWorker, stopWorker, setTradeProcessor, scheduleRecurringJobs } from "./services/queue-service";
 import { initializeSupervisor, resumeActiveAgents } from "./agents/supervisor";
 import { runAgentTick } from "./agents/registry";
@@ -43,7 +43,6 @@ app.use(
 );
 
 const port = Number(process.env.PORT) || 3001;
-const wsPort = Number(process.env.WS_PORT) || 3002;
 
 // --- Startup ---
 
@@ -62,8 +61,20 @@ async function startup() {
   // 1. Initialize agent registry
   initializeSupervisor();
 
-  // 2. Start WebSocket server
-  startWebSocketServer(wsPort);
+  // 2. Start HTTP + WebSocket server (single port — Railway exposes only one)
+  const server = Bun.serve({
+    port,
+    fetch(req, srv) {
+      const url = new URL(req.url);
+      if (url.pathname === "/ws") {
+        const upgraded = srv.upgrade(req, { data: makeWsData() });
+        return upgraded ? undefined : new Response("Upgrade failed", { status: 400 });
+      }
+      return app.fetch(req);
+    },
+    websocket: websocketHandler,
+  });
+  startWebSocketServer(server);
 
   // 2. Start BullMQ worker with processor
   setTradeProcessor(async (data: TradeJobData): Promise<TradeJobResult> => {
@@ -173,12 +184,7 @@ async function startup() {
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
 
-  console.log(`AgentArena API running on port ${port} (WS: ${wsPort})`);
+  console.log(`AgentArena API running on port ${port} (HTTP + WS at /ws)`);
 }
 
 startup().catch(console.error);
-
-export default {
-  port,
-  fetch: app.fetch,
-};

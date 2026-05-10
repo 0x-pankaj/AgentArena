@@ -19,6 +19,10 @@ import {
 } from "./paper-trading";
 import { recomputeAgentPerformance } from "../leaderboard";
 
+// Approximate cap for the global agent-events stream so Redis memory stays bounded
+// on free tiers (Upstash 256 MB). ~ uses radix-node trimming for low overhead.
+const AGENT_EVENTS_STREAM_MAXLEN = 5000;
+
 // --- Retry helper for external API calls ---
 
 async function withRetry<T>(
@@ -277,6 +281,9 @@ export async function executeBuyOrder(params: {
         // Push to feed
         await redis.xadd(
           REDIS_KEYS.AGENT_EVENTS_STREAM,
+          "MAXLEN",
+          "~",
+          AGENT_EVENTS_STREAM_MAXLEN,
           "*",
           "event",
           JSON.stringify({
@@ -347,6 +354,9 @@ export async function executeBuyOrder(params: {
 
     await redis.xadd(
       REDIS_KEYS.AGENT_EVENTS_STREAM,
+      "MAXLEN",
+      "~",
+      AGENT_EVENTS_STREAM_MAXLEN,
       "*",
       "event",
       JSON.stringify({
@@ -418,6 +428,9 @@ export async function closePosition(params: {
         // Push to feed
         await redis.xadd(
           REDIS_KEYS.AGENT_EVENTS_STREAM,
+          "MAXLEN",
+          "~",
+          AGENT_EVENTS_STREAM_MAXLEN,
           "*",
           "event",
           JSON.stringify({
@@ -518,6 +531,9 @@ export async function closePosition(params: {
 
     await redis.xadd(
       REDIS_KEYS.AGENT_EVENTS_STREAM,
+      "MAXLEN",
+      "~",
+      AGENT_EVENTS_STREAM_MAXLEN,
       "*",
       "event",
       JSON.stringify({

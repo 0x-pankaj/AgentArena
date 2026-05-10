@@ -18,9 +18,9 @@ const getWsUrl = () => {
     return process.env.EXPO_PUBLIC_WS_URL;
   }
   if (__DEV__) {
-    return 'ws://10.0.2.2:3002';
+    return 'ws://10.0.2.2:3001/ws';
   }
-  return 'wss://ws.agentarena.dev';
+  return 'wss://api.agentarena.dev/ws';
 };
 
 //
