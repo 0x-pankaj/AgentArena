@@ -619,7 +619,33 @@ export async function executeBuy(
     return { success: true, positionId: result.position.id };
   }
 
-  return { success: false, error: result.error, softReject: isSoftRejection(result.error) };
+  // Publish a rejection feed event so the UI doesn't dangle a "decided BUY"
+  // without any corresponding trade. Soft rejections (already have position,
+  // penny price, opposite-binary sibling, cooldown, etc.) are routine and
+  // get the quiet info-severity label; everything else is significant.
+  const isSoft = isSoftRejection(result.error);
+  const reason = (result.error ?? "unknown reason").slice(0, 180);
+  try {
+    const rejectEvent = buildFeedEvent({
+      agentId,
+      agentName,
+      jobId,
+      category: "decision",
+      severity: isSoft ? "info" : "significant",
+      content: {
+        market_analyzed: decision.marketQuestion ?? market.question,
+        action: "buy",
+        decision: `Trade rejected: ${reason}`,
+        reasoning_snippet: reason,
+      },
+      displayMessage: `${agentName} ⏸ Trade not placed: ${reason}`,
+    });
+    await publishFeedEvent(rejectEvent);
+  } catch {
+    // best-effort; rejection feed is cosmetic
+  }
+
+  return { success: false, error: result.error, softReject: isSoft };
 }
 
 // --- Execute a sell (close position) ---

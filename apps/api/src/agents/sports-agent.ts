@@ -375,7 +375,15 @@ export async function runSportsAgentTick(ctx: AgentRuntimeContext): Promise<Agen
       market_list: markets.slice(0, 5).map(m => ({ id: m.marketId, question: m.question, volume: m.volume, closesAt: m.closesAt }))
     }, "significant");
 
-    await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`, 300, JSON.stringify(markets));
+    // Peer-call (consensus/delegation) market lists must NOT overwrite the
+    // agent's own scan cache. Otherwise a politics-driven delegation that
+    // hands us a single politics market would leave that market sitting in
+    // redis for 5min, and the next normal sports tick would pick it up and
+    // trade it. Audit found exactly this — sports agent holding POLY-2109449
+    // "US x Iran diplomatic meeting" from a cross-category peer call.
+    if (!targetMarket) {
+      await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`, 300, JSON.stringify(markets));
+    }
     fsm.transition("markets_found");
     await saveState();
   }

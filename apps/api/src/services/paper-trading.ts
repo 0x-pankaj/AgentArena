@@ -309,7 +309,40 @@ export async function paperBuyOrder(params: {
     };
   }
 
-  // 2. Reject pennystock / near-resolved markets. Sub-cent prices let the
+  // 2. Opposite-binary guard. Polymarket lists each binary event as TWO
+  //    market rows that share a numeric stem and differ only by the trailing
+  //    `-0` / `-1` (e.g. "POLY-2209492-0" = player A wins, "POLY-2209492-1"
+  //    = player B wins). Buying NO on both sides is a guaranteed loss in any
+  //    decisive outcome; buying YES on both is mostly redundant. Audit found
+  //    the sports agent holding both sides of a Jiujiang tennis match exactly
+  //    this way. Reject if any open position shares the stem.
+  const stemMatch = marketId.match(/^(.+)-\d+$/);
+  if (stemMatch) {
+    const stem = stemMatch[1];
+    const [stemSibling] = await db
+      .select({
+        id: schema.positions.id,
+        marketId: schema.positions.marketId,
+        side: schema.positions.side,
+      })
+      .from(schema.positions)
+      .where(
+        and(
+          eq(schema.positions.jobId, jobId),
+          sql`${schema.positions.marketId} LIKE ${stem + "-%"}`,
+          eq(schema.positions.status, "open"),
+        ),
+      )
+      .limit(1);
+    if (stemSibling) {
+      return {
+        success: false,
+        error: `Refusing trade: open ${stemSibling.side.toUpperCase()} position already exists on sibling market ${stemSibling.marketId} (same underlying event)`,
+      };
+    }
+  }
+
+  // 3. Reject pennystock / near-resolved markets. Sub-cent prices let the
   //    Kelly sizer buy tens of thousands of contracts on noise (one demo row
   //    held 21,009 contracts at $0.001), and >$0.95 prices have asymmetric
   //    downside (lose all on a flip, gain almost nothing on a confirm).

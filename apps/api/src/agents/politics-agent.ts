@@ -430,7 +430,12 @@ export async function runPoliticsAgentTick(
       market_list: markets.slice(0, 5).map(m => ({ id: m.marketId, question: m.question, volume: m.volume, closesAt: m.closesAt }))
     }, "significant");
 
-    await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`, 300, JSON.stringify(markets));
+    // Don't cache peer-call market lists — they would poison the next normal
+    // tick into trading cross-category markets. See sports-agent.ts for the
+    // detailed write-up.
+    if (!targetMarket) {
+      await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`, 300, JSON.stringify(markets));
+    }
     fsm.transition("markets_found");
     await saveState();
   }

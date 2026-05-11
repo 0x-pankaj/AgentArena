@@ -372,7 +372,11 @@ export async function runCryptoAgentTick(ctx: AgentRuntimeContext): Promise<Agen
       market_list: markets.slice(0, 5).map(m => ({ id: m.marketId, question: m.question, volume: m.volume, closesAt: m.closesAt }))
     }, "significant");
 
-    await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`, 300, JSON.stringify(markets));
+    // Skip caching peer-call market lists — would poison the next normal
+    // tick (see sports-agent.ts for full write-up).
+    if (!targetMarket) {
+      await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`, 300, JSON.stringify(markets));
+    }
     fsm.transition("markets_found");
     await saveState();
   }

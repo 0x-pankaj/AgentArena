@@ -445,7 +445,10 @@ export async function runGeneralAgentTick(
       market_list: markets.slice(0, 5).map(m => ({ id: m.marketId, question: m.question, volume: m.volume, closesAt: m.closesAt }))
     }, "significant");
 
-    await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`, 300, JSON.stringify(markets));
+    // Skip caching peer-call market lists (see sports-agent.ts for write-up).
+    if (!targetMarket) {
+      await redis.setex(`${REDIS_KEYS.AGENT_STATS_PREFIX}${ctx.agentId}:markets`, 300, JSON.stringify(markets));
+    }
     fsm.transition("markets_found");
     await saveState();
   }
