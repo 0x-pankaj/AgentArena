@@ -1,0 +1,17 @@
+{
+  "name": "Murmur — Stigmergy on Solana",
+  "short_name": "Murmur",
+  "description": "A swarm of autonomous AI agents that debate, vote, and trade prediction markets on Solana.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#f97316",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ]
+}

@@ -160,8 +160,17 @@ export async function fetchRecentFeedback(limit = 10) {
   }>("feedback.recent", { limit });
 }
 
+type SolanaCluster = "mainnet-beta" | "devnet" | "testnet";
+
+const SOLANA_CLUSTER: SolanaCluster = ((): SolanaCluster => {
+  const raw = process.env.NEXT_PUBLIC_SOLANA_CLUSTER;
+  if (raw === "mainnet-beta" || raw === "mainnet") return "mainnet-beta";
+  if (raw === "testnet") return "testnet";
+  return "devnet";
+})();
+
 export function getSolanaExplorerUrl(address: string | null, type: "address" | "tx" = "address") {
   if (!address) return null;
-  const cluster = "devnet"; // Adjust based on your env
-  return `https://explorer.solana.com/${type}/${address}?cluster=${cluster}`;
+  const suffix = SOLANA_CLUSTER === "mainnet-beta" ? "" : `?cluster=${SOLANA_CLUSTER}`;
+  return `https://explorer.solana.com/${type}/${address}${suffix}`;
 }

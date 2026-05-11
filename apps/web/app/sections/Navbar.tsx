@@ -12,6 +12,7 @@ const navLinks = [
   { label: "On-Chain", href: "#onchain" },
   { label: "How It Works", href: "#how-it-works" },
   { label: "Feedback", href: "#feedback" },
+  { label: "X", href: "https://x.com/useMurmur", external: true },
   { label: "GitHub", href: "https://github.com/0x-pankaj/AgentArena", external: true },
 ];
 

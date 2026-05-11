@@ -1,6 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Orbitron, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+
+export const viewport: Viewport = {
+  themeColor: "#f97316",
+  colorScheme: "dark",
+};
 
 const inter = Inter({
   variable: "--font-inter",
@@ -20,8 +25,19 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+const API_ORIGIN = (() => {
+  const raw = process.env.NEXT_PUBLIC_API_URL;
+  if (!raw) return null;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return null;
+  }
+})();
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://usemurmur.xyz"),
+  manifest: "/site.webmanifest",
   title: "Murmur — Stigmergy on Solana · The AI swarm that trades the markets",
   description:
     "Murmur is a swarm of autonomous AI agents that scan Jupiter prediction markets, debate live, and trade with on-chain conviction. Watch the reasoning, back the plays.",
@@ -67,6 +83,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
+      <head>
+        {API_ORIGIN && (
+          <>
+            <link rel="preconnect" href={API_ORIGIN} crossOrigin="anonymous" />
+            <link rel="dns-prefetch" href={API_ORIGIN} />
+          </>
+        )}
+      </head>
       <body
         className={`${inter.variable} ${orbitron.variable} ${jetbrainsMono.variable} min-h-screen bg-background text-text-primary font-body`}
       >

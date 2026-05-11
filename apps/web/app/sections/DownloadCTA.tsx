@@ -3,7 +3,25 @@
 import { motion } from "framer-motion";
 import { Download, Smartphone, ExternalLink } from "lucide-react";
 
+const APK_DRIVE_URL =
+  "https://drive.google.com/drive/folders/1kKV_JMrtM3-b2KMQMPmjMJ-cUzZk7H9c?usp=sharing";
+
 const downloadOptions = [
+  {
+    label: "Download APK",
+    sublabel: "Android · direct install",
+    href: APK_DRIVE_URL,
+    icon: <Download className="w-6 h-6" />,
+    disabled: false,
+    primary: true,
+  },
+  {
+    label: "Expo Go",
+    sublabel: "Open in Expo client",
+    href: "https://expo.dev/accounts/0xpankaj/projects/arena",
+    icon: <ExternalLink className="w-6 h-6" />,
+    disabled: false,
+  },
   {
     label: "App Store",
     sublabel: "Coming Soon",
@@ -14,24 +32,6 @@ const downloadOptions = [
       </svg>
     ),
     disabled: true,
-  },
-  {
-    label: "Google Play",
-    sublabel: "Coming Soon",
-    href: "#",
-    icon: (
-      <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M3 20.5v-17c0-.83.67-1.5 1.5-1.5.33 0 .65.1.92.3l13.54 8.5c.55.34.72 1.07.38 1.62-.1.16-.22.3-.38.4L5.42 21.7c-.55.34-1.28.17-1.62-.38-.1-.16-.16-.35-.16-.54l.36-.28M17 18.25V5.75l4.9-3.08c.55-.34 1.28-.17 1.62.38.1.16.16.35.16.54v17.62c0 .83-.67 1.5-1.5 1.5-.33 0-.65-.1-.92-.3L17 18.25z" />
-      </svg>
-    ),
-    disabled: true,
-  },
-  {
-    label: "Expo Go",
-    sublabel: "Try it now",
-    href: "https://expo.dev/accounts/0xpankaj/projects/arena",
-    icon: <ExternalLink className="w-6 h-6" />,
-    disabled: false,
   },
   {
     label: "Seeker dApp Store",
@@ -83,10 +83,12 @@ export function DownloadCTA() {
                 className={
                   option.disabled
                     ? "flex items-center gap-4 p-4 rounded-xl bg-surface-elevated border border-border opacity-50 cursor-not-allowed"
-                    : "flex items-center gap-4 p-4 rounded-xl bg-surface-elevated border border-border hover:border-accent/30 hover:shadow-[0_0_20px_rgba(249,115,22,0.1)] transition-all group"
+                    : "primary" in option && option.primary
+                      ? "flex items-center gap-4 p-4 rounded-xl bg-accent/10 border border-accent/40 hover:border-accent hover:bg-accent/15 hover:shadow-[0_0_30px_rgba(249,115,22,0.25)] transition-all group"
+                      : "flex items-center gap-4 p-4 rounded-xl bg-surface-elevated border border-border hover:border-accent/30 hover:shadow-[0_0_20px_rgba(249,115,22,0.1)] transition-all group"
                 }
               >
-                <div className="text-white">{option.icon}</div>
+                <div className={"primary" in option && option.primary ? "text-accent" : "text-white"}>{option.icon}</div>
                 <div className="text-left">
                   <div className="text-white font-semibold text-sm">
                     {option.label}
@@ -102,10 +104,14 @@ export function DownloadCTA() {
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
             transition={{ delay: 0.6 }}
-            className="mt-8 text-text-muted text-sm"
+            className="mt-8 text-text-muted text-sm max-w-md mx-auto"
           >
-            Built with Expo & React Native. Solana Mobile Wallet Adapter
-            integrated.
+            APK installs may require enabling{" "}
+            <span className="font-mono text-text-secondary">
+              Install unknown apps
+            </span>{" "}
+            for your browser. Built with Expo & React Native + Solana Mobile
+            Wallet Adapter.
           </motion.p>
         </motion.div>
       </div>
